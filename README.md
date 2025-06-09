@@ -12,9 +12,14 @@ docker build -t  inferno . --load
 
 There are several ways to run the optimizer.
 
+0. **Install lp_solve** 
+    - github repo: https://github.com/draffensperger/golp
+    - Mac users can run `brew install lp_solve`
+
 1. **Direct function calls**: An example is provided in [main.go](demos/main/main.go).
 
     ```bash
+
     cd demos/main
     go run main.go
     ```
