@@ -1,8 +1,29 @@
 # inferno-autoscaler
-// TODO(user): Add simple overview of use/purpose
+The inferno-autoscaler assigns GPU types to inference model servers and decides on the number of replicas for each model for a given request traffic load and classes of service, as well as the batch size.
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+
+The inferno-autoscaler is a Kubernetes controller that performs optimizated autoscaling using the below components:
+
+![Diagram](docs/diagrams/inferno-WVA-design.png)
+
+Reconciler:
+
+The controller is implemented using the controller-runtime framework, which reconciles the namespace-scoped Optimizer objects created by the platform administrator, one per model.Due to runtime variability in model behavior (e.g., differences in prompt lengths, output sizes, or server-level contention), we treat model analysis as a continuously reconciled step during every autoscaler loop.
+
+Collector(s):
+The collectors that gather cluster data about the cluster state and the state of vllm servers running inside the controller.
+
+Actuator:
+The actuator is responsible for emitting metrics to the desired sources, like Prometheus, or changing replicas of existing deployments running on the cluster, which is the case with the Inferno autoscaler.
+
+Model Analyzer:
+Model Analyzer is a component that runs per model to perform scaling, estimation, prediction, and tuning.
+
+Proposed sources:
+These include the new [API proposal](https://docs.google.com/document/d/1j2KRAT68_FYxq1iVzG0xVL-DHQhGVUZBqiM22Hd_0hc/edit?usp=drivesdk&resourcekey=0-5cSovS8QcRQNYXj0_kRMiw), which is expected to work in conjunction with the inference scheduler (EPP) to provide insights into the request scheduler's dispatching logic.
+
+For more details please refer to the community proposal [here](https://docs.google.com/document/d/1n6SAhloQaoSyF2k3EveIOerT-f97HuWXTLFm07xcvqk/edit?tab=t.0).
 
 ## Getting Started
 
