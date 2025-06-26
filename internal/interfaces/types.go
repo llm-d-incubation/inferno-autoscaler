@@ -41,3 +41,7 @@ type MetricsSnapshot struct {
 	// Traffic         TrafficDataSnapshot
 	// PerformanceData *ModelPerformanceData
 }
+
+// To be defined
+type stateOpt struct {
+}
