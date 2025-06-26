@@ -20,7 +20,7 @@ type OptimizerEngine interface {
 type ModelAnalyzer interface {
 	AnalyzeModel(
 		ctx context.Context,
-		spec OptimizerSpec,
+		spec llmdOptv1alpha1.OptimizerSpec,
 		metrics MetricsSnapshot,
 	) (*ModelAnalyzeResponse, error)
 }

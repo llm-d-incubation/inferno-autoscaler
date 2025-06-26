@@ -6,10 +6,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type OptimizerSpec struct {
-	ModelID string `json:"modelID"`
-}
-
 type ReplicaTargetEntry struct {
 	VariantID        string `json:"variantID"`
 	Role             string `json:"role"`
