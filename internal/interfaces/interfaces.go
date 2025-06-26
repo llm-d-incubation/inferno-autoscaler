@@ -24,3 +24,20 @@ type ModelAnalyzer interface {
 		metrics MetricsSnapshot,
 	) (*ModelAnalyzeResponse, error)
 }
+
+type Actuator interface {
+	// ApplyReplicaTargets mutates workloads (e.g., Deployments, InferenceServices) to match target replicas.
+	// To be deprecated
+	ApplyReplicaTargets(
+		ctx context.Context,
+		optimizer *llmdOptv1alpha1.Optimizer,
+		targets []llmdOptv1alpha1.ReplicaTargetEntry,
+	) error
+
+	// EmitMetrics publishes metrics about the target state (e.g., desired replicas, reasons).
+	EmitMetrics(
+		ctx context.Context,
+		optimizer *llmdOptv1alpha1.Optimizer,
+		targets []llmdOptv1alpha1.ReplicaTargetEntry,
+	) error
+}
