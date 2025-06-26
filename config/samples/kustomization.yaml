@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- llmd_v1alpha1_optimizer.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

@@ -1,155 +1,135 @@
-# Inference system optimizer
+# inferno-autoscaler
+// TODO(user): Add simple overview of use/purpose
 
-The inference system optimizer assigns GPU types to inference model servers and decides on the number of replicas for each model for a given request traffic load and classes of service, as well as the batch size. ([slides](docs/slides/inferno-dynamic.pdf))
+## Description
+// TODO(user): An in-depth paragraph about your project and overview of use
 
-## Building
+## Getting Started
 
-```bash
-docker build -t  inferno . --load
+### Prerequisites
+- go version v1.23.0+
+- docker version 17.03+.
+- kubectl version v1.11.3+.
+- Access to a Kubernetes v1.11.3+ cluster.
+
+### To Deploy on the cluster
+**Build and push your image to the location specified by `IMG`:**
+
+```sh
+make docker-build docker-push IMG=<some-registry>/inferno-autoscaler:tag
 ```
 
-## Prerequisites
+**NOTE:** This image ought to be published in the personal registry you specified.
+And it is required to have access to pull the image from the working environment.
+Make sure you have the proper permission to the registry if the above commands don’t work.
 
-- lp_solve Mixed Integer Linear Programming (MILP) solver
+**Install the CRDs into the cluster:**
 
-  [Installation instructions and code](https://github.com/llm-inferno/lpsolve)
-  
-- IBM CPLEX (optional)
-
-  Information and instructions [IBM CPLEX as a solver](https://github.com/llm-inferno/lpsolve/tree/main/cplex)
-
-## Running
-
-First, install [prerequisites](#prerequisites) if running locally (not using an image).
-
-### I. Optimizer only
-
-There are two ways to run the optimizer.
-
-1. **Direct function calls**: An example is provided in [main.go](demos/main/main.go).
-
-    ```bash
-    cd demos/main
-    go run main.go
-    ```
-
-2. **REST API server**: The optimizer may run as a REST API server ([steps](#steps-to-run-the-optimizer-as-a-rest-api-server)).
-
-### II. Optimized auto-scaler
-
-One may run the optimizer as part of an auto-scaling control system, in one of two ways.
-
-1. **Kubernetes controller**: Running in a Kubernetes cluster and using custom resources and a Kubernetes runtime controller, the optimizer may be excercised in reconciliation to updates to the Optimizer custom resource ([reference](https://github.com/llm-inferno/controller)).
-
-2. **Optimization control loop**: The control loop comprises (1) a Collector to get data about the inference servers through Prometheus and server deployments, (2) an Optimizer to make decisions, (3) an Actuator to realize such decisions by updating server deployments, and (4) a periodic Controller that has access to static and dynamic data. The [control loop](https://github.com/llm-inferno/control-loop) may run either externally or in a Kubernetes cluster.
-
-### Steps to run the optimizer as a REST API server
-
-The REST API specifications are [documented](rest-server/README.md).
-
-Clone this repository and set environment variable `INFERNO_REPO` to the path to it.
-
-#### Option A: Run externally
-
-```bash
-cd $INFERNO_REPO/cmd/optimizer
-go run main.go [-F]
+```sh
+make install
 ```
 
-The default is to run the server in **Stateless** mode. Use the optional `-F` argument to run in **Statefull** mode. ([Description of modes](rest-server/README.md#rest-server-modes))
+**Deploy the Manager to the cluster with the image specified by `IMG`:**
 
-You may then curl [API commands](rest-server/README.md#commands-list) to `http://localhost:8080`.
+```sh
+make deploy IMG=<some-registry>/inferno-autoscaler:tag
+```
 
-#### Option B: Run in cluster
+> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
+privileges or be logged in as admin.
 
-- Deploy optimizer as a deployment, along with a service on port `80`, in name space `inferno` in the cluster. (The deployment yaml file starts the server in a container with the `-F` flag.)
+**Create instances of your solution**
+You can apply the samples (examples) from the config/sample:
 
-    ```bash
-    cd $INFERNO_REPO/manifests/yamls
-    kubectl apply -f deploy-optimizer.yaml
-    ```
+```sh
+kubectl apply -k config/samples/
+```
 
-- Forward port to local host.
+>**NOTE**: Ensure that the samples has default values to test it out.
 
-    ```bash
-    kubectl port-forward service/inferno-optimizer -n inferno 8080:80
-    ```
+### To Uninstall
+**Delete the instances (CRs) from the cluster:**
 
-    You may then curl API commands (above) to `http://localhost:8080`.
+```sh
+kubectl delete -k config/samples/
+```
 
-- (Optional) Inspect logs.
+**Delete the APIs(CRDs) from the cluster:**
 
-    ```bash
-    POD=$(kubectl get pod -l app=inferno-optimizer -n inferno -o jsonpath="{.items[0].metadata.name}")
-    kubectl logs -f $POD -n inferno 
-    ```
+```sh
+make uninstall
+```
 
-- Cleanup.
+**UnDeploy the controller from the cluster:**
 
-    ```bash
-    kubectl delete -f deploy-optimizer.yaml
-    ```
+```sh
+make undeploy
+```
 
-## Detailed description of the optimizer
+## Project Distribution
 
-![problem-scope](docs/figs/Slide5.png)
+Following the options to release and provide this solution to the users.
 
-![timing-definitions](docs/figs/Slide30.png)
+### By providing a bundle with all YAML files
 
-![request-batching](docs/figs/Slide6.png)
+1. Build the installer for the image built and published in the registry:
 
-![token-time-fitting](docs/figs/Slide7.png)
+```sh
+make build-installer IMG=<some-registry>/inferno-autoscaler:tag
+```
 
-![modeling-batching](docs/figs/Slide9.png)
+**NOTE:** The makefile target mentioned above generates an 'install.yaml'
+file in the dist directory. This file contains all the resources built
+with Kustomize, which are necessary to install this project without its
+dependencies.
 
-![qn-model](docs/figs/Slide8.png)
+2. Using the installer
 
-![system-occupancy](docs/figs/Slide32.png)
+Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
+the project, i.e.:
 
-![impact-batch](docs/figs/Slide33.png)
+```sh
+kubectl apply -f https://raw.githubusercontent.com/<org>/inferno-autoscaler/<tag or branch>/dist/install.yaml
+```
 
-![target-service](docs/figs/Slide34.png)
+### By providing a Helm Chart
 
-Decision variables
+1. Build the chart using the optional helm plugin
 
-For each pair of (class of service, model):
+```sh
+kubebuilder edit --plugins=helm/v1-alpha
+```
 
-- gpuProfile: the GPU type allocated
-- numReplicas: the number of replicas
-- batchSize: the batch size, given continuous batching
+2. See that a chart was generated under 'dist/chart', and users
+can obtain this solution from there.
 
-## Specifications: Accelerators and models
+**NOTE:** If you change the project, you need to update the Helm Chart
+using the same command above to sync the latest changes. Furthermore,
+if you create webhooks, you need to use the above command with
+the '--force' flag and manually ensure that any custom configuration
+previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
+is manually re-applied afterwards.
 
-![accelerators](docs/figs/Slide13.png)
+## Contributing
+// TODO(user): Add detailed information on how you would like others to contribute to this project
 
-![models](docs/figs/Slide14.png)
+**NOTE:** Run `make help` for more information on all potential `make` targets
 
-## Example 1: Unlimited accelerators
+More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 
-![unlimited-assign](docs/figs/Slide16.png)
+## License
 
-![unlimited-perf](docs/figs/Slide17.png)
+Copyright 2025.
 
-## Example 2: Load change - Unlimited accelerators
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-![unlimited-change-assign](docs/figs/Slide19.png)
+    http://www.apache.org/licenses/LICENSE-2.0
 
-![unlimited-change](docs/figs/Slide20.png)
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 
-![unlimited-change-perf](docs/figs/Slide21.png)
-
-## Example 3: Limited accelerators
-
-![limited-count](docs/figs/Slide22.png)
-
-![limited-assign](docs/figs/Slide23.png)
-
-![limited-perf](docs/figs/Slide24.png)
-
-## Example 4: Load change - Limited accelerators
-
-![limited-change-assign](docs/figs/Slide26.png)
-
-![limited-change](docs/figs/Slide27.png)
-
-![limited-change-perf](docs/figs/Slide28.png)
