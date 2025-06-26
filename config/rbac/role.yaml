@@ -1,0 +1,32 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - llmd.llm-d.ai
+  resources:
+  - optimizers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - llmd.llm-d.ai
+  resources:
+  - optimizers/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - llmd.llm-d.ai
+  resources:
+  - optimizers/status
+  verbs:
+  - get
+  - patch
+  - update
