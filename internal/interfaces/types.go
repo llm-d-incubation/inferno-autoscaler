@@ -2,23 +2,7 @@ package controller
 
 import (
 	"time"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
-type ReplicaTargetEntry struct {
-	VariantID        string `json:"variantID"`
-	Role             string `json:"role"`
-	Replicas         int    `json:"replicas"`
-	PreviousReplicas int    `json:"previousReplicas,omitempty"`
-	Reason           string `json:"reason,omitempty"`
-}
-
-type OptimizerStatus struct {
-	LastRunTime    metav1.Time          `json:"lastRunTime"`
-	Conditions     []metav1.Condition   `json:"conditions,omitempty"`
-	ReplicaTargets []ReplicaTargetEntry `json:"replicaTargets,omitempty"`
-}
 
 type ModelAnalyzeResponse struct {
 	VariantID              string  `json:"variantID"`
@@ -40,8 +24,4 @@ type MetricsSnapshot struct {
 	// InstanceCounts  []VariantInstanceCount
 	// Traffic         TrafficDataSnapshot
 	// PerformanceData *ModelPerformanceData
-}
-
-// To be defined
-type stateOpt struct {
 }

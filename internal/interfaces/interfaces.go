@@ -13,7 +13,7 @@ type OptimizerEngine interface {
 		spec llmdOptv1alpha1.OptimizerSpec,
 		analysis []ModelAnalyzeResponse,
 		metrics MetricsSnapshot,
-	) (OptimizerStatus, error)
+	) (llmdOptv1alpha1.OptimizerStatus, error)
 }
 
 // ModelAnalyzer defines the interface for model analysis.
