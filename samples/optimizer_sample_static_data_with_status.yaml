@@ -1,0 +1,75 @@
+apiVersion: inference.optimization/v1alpha1
+kind: Optimizer
+metadata:
+  name: granite-13b-optimizer
+  namespace: default
+spec:
+  modelID: granite-13b
+  modelProfile:
+    accelerators:
+      - acc: A100
+        accCount: 1
+        alpha: 20.58
+        beta: 0.41
+        maxBatchSize: 32
+        atTokens: 512
+      - acc: G2
+        accCount: 1
+        alpha: 17.15
+        beta: 0.34
+        maxBatchSize: 38
+        atTokens: 512
+  serviceClassSLO:
+    name: Premium
+    priority: 1
+    slo:
+      slo-itl: 40
+      slo-ttw: 500
+  deployedAlloc:
+    name: premium-granite-13b
+    currentAlloc:
+      accelerator: A100
+      numReplicas: 4
+      maxBatch: 16
+      cost: 160
+      itlAverage: 25.2
+      waitAverage: 726.5
+      load:
+        arrivalRate: 40
+        avgLength: 1024
+        arrivalCOV: 1
+        serviceCOV: 1
+status:
+  lastRunTime: "2025-06-30T12:00:00Z"
+  conditions:
+    - type: Optimized
+      status: "True"
+      lastTransitionTime: "2025-06-30T12:00:00Z"
+      reason: OptimizationSuccess
+      message: Optimization completed successfully
+  replicaTargets:
+    - variantID: variant-a
+      role: prefill
+      replicas: 4
+      previousReplicas: 3
+      reason: Switched to G2, reduced cost
+    - variantID: variant-a
+      role: decode
+      replicas: 2
+      reason: Higher concurrency supported on G2
+  desiredOptimizedAlloc:
+    accelerator: G2
+    numReplicas: 6
+    maxBatch: 20
+    cost: 125
+    itlAverage: 20.5
+    waitAverage: 100.0
+    load:
+      arrivalRate: 40
+      avgLength: 1024
+  actuation:
+    applied: true
+    lastAttemptTime: "2025-06-30T12:01:15Z"
+    lastSuccessTime: "2025-06-30T12:01:15Z"
+    message: "Actuator successfully scaled to desired state"
+    reason: "ActuationSuccess"
