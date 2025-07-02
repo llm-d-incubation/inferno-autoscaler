@@ -33,6 +33,12 @@ For more details please refer to the community proposal [here](https://docs.goog
 - kubectl version v1.11.3+.
 - Access to a Kubernetes v1.11.3+ cluster.
 
+### Create cluster with fake GPUs
+
+```sh
+bash deploy/local-cluster.sh
+```
+
 ### To Deploy on the cluster
 **Build and push your image to the location specified by `IMG`:**
 
