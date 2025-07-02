@@ -82,7 +82,9 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			logger.Error(err, "failed to get Deployment", "optimizer", opt.Name)
 			return ctrl.Result{}, err
 		}
-
+		// at this point, the optimizer will optimize a variant
+		// grouping variants ie optimizer objects by modelfamily is not required.
+		// This will be explored when same inferencepool has multiple modelfamilies (eg: llama and granite).
 		groupedOptimizers[modelName] = append(groupedOptimizers[modelName], opt)
 	}
 
