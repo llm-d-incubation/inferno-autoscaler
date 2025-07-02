@@ -25,8 +25,9 @@ echo "[3/3] Patching node ${node_name} with GPU annotation and capacity..."
 
 cat <<EOF | kubectl patch node "${node_name}" --type merge --patch "$(cat)"
 metadata:
-  annotations:
+  labels:
     nvidia.com/gpu.product: NVIDIA-A100-PCIE-40GB
+    nvidia.com/gpu.memory: "40960"
 EOF
 
 echo "[4/5] Starting kubectl proxy..."

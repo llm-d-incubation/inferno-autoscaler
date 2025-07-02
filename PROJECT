@@ -2,7 +2,7 @@
 # This file is used to track the info used to scaffold your project
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
-domain: llm-d.ai
+domain: ai
 layout:
 - go.kubebuilder.io/v4
 projectName: inferno-autoscaler
@@ -12,7 +12,7 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: llm-d.ai
+  domain: ai
   group: llmd
   kind: Optimizer
   path: github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1

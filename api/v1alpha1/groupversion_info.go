@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package v1alpha1 contains API Schema definitions for the llmd v1alpha1 API group.
 // +kubebuilder:object:generate=true
-// +groupName=llmd.llm-d.ai
+// +groupName=llmd.ai
 package v1alpha1
 
 import (
@@ -26,7 +26,7 @@ import (
 
 var (
 	// GroupVersion is group version used to register these objects.
-	GroupVersion = schema.GroupVersion{Group: "llmd.llm-d.ai", Version: "v1alpha1"}
+	GroupVersion = schema.GroupVersion{Group: "llmd.ai", Version: "v1alpha1"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme.
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}

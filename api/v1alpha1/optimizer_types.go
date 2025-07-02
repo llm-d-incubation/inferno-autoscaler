@@ -6,7 +6,7 @@
 // +kubebuilder:printcolumn:name="Desired",type=string,JSONPath=".status.desiredOptimizedAlloc.accelerator"
 // +kubebuilder:printcolumn:name="Replicas",type=integer,JSONPath=".status.currentAlloc.numReplicas"
 // +kubebuilder:printcolumn:name="Actuated",type=string,JSONPath=".status.actuation.applied"
-// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 package v1alpha1
 
@@ -18,9 +18,8 @@ type OptimizerSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	ModelID string `json:"modelID"`
 
-	SLOClassRef ConfigMapKeyRef `json:"sloClassRef"`
-
-	ModelProfile ModelProfile `json:"modelProfile"`
+	SLOClassRef  ConfigMapKeyRef `json:"sloClassRef"`
+	ModelProfile ModelProfile    `json:"modelProfile"`
 }
 
 type ConfigMapKeyRef struct {
@@ -99,7 +98,6 @@ type LoadProfile struct {
 }
 
 type OptimizedAlloc struct {
-	// +kubebuilder:validation:Required
 	LastRunTime metav1.Time `json:"lastRunTime,omitempty"`
 
 	// +kubebuilder:validation:MinLength=2
@@ -145,4 +143,8 @@ type OptimizerList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []Optimizer `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(&Optimizer{}, &OptimizerList{})
 }

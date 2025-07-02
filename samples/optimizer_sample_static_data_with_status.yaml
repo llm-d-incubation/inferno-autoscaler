@@ -1,13 +1,13 @@
 
 --- 
 # Example 1
-apiVersion: inference.optimization/v1alpha1
+apiVersion: llmd.ai/v1alpha1
 # Optimizing a variant, create only when the model is deployed and serving traffic
 # this is for the collector the collect existing (previous) running metrics of the variant.
 kind: Optimizer
 metadata:
   # Unique name of the variant
-  name: variant-granite-13b-tp-4-A100
+  name: varaint-granite-13b-tp-4-a100
   namespace: default
   labels:
     inference.optimization/modelName: granite-13b
@@ -26,16 +26,16 @@ spec:
   # Static profiled benchmarked data for a variant running on different accelerators
   modelProfile:
     accelerators:
-      - acc: A100
+      - acc: "A100"
         accCount: 1
-        alpha: 20.58
-        beta: 0.41
+        alpha: "20.58"
+        beta: "0.41"
         maxBatchSize: 32
         atTokens: 512
-      - acc: G2
+      - acc: "G2"
         accCount: 1
-        alpha: 17.15
-        beta: 0.34
+        alpha: "17.15"
+        beta: "0.34"
         maxBatchSize: 38
         atTokens: 512
 status:
@@ -73,13 +73,13 @@ status:
 --- 
 
 # Example 2
-apiVersion: inference.optimization/v1alpha1
+apiVersion: llmd.ai/v1alpha1
 # Optimizing a variant, create only when the model is deployed and serving traffic
 # this is for the collector the collect existing (previous) running metrics of the variant.
 kind: Optimizer
 metadata:
   # Unique name of the variant
-  name: variant-granite-13b-tp-2-A100
+  name: variant-granite-13b-tp-2-a100
   namespace: default
   labels:
     inference.optimization/modelName: granite-13b

@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.2
-  name: optimizers.llmd.llm-d.ai
+  name: optimizers.llmd.ai
 spec:
-  group: llmd.llm-d.ai
+  group: llmd.ai
   names:
     kind: Optimizer
     listKind: OptimizerList
@@ -209,7 +209,6 @@ spec:
                 - accelerator
                 - cost
                 - itlAverage
-                - lastRunTime
                 - load
                 - maxBatch
                 - numReplicas
