@@ -16,6 +16,13 @@ rules:
   - update
   - watch
 - apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - get
+  - list
+- apiGroups:
   - llmd.llm-d.ai
   resources:
   - optimizers

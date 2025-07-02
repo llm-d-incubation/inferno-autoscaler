@@ -66,13 +66,11 @@ make deploy IMG=<some-registry>/inferno-autoscaler:tag
 privileges or be logged in as admin.
 
 **Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+You can apply the samples (examples) from the sample:
 
 ```sh
-kubectl apply -k config/samples/
+kubectl apply -k samples/input_sample.yaml
 ```
-
->**NOTE**: Ensure that the samples has default values to test it out.
 
 ### To Uninstall
 **Delete the instances (CRs) from the cluster:**
@@ -91,6 +89,12 @@ make uninstall
 
 ```sh
 make undeploy
+```
+
+**Delete cluster**
+
+```sh
+kind delete cluster -n a100-cluster
 ```
 
 ## Project Distribution
@@ -138,7 +142,8 @@ previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml
 is manually re-applied afterwards.
 
 ## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
+
+Please join llmd autoscaling community meetings and feel free to submit github issues and PRs. 
 
 **NOTE:** Run `make help` for more information on all potential `make` targets
 

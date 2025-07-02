@@ -20,12 +20,15 @@ import (
 	"context"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	llmdOptv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 // OptimizerReconciler reconciles a Optimizer object
@@ -44,14 +47,56 @@ type AcceleratorModelInfo struct {
 // +kubebuilder:rbac:groups=llmd.llm-d.ai,resources=optimizers/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups="",resources=nodes/status,verbs=get;list;update;patch;watch
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list
 
 func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	logger := logf.FromContext(ctx)
 
+	var optimizerList llmdOptv1alpha1.OptimizerList
+	if err := r.List(ctx, &optimizerList); err != nil {
+		logger.Error(err, "unable to list Optimizer resources")
+		return ctrl.Result{}, err
+	}
+
+	groupedOptimizers := make(map[string][]llmdOptv1alpha1.Optimizer)
+	missingDeployments := make(map[string][]llmdOptv1alpha1.Optimizer)
+
+	for _, opt := range optimizerList.Items {
+		modelName := opt.Labels["inference.optimization/modelName"]
+		if modelName == "" {
+			logger.Info("optimizer missing modelName label, skipping", "name", opt.Name)
+			continue
+		}
+
+		// Check if Deployment exists for this Optimizer
+		var deploy appsv1.Deployment
+		err := r.Get(ctx, types.NamespacedName{
+			Name:      opt.Name,
+			Namespace: opt.Namespace,
+		}, &deploy)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				missingDeployments[modelName] = append(missingDeployments[modelName], opt)
+				continue
+			}
+			logger.Error(err, "failed to get Deployment", "optimizer", opt.Name)
+			return ctrl.Result{}, err
+		}
+
+		groupedOptimizers[modelName] = append(groupedOptimizers[modelName], opt)
+	}
+
+	if len(missingDeployments) > 0 {
+		for modelName, optimizers := range missingDeployments {
+			for _, opt := range optimizers {
+				logger.Info("missing Deployment for Optimizer", "modelName", modelName, "optimizer", opt.Name)
+			}
+		}
+	}
 	var nodeList corev1.NodeList
 
 	if err := r.Client.List(ctx, &nodeList); err != nil {
-		logf.Log.Error(err, "unable to list nodes")
+		logger.Error(err, "unable to list nodes")
 		return ctrl.Result{}, err
 	}
 
@@ -77,7 +122,7 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	}
 
-	logf.Log.Info("current inventory in the cluster", "capacity", newInventory)
+	logger.Info("current inventory in the cluster", "capacity", newInventory)
 
 	return ctrl.Result{}, nil
 }
