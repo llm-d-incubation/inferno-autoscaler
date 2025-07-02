@@ -31,13 +31,11 @@ type Actuator interface {
 	ApplyReplicaTargets(
 		ctx context.Context,
 		optimizer *llmdOptv1alpha1.Optimizer,
-		targets []llmdOptv1alpha1.ReplicaTargetEntry,
 	) error
 
 	// EmitMetrics publishes metrics about the target state (e.g., desired replicas, reasons).
 	EmitMetrics(
 		ctx context.Context,
 		optimizer *llmdOptv1alpha1.Optimizer,
-		targets []llmdOptv1alpha1.ReplicaTargetEntry,
 	) error
 }

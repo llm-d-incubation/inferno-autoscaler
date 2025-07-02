@@ -2,9 +2,11 @@
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=opt
 // +kubebuilder:printcolumn:name="Model",type=string,JSONPath=".spec.modelID"
-// +kubebuilder:printcolumn:name="Replicas",type=string,JSONPath=".status.desiredOptimizedAlloc.numReplicas"
+// +kubebuilder:printcolumn:name="Current",type=string,JSONPath=".status.currentAlloc.accelerator"
+// +kubebuilder:printcolumn:name="Desired",type=string,JSONPath=".status.desiredOptimizedAlloc.accelerator"
+// +kubebuilder:printcolumn:name="Replicas",type=integer,JSONPath=".status.currentAlloc.numReplicas"
 // +kubebuilder:printcolumn:name="Actuated",type=string,JSONPath=".status.actuation.applied"
-// +kubebuilder:printcolumn:name="LastRun",type=date,JSONPath=".status.lastRunTime"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 package v1alpha1
 
@@ -13,13 +15,20 @@ import (
 )
 
 type OptimizerSpec struct {
-	// ModelID is the model name this optimizer is optimizing
 	// +kubebuilder:validation:MinLength=1
 	ModelID string `json:"modelID"`
 
-	ModelProfile    ModelProfile       `json:"modelProfile"`
-	ServiceClassSLO ServiceClassSLO    `json:"serviceClassSLO"`
-	DeployedAlloc   DeployedAllocation `json:"deployedAlloc"`
+	SLOClassRef ConfigMapKeyRef `json:"sloClassRef"`
+
+	ModelProfile ModelProfile `json:"modelProfile"`
+}
+
+type ConfigMapKeyRef struct {
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// +kubebuilder:validation:MinLength=1
+	Key string `json:"key"`
 }
 
 type ModelProfile struct {
@@ -34,11 +43,11 @@ type AcceleratorProfile struct {
 	// +kubebuilder:validation:Minimum=1
 	AccCount int `json:"accCount"`
 
-	// +kubebuilder:validation:Minimum=0
-	Alpha float64 `json:"alpha"`
+	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
+	Alpha string `json:"alpha"`
 
-	// +kubebuilder:validation:Minimum=0
-	Beta float64 `json:"beta"`
+	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
+	Beta string `json:"beta"`
 
 	// +kubebuilder:validation:Minimum=1
 	MaxBatchSize int `json:"maxBatchSize"`
@@ -47,29 +56,10 @@ type AcceleratorProfile struct {
 	AtTokens int `json:"atTokens"`
 }
 
-type ServiceClassSLO struct {
-	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
-
-	// +kubebuilder:validation:Minimum=0
-	Priority int `json:"priority"`
-
-	SLO SLOProfile `json:"slo"`
-}
-
-type SLOProfile struct {
-	// +kubebuilder:validation:Minimum=0
-	SLOITL int `json:"slo-itl"`
-
-	// +kubebuilder:validation:Minimum=0
-	SLOTTW int `json:"slo-ttw"`
-}
-
-type DeployedAllocation struct {
-	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
-
-	CurrentAlloc Allocation `json:"currentAlloc"`
+type OptimizerStatus struct {
+	CurrentAlloc          Allocation      `json:"currentAlloc,omitempty"`
+	DesiredOptimizedAlloc OptimizedAlloc  `json:"desiredOptimizedAlloc,omitempty"`
+	Actuation             ActuationStatus `json:"actuation,omitempty"`
 }
 
 type Allocation struct {
@@ -83,69 +73,60 @@ type Allocation struct {
 	MaxBatch int `json:"maxBatch"`
 
 	// +kubebuilder:validation:Minimum=0
-	Cost float64 `json:"cost"`
+	Cost int `json:"cost"`
 
-	// +kubebuilder:validation:Minimum=0
-	ITLAverage float64 `json:"itlAverage"`
+	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
+	ITLAverage string `json:"itlAverage"`
 
-	// +kubebuilder:validation:Minimum=0
-	WaitAverage float64 `json:"waitAverage"`
+	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
+	WaitAverage string `json:"waitAverage"`
 
 	Load LoadProfile `json:"load"`
 }
 
 type LoadProfile struct {
 	// +kubebuilder:validation:Minimum=0
-	ArrivalRate float64 `json:"arrivalRate"`
+	ArrivalRate int32 `json:"arrivalRate"`
 
 	// +kubebuilder:validation:Minimum=0
-	AvgLength int `json:"avgLength"`
+	AvgLength int32 `json:"avgLength"`
 
 	// +kubebuilder:validation:Minimum=0
-	ArrivalCOV float64 `json:"arrivalCOV,omitempty"`
+	ArrivalCOV int32 `json:"arrivalCOV,omitempty"`
 
 	// +kubebuilder:validation:Minimum=0
-	ServiceCOV float64 `json:"serviceCOV,omitempty"`
+	ServiceCOV int32 `json:"serviceCOV,omitempty"`
 }
 
-type OptimizerStatus struct {
+type OptimizedAlloc struct {
+	// +kubebuilder:validation:Required
 	LastRunTime metav1.Time `json:"lastRunTime,omitempty"`
 
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
-
-	ReplicaTargets []ReplicaTarget `json:"replicaTargets,omitempty"`
-
-	DesiredOptimizedAlloc Allocation `json:"desiredOptimizedAlloc,omitempty"`
-
-	Actuation ActuationStatus `json:"actuation,omitempty"`
-}
-
-type ReplicaTarget struct {
-	// +kubebuilder:validation:MinLength=1
-	VariantID string `json:"variantID"`
-
-	// +kubebuilder:validation:MinLength=1
-	Role string `json:"role"`
+	// +kubebuilder:validation:MinLength=2
+	Accelerator string `json:"accelerator"`
 
 	// +kubebuilder:validation:Minimum=0
-	Replicas int `json:"replicas"`
+	NumReplicas int `json:"numReplicas"`
 
 	// +kubebuilder:validation:Minimum=0
-	PreviousReplicas int `json:"previousReplicas,omitempty"`
+	MaxBatch int `json:"maxBatch"`
 
-	Reason string `json:"reason,omitempty"`
+	// +kubebuilder:validation:Minimum=0
+	Cost int32 `json:"cost"`
+
+	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
+	ITLAverage string `json:"itlAverage"`
+
+	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
+	WaitAverage string `json:"waitAverage"`
+
+	Load LoadProfile `json:"load"`
 }
 
 type ActuationStatus struct {
-	Applied bool `json:"applied"`
-
+	Applied         bool        `json:"applied"`
 	LastAttemptTime metav1.Time `json:"lastAttemptTime,omitempty"`
-
 	LastSuccessTime metav1.Time `json:"lastSuccessTime,omitempty"`
-
-	Message string `json:"message,omitempty"`
-
-	Reason string `json:"reason,omitempty"`
 }
 
 // +kubebuilder:object:root=true
