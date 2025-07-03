@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	llmdOptv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -123,7 +124,13 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 // SetupWithManager sets up the controller with the Manager.
 func (r *OptimizerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Start watching ConfigMap and ticker logic
-	go r.watchAndRunLoop()
+	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		<-mgr.Elected() // Wait for leader election
+		r.watchAndRunLoop()
+		return nil
+	})); err != nil {
+		return err
+	}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&llmdOptv1alpha1.Optimizer{}).
