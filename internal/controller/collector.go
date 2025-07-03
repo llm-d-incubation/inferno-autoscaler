@@ -18,8 +18,14 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
 
+	"github.com/prometheus/common/expfmt"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -84,4 +90,101 @@ func (c *Collector) CollectInventoryK8S(ctx context.Context) (map[string]map[str
 		}
 	}
 	return inv, nil
+}
+
+type MetricKV struct {
+	Name   string
+	Labels map[string]string
+	Value  float64
+}
+
+func (r *OptimizerReconciler) fetchVLLMMetricsPerPod(ctx context.Context, modelName string, namespace string) (map[string][]MetricKV, error) {
+	labelSelector := labels.SelectorFromSet(map[string]string{
+		"model": modelName,
+	})
+
+	var podList corev1.PodList
+	if err := r.Client.List(ctx, &podList, &client.ListOptions{
+		Namespace:     namespace,
+		LabelSelector: labelSelector,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to list pods for model %s: %w", modelName, err)
+	}
+
+	results := make(map[string][]MetricKV)
+
+	for _, pod := range podList.Items {
+		if pod.Status.PodIP == "" || !isPodReady(&pod) {
+			continue
+		}
+
+		metricsURL := fmt.Sprintf("http://%s:8000/metrics", pod.Status.PodIP)
+		req, err := http.NewRequestWithContext(ctx, "GET", metricsURL, nil)
+		if err != nil {
+			logf.Log.Error(err, "get failed", "details")
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			logf.Log.Error(err, "send req failed", "details")
+		}
+
+		logf.Log.Info("data", "resp", resp.Body)
+
+		bodyBytes, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil {
+			continue
+		}
+
+		parser := expfmt.TextParser{}
+		metricFamilies, err := parser.TextToMetricFamilies(strings.NewReader(string(bodyBytes)))
+		if err != nil {
+			continue
+		}
+
+		var podMetrics []MetricKV
+		for name, family := range metricFamilies {
+			if !strings.HasPrefix(name, "vllm:") {
+				continue
+			}
+
+			for _, m := range family.Metric {
+				val := 0.0
+				switch {
+				case m.Gauge != nil:
+					val = m.Gauge.GetValue()
+				case m.Counter != nil:
+					val = m.Counter.GetValue()
+				default:
+					continue
+				}
+
+				labelMap := make(map[string]string)
+				for _, lp := range m.Label {
+					labelMap[lp.GetName()] = lp.GetValue()
+				}
+
+				podMetrics = append(podMetrics, MetricKV{
+					Name:   name,
+					Labels: labelMap,
+					Value:  val,
+				})
+			}
+		}
+
+		results[pod.Name] = podMetrics
+	}
+	logf.Log.Info("data", "metrics", results)
+	return results, nil
+}
+
+// Helper to check if pod is Ready
+func isPodReady(pod *corev1.Pod) bool {
+	for _, cond := range pod.Status.Conditions {
+		if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }

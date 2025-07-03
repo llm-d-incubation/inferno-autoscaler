@@ -10,7 +10,9 @@ rules:
   - configmaps
   verbs:
   - get
+  - list
   - update
+  - watch
 - apiGroups:
   - ""
   resources:
@@ -23,14 +25,23 @@ rules:
   - update
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - apps
   resources:
   - deployments
   verbs:
   - get
   - list
+  - watch
 - apiGroups:
-  - llmd.llm-d.ai
+  - llmd.ai
   resources:
   - optimizers
   verbs:
@@ -42,13 +53,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - llmd.llm-d.ai
+  - llmd.ai
   resources:
   - optimizers/finalizers
   verbs:
   - update
 - apiGroups:
-  - llmd.llm-d.ai
+  - llmd.ai
   resources:
   - optimizers/status
   verbs:

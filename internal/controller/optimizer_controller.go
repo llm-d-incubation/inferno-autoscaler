@@ -45,13 +45,14 @@ type OptimizerReconciler struct {
 	stopTicker chan struct{}
 }
 
-// +kubebuilder:rbac:groups=llmd.llm-d.ai,resources=optimizers,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=llmd.llm-d.ai,resources=optimizers/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=llmd.llm-d.ai,resources=optimizers/finalizers,verbs=update
+// +kubebuilder:rbac:groups=llmd.ai,resources=optimizers,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=llmd.ai,resources=optimizers/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=llmd.ai,resources=optimizers/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups="",resources=nodes/status,verbs=get;list;update;patch;watch
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list
-// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;update
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;update;list;watch
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 
 const (
 	configMapName      = "inferno-optimizer-config"
@@ -117,6 +118,8 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	} else {
 		logger.Error(err, "failed to get cluster inventory")
 	}
+
+	r.fetchVLLMMetricsPerPod(ctx, "opt125m", "default")
 
 	return ctrl.Result{}, nil
 }
