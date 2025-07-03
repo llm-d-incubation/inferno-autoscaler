@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	llmdOptv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
@@ -137,12 +138,25 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	// Output of the Optimizer is then consumed by actuator to emit prometheus metrics or change replicas directly
 
-	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+	return ctrl.Result{}, nil
 
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *OptimizerReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+
+		for {
+			<-ticker.C
+			ctx := context.Background()
+
+			if _, err := r.Reconcile(ctx, ctrl.Request{}); err != nil {
+				log.Log.Error(err, "Periodic reconcile failed")
+			}
+		}
+	}()
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&llmdOptv1alpha1.Optimizer{}).
 		Named("optimizer").
