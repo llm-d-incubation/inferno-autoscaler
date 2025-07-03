@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -30,7 +31,6 @@ import (
 
 	llmdOptv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
@@ -42,11 +42,6 @@ type OptimizerReconciler struct {
 	mu         sync.Mutex
 	ticker     *time.Ticker
 	stopTicker chan struct{}
-}
-
-type AcceleratorModelInfo struct {
-	Count  int
-	Memory string
 }
 
 // +kubebuilder:rbac:groups=llmd.llm-d.ai,resources=optimizers,verbs=get;list;watch;create;update;patch;delete
@@ -71,6 +66,8 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		logger.Error(err, "unable to list Optimizer resources")
 		return ctrl.Result{}, err
 	}
+
+	logger.Info("reconciling")
 
 	groupedOptimizerObjsWithDeployment := make(map[string][]llmdOptv1alpha1.Optimizer)
 	groupOptimizerObjsWithoutDeployment := make(map[string][]llmdOptv1alpha1.Optimizer)
@@ -109,48 +106,18 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			}
 		}
 	}
-	var nodeList corev1.NodeList
 
-	if err := r.Client.List(ctx, &nodeList); err != nil {
-		logger.Error(err, "unable to list nodes")
-		return ctrl.Result{}, err
+	coll := NewCollector(r.Client)
+
+	newInventory, err := coll.CollectInventoryK8S(ctx)
+
+	if err == nil {
+		logger.Info("current inventory in the cluster", "capacity", newInventory)
+	} else {
+		logger.Error(err, "failed to get cluster inventory")
 	}
-
-	newInventory := make(map[string]map[string]AcceleratorModelInfo)
-
-	for _, node := range nodeList.Items {
-		nodeName := node.Name
-		labels := node.Labels
-		model, ok := labels["nvidia.com/gpu.product"]
-		if !ok {
-			continue
-		}
-		memory := labels["nvidia.com/gpu.memory"]
-		count := 0
-		if cap, ok := node.Status.Capacity["nvidia.com/gpu"]; ok {
-			count = int(cap.Value())
-		}
-		newInventory[nodeName] = make(map[string]AcceleratorModelInfo)
-		newInventory[nodeName][model] = AcceleratorModelInfo{
-			Count:  count,
-			Memory: memory,
-		}
-
-	}
-
-	logger.Info("current inventory in the cluster", "capacity", newInventory)
-
-	// call collector to path each optimizer object with accelarator, maxBatch and numReplicas
-	// acceleraotor and maxBatch are obtained from deployment labels, numReplicas is available from spec.
-
-	// Output of the collector is passed to Model Analyzer
-
-	// The result of Model Analyzer is then passed to the Optimizer
-
-	// Output of the Optimizer is then consumed by actuator to emit prometheus metrics or change replicas directly
 
 	return ctrl.Result{}, nil
-
 }
 
 // SetupWithManager sets up the controller with the Manager.
