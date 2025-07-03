@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -37,6 +38,10 @@ import (
 type OptimizerReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+
+	mu         sync.Mutex
+	ticker     *time.Ticker
+	stopTicker chan struct{}
 }
 
 type AcceleratorModelInfo struct {
@@ -50,6 +55,12 @@ type AcceleratorModelInfo struct {
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups="",resources=nodes/status,verbs=get;list;update;patch;watch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;update
+
+const (
+	configMapName      = "inferno-optimizer-config"
+	configMapNamespace = "default"
+)
 
 func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := logf.FromContext(ctx)
@@ -144,21 +155,90 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *OptimizerReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
-		defer ticker.Stop()
+	// Start watching ConfigMap and ticker logic
+	go r.watchAndRunLoop()
 
-		for {
-			<-ticker.C
-			ctx := context.Background()
-
-			if _, err := r.Reconcile(ctx, ctrl.Request{}); err != nil {
-				log.Log.Error(err, "Periodic reconcile failed")
-			}
-		}
-	}()
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&llmdOptv1alpha1.Optimizer{}).
 		Named("optimizer").
 		Complete(r)
+}
+
+func (r *OptimizerReconciler) watchAndRunLoop() {
+	var lastInterval string
+
+	for {
+		cm := &corev1.ConfigMap{}
+		err := r.Get(context.Background(), types.NamespacedName{
+			Name:      configMapName,
+			Namespace: configMapNamespace,
+		}, cm)
+		if err != nil {
+			log.Log.Error(err, "Unable to read optimization config")
+			time.Sleep(30 * time.Second)
+			continue
+		}
+
+		interval := cm.Data["GLOBAL_OPT_INTERVAL"]
+		trigger := cm.Data["GLOBAL_OPT_TRIGGER"]
+
+		// Handle manual trigger
+		if trigger == "true" {
+			log.Log.Info("Manual optimization trigger received")
+			_, err := r.Reconcile(context.Background(), ctrl.Request{})
+			if err != nil {
+				log.Log.Error(err, "Manual reconcile failed")
+			}
+
+			// Reset trigger in ConfigMap
+			cm.Data["GLOBAL_OPT_TRIGGER"] = "false"
+			if err := r.Update(context.Background(), cm); err != nil {
+				log.Log.Error(err, "Failed to reset GLOBAL_OPT_TRIGGER")
+			}
+		}
+
+		r.mu.Lock()
+		if interval != lastInterval {
+			// Stop previous ticker if any
+			if r.stopTicker != nil {
+				close(r.stopTicker)
+			}
+
+			if interval != "" {
+				d, err := time.ParseDuration(interval)
+				if err != nil {
+					log.Log.Error(err, "Invalid GLOBAL_OPT_INTERVAL")
+					r.mu.Unlock()
+					continue
+				}
+
+				r.stopTicker = make(chan struct{})
+				ticker := time.NewTicker(d)
+				r.ticker = ticker
+
+				go func(stopCh <-chan struct{}, tick <-chan time.Time) {
+					for {
+						select {
+						case <-tick:
+							_, err := r.Reconcile(context.Background(), ctrl.Request{})
+							if err != nil {
+								log.Log.Error(err, "Manual reconcile failed")
+							}
+						case <-stopCh:
+							return
+						}
+					}
+				}(r.stopTicker, ticker.C)
+
+				log.Log.Info("Started periodic optimization ticker", "interval", interval)
+			} else {
+				r.ticker = nil
+				log.Log.Info("GLOBAL_OPT_INTERVAL unset, disabling periodic optimization")
+			}
+			lastInterval = interval
+		}
+		r.mu.Unlock()
+
+		time.Sleep(10 * time.Second)
+	}
 }

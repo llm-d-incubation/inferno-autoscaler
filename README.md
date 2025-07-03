@@ -56,6 +56,12 @@ Make sure you have the proper permission to the registry if the above commands d
 make install
 ```
 
+**Install the configmap to run optimizer loop:**
+
+```sh
+kubectl apply -f deploy/ticker-configmap.yaml
+```
+
 **Deploy the Manager to the cluster with the image specified by `IMG`:**
 
 ```sh
@@ -76,7 +82,7 @@ kubectl apply -k samples/input_sample.yaml
 **Delete the instances (CRs) from the cluster:**
 
 ```sh
-kubectl delete -k config/samples/
+kubectl delete -f amples/input_sample.yaml
 ```
 
 **Delete the APIs(CRDs) from the cluster:**
