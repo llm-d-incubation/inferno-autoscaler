@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -52,14 +53,15 @@ type AcceleratorModelInfo struct {
 func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := logf.FromContext(ctx)
 
+	// each optimizer CR corresponds to a variant which spawns exactly one deployment.
 	var optimizerList llmdOptv1alpha1.OptimizerList
 	if err := r.List(ctx, &optimizerList); err != nil {
 		logger.Error(err, "unable to list Optimizer resources")
 		return ctrl.Result{}, err
 	}
 
-	groupedOptimizers := make(map[string][]llmdOptv1alpha1.Optimizer)
-	missingDeployments := make(map[string][]llmdOptv1alpha1.Optimizer)
+	groupedOptimizerObjsWithDeployment := make(map[string][]llmdOptv1alpha1.Optimizer)
+	groupOptimizerObjsWithoutDeployment := make(map[string][]llmdOptv1alpha1.Optimizer)
 
 	for _, opt := range optimizerList.Items {
 		modelName := opt.Labels["inference.optimization/modelName"]
@@ -76,7 +78,7 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}, &deploy)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
-				missingDeployments[modelName] = append(missingDeployments[modelName], opt)
+				groupOptimizerObjsWithoutDeployment[modelName] = append(groupOptimizerObjsWithoutDeployment[modelName], opt)
 				continue
 			}
 			logger.Error(err, "failed to get Deployment", "optimizer", opt.Name)
@@ -85,11 +87,11 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// at this point, the optimizer will optimize a variant
 		// grouping variants ie optimizer objects by modelfamily is not required.
 		// This will be explored when same inferencepool has multiple modelfamilies (eg: llama and granite).
-		groupedOptimizers[modelName] = append(groupedOptimizers[modelName], opt)
+		groupedOptimizerObjsWithDeployment[modelName] = append(groupedOptimizerObjsWithDeployment[modelName], opt)
 	}
 
-	if len(missingDeployments) > 0 {
-		for modelName, optimizers := range missingDeployments {
+	if len(groupOptimizerObjsWithoutDeployment) > 0 {
+		for modelName, optimizers := range groupOptimizerObjsWithoutDeployment {
 			for _, opt := range optimizers {
 				logger.Info("missing Deployment for Optimizer", "modelName", modelName, "optimizer", opt.Name)
 			}
@@ -126,7 +128,17 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	logger.Info("current inventory in the cluster", "capacity", newInventory)
 
-	return ctrl.Result{}, nil
+	// call collector to path each optimizer object with accelarator, maxBatch and numReplicas
+	// acceleraotor and maxBatch are obtained from deployment labels, numReplicas is available from spec.
+
+	// Output of the collector is passed to Model Analyzer
+
+	// The result of Model Analyzer is then passed to the Optimizer
+
+	// Output of the Optimizer is then consumed by actuator to emit prometheus metrics or change replicas directly
+
+	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+
 }
 
 // SetupWithManager sets up the controller with the Manager.
