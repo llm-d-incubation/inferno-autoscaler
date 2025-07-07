@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
@@ -205,10 +205,10 @@ func (r *OptimizerReconciler) watchAndRunLoop() {
 					}
 				}(r.stopTicker, ticker.C)
 
-				log.Log.Info("Started periodic optimization ticker", "interval", interval)
+				logf.Log.Info("Started periodic optimization ticker", "interval", interval)
 			} else {
 				r.ticker = nil
-				log.Log.Info("GLOBAL_OPT_INTERVAL unset, disabling periodic optimization")
+				logf.Log.Info("GLOBAL_OPT_INTERVAL unset, disabling periodic optimization")
 			}
 			lastInterval = interval
 		}
