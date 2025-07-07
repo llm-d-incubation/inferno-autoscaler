@@ -23,9 +23,10 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
 	"github.com/prometheus/common/expfmt"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -98,21 +99,18 @@ type MetricKV struct {
 	Value  float64
 }
 
-func (r *OptimizerReconciler) fetchVLLMMetricsPerPod(ctx context.Context, modelName string, namespace string) (map[string][]MetricKV, error) {
-	labelSelector := labels.SelectorFromSet(map[string]string{
-		"model": modelName,
-	})
+func (r *OptimizerReconciler) addMetricsToOptStatus(ctx context.Context, opt *v1alpha1.Optimizer, deployment appsv1.Deployment, newInventory map[string]map[string]AcceleratorModelInfo) error {
+	// Optimizer should be equal to deployment name
+	podList, err := r.listPodsByDeployment(ctx, deployment)
 
-	var podList corev1.PodList
-	if err := r.Client.List(ctx, &podList, &client.ListOptions{
-		Namespace:     namespace,
-		LabelSelector: labelSelector,
-	}); err != nil {
-		return nil, fmt.Errorf("failed to list pods for model %s: %w", modelName, err)
+	if err != nil {
+		return err
 	}
 
 	results := make(map[string][]MetricKV)
 
+	// TODO: deployment can have multiple pods
+	// how do we add per pod metrics to the system
 	for _, pod := range podList.Items {
 		if pod.Status.PodIP == "" || !isPodReady(&pod) {
 			continue
@@ -174,9 +172,31 @@ func (r *OptimizerReconciler) fetchVLLMMetricsPerPod(ctx context.Context, modelN
 		}
 
 		results[pod.Name] = podMetrics
+		if accelMap, ok := newInventory[pod.Spec.NodeName]; ok {
+			for accName, _ := range accelMap {
+				opt.Status.CurrentAlloc.Accelerator = accName
+				break // exit after first entry
+			}
+		}
+
+		opt.Status.CurrentAlloc.NumReplicas = int(*deployment.Spec.Replicas)
+		// TODO: how is cost calculated???
+		opt.Status.CurrentAlloc.Cost = 100
+
+		opt.Status.CurrentAlloc.ITLAverage = "100"
+
+		opt.Status.CurrentAlloc.MaxBatch = 1
+
+		opt.Status.CurrentAlloc.WaitAverage = "12"
+
+		opt.Status.CurrentAlloc.Load.ArrivalCOV = 1
+		opt.Status.CurrentAlloc.Load.ArrivalRate = 1
+		opt.Status.CurrentAlloc.Load.AvgLength = 1
+		opt.Status.CurrentAlloc.Load.ServiceCOV = 1
+
 	}
-	logf.Log.Info("data", "metrics", results)
-	return results, nil
+
+	return nil
 }
 
 // Helper to check if pod is Ready
@@ -187,4 +207,21 @@ func isPodReady(pod *corev1.Pod) bool {
 		}
 	}
 	return false
+}
+
+func (r *OptimizerReconciler) listPodsByDeployment(ctx context.Context, deployment appsv1.Deployment) (*corev1.PodList, error) {
+	// var deploy appsv1.Deployment
+	// if err := r.Client.Get(ctx, client.ObjectKey{Name: deploymentName, Namespace: namespace}, &deploy); err != nil {
+	// 	return nil, fmt.Errorf("failed to get deployment: %w", err)
+	// }
+
+	// Use the deployment's label selector to list pods
+	selector := client.MatchingLabels(deployment.Spec.Selector.MatchLabels)
+
+	podList := &corev1.PodList{}
+	if err := r.Client.List(ctx, podList, client.InNamespace(deployment.Namespace), selector); err != nil {
+		return nil, fmt.Errorf("failed to list pods: %w", err)
+	}
+
+	return podList, nil
 }

@@ -1,0 +1,289 @@
+{
+  "metrics": {
+    "vllm-opt125m-deployment-vllm-57cc4cddb8-xjchm": [
+      {
+        "Name": "vllm:e2e_request_latency_seconds_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.848804
+      },
+      {
+        "Name": "vllm:request_params_n_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.848498
+      },
+      {
+        "Name": "vllm:gpu_prefix_cache_hits_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.847717
+      },
+      {
+        "Name": "vllm:request_generation_tokens_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.8480692
+      },
+      {
+        "Name": "vllm:request_max_num_generation_tokens_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.848424
+      },
+      {
+        "Name": "vllm:request_inference_time_seconds_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.8489597
+      },
+      {
+        "Name": "vllm:gpu_prefix_cache_queries_total",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 0
+      },
+      {
+        "Name": "vllm:iteration_tokens_total_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.8481336
+      },
+      {
+        "Name": "vllm:generation_tokens_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.8477938
+      },
+      {
+        "Name": "vllm:request_success_total",
+        "Labels": {
+          "engine": "0",
+          "finished_reason": "stop",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 0
+      },
+      {
+        "Name": "vllm:request_success_total",
+        "Labels": {
+          "engine": "0",
+          "finished_reason": "length",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 0
+      },
+      {
+        "Name": "vllm:request_success_total",
+        "Labels": {
+          "engine": "0",
+          "finished_reason": "abort",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 0
+      },
+      {
+        "Name": "vllm:request_decode_time_seconds_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.8491101
+      },
+      {
+        "Name": "vllm:gpu_prefix_cache_hits_total",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 0
+      },
+      {
+        "Name": "vllm:num_preemptions_total",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 0
+      },
+      {
+        "Name": "vllm:request_prefill_time_seconds_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.8490357
+      },
+      {
+        "Name": "vllm:num_requests_waiting",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 0
+      },
+      {
+        "Name": "vllm:gpu_cache_usage_perc",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 0
+      },
+      {
+        "Name": "vllm:time_to_first_token_seconds_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.848614
+      },
+      {
+        "Name": "vllm:time_per_output_token_seconds_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.8487253
+      },
+      {
+        "Name": "vllm:prompt_tokens_total",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 0
+      },
+      {
+        "Name": "vllm:prompt_tokens_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.847768
+      },
+      {
+        "Name": "vllm:cache_config_info",
+        "Labels": {
+          "block_size": "16",
+          "cache_dtype": "auto",
+          "calculate_kv_scales": "False",
+          "cpu_offload_gb": "0.0",
+          "enable_prefix_caching": "True",
+          "engine": "0",
+          "gpu_memory_utilization": "0.9",
+          "is_attention_free": "False",
+          "num_cpu_blocks": "None",
+          "num_gpu_blocks": "63593",
+          "num_gpu_blocks_override": "None",
+          "prefix_caching_hash_algo": "builtin",
+          "sliding_window": "None",
+          "swap_space": "4.0",
+          "swap_space_bytes": "4294967296.0"
+        },
+        "Value": 1
+      },
+      {
+        "Name": "vllm:num_requests_running",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 0
+      },
+      {
+        "Name": "vllm:request_queue_time_seconds_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.8488834
+      },
+      {
+        "Name": "vllm:request_params_max_tokens_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.8485537
+      },
+      {
+        "Name": "vllm:request_prompt_tokens_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.847957
+      },
+      {
+        "Name": "vllm:num_preemptions_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.8477442
+      },
+      {
+        "Name": "vllm:request_success_created",
+        "Labels": {
+          "engine": "0",
+          "finished_reason": "stop",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.8478458
+      },
+      {
+        "Name": "vllm:request_success_created",
+        "Labels": {
+          "engine": "0",
+          "finished_reason": "length",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.8478625
+      },
+      {
+        "Name": "vllm:request_success_created",
+        "Labels": {
+          "engine": "0",
+          "finished_reason": "abort",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.8478768
+      },
+      {
+        "Name": "vllm:generation_tokens_total",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 0
+      },
+      {
+        "Name": "vllm:gpu_prefix_cache_queries_created",
+        "Labels": {
+          "engine": "0",
+          "model_name": "facebook/opt-125m"
+        },
+        "Value": 1751829590.8476853
+      }
+    ]
+  }
+}

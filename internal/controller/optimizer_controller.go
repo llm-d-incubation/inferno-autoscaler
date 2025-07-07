@@ -69,10 +69,15 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("reconciling")
+	coll := NewCollector(r.Client)
 
-	groupedOptimizerObjsWithDeployment := make(map[string][]llmdOptv1alpha1.Optimizer)
-	groupOptimizerObjsWithoutDeployment := make(map[string][]llmdOptv1alpha1.Optimizer)
+	newInventory, err := coll.CollectInventoryK8S(ctx)
+
+	if err == nil {
+		logger.Info("current inventory in the cluster", "capacity", newInventory)
+	} else {
+		logger.Error(err, "failed to get cluster inventory")
+	}
 
 	for _, opt := range optimizerList.Items {
 		modelName := opt.Labels["inference.optimization/modelName"]
@@ -89,37 +94,30 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}, &deploy)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
-				groupOptimizerObjsWithoutDeployment[modelName] = append(groupOptimizerObjsWithoutDeployment[modelName], opt)
 				continue
 			}
 			logger.Error(err, "failed to get Deployment", "optimizer", opt.Name)
 			return ctrl.Result{}, err
 		}
-		// at this point, the optimizer will optimize a variant
-		// grouping variants ie optimizer objects by modelfamily is not required.
-		// This will be explored when same inferencepool has multiple modelfamilies (eg: llama and granite).
-		groupedOptimizerObjsWithDeployment[modelName] = append(groupedOptimizerObjsWithDeployment[modelName], opt)
-	}
 
-	if len(groupOptimizerObjsWithoutDeployment) > 0 {
-		for modelName, optimizers := range groupOptimizerObjsWithoutDeployment {
-			for _, opt := range optimizers {
-				logger.Info("missing Deployment for Optimizer", "modelName", modelName, "optimizer", opt.Name)
-			}
+		var updateOpt llmdOptv1alpha1.Optimizer
+		if err := r.Get(ctx, client.ObjectKey{Name: deploy.Name, Namespace: deploy.Namespace}, &updateOpt); err != nil {
+			logger.Error(err, "unable to get Optimizer")
+		}
+
+		original := updateOpt.DeepCopy()
+
+		err = r.addMetricsToOptStatus(ctx, &updateOpt, deploy, newInventory)
+
+		if err != nil {
+			logger.Error(err, "unable to fetch metrics, skipping this optimizer loop")
+			return ctrl.Result{}, nil
+		}
+		patch := client.MergeFrom(original.DeepCopy())
+		if err := r.Client.Patch(ctx, &updateOpt, patch); err != nil {
+			logger.Error(err, "failed to patch status")
 		}
 	}
-
-	coll := NewCollector(r.Client)
-
-	newInventory, err := coll.CollectInventoryK8S(ctx)
-
-	if err == nil {
-		logger.Info("current inventory in the cluster", "capacity", newInventory)
-	} else {
-		logger.Error(err, "failed to get cluster inventory")
-	}
-
-	r.fetchVLLMMetricsPerPod(ctx, "opt125m", "default")
 
 	return ctrl.Result{}, nil
 }
@@ -151,7 +149,7 @@ func (r *OptimizerReconciler) watchAndRunLoop() {
 			Namespace: configMapNamespace,
 		}, cm)
 		if err != nil {
-			log.Log.Error(err, "Unable to read optimization config")
+			logf.Log.Error(err, "Unable to read optimization config")
 			time.Sleep(30 * time.Second)
 			continue
 		}
@@ -161,16 +159,16 @@ func (r *OptimizerReconciler) watchAndRunLoop() {
 
 		// Handle manual trigger
 		if trigger == "true" {
-			log.Log.Info("Manual optimization trigger received")
+			logf.Log.Info("Manual optimization trigger received")
 			_, err := r.Reconcile(context.Background(), ctrl.Request{})
 			if err != nil {
-				log.Log.Error(err, "Manual reconcile failed")
+				logf.Log.Error(err, "Manual reconcile failed")
 			}
 
 			// Reset trigger in ConfigMap
 			cm.Data["GLOBAL_OPT_TRIGGER"] = "false"
 			if err := r.Update(context.Background(), cm); err != nil {
-				log.Log.Error(err, "Failed to reset GLOBAL_OPT_TRIGGER")
+				logf.Log.Error(err, "Failed to reset GLOBAL_OPT_TRIGGER")
 			}
 		}
 
@@ -184,7 +182,7 @@ func (r *OptimizerReconciler) watchAndRunLoop() {
 			if interval != "" {
 				d, err := time.ParseDuration(interval)
 				if err != nil {
-					log.Log.Error(err, "Invalid GLOBAL_OPT_INTERVAL")
+					logf.Log.Error(err, "Invalid GLOBAL_OPT_INTERVAL")
 					r.mu.Unlock()
 					continue
 				}
@@ -199,7 +197,7 @@ func (r *OptimizerReconciler) watchAndRunLoop() {
 						case <-tick:
 							_, err := r.Reconcile(context.Background(), ctrl.Request{})
 							if err != nil {
-								log.Log.Error(err, "Manual reconcile failed")
+								logf.Log.Error(err, "Manual reconcile failed")
 							}
 						case <-stopCh:
 							return
