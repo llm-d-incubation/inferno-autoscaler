@@ -30,7 +30,6 @@ spec:
     type: RollingUpdate
   template:
     metadata:
-      creationTimestamp: null
       labels:
         environment: test
         helm-release-name: vllm

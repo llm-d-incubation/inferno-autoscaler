@@ -19,12 +19,11 @@ package controller
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
+	"math"
+	"time"
 
 	"github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
-	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -99,129 +98,59 @@ type MetricKV struct {
 	Value  float64
 }
 
-func (r *OptimizerReconciler) addMetricsToOptStatus(ctx context.Context, opt *v1alpha1.Optimizer, deployment appsv1.Deployment, newInventory map[string]map[string]AcceleratorModelInfo) error {
-	// Optimizer should be equal to deployment name
-	podList, err := r.listPodsByDeployment(ctx, deployment)
-
-	if err != nil {
-		return err
+func (r *OptimizerReconciler) addMetricsToOptStatus(ctx context.Context, opt *v1alpha1.Optimizer, deployment appsv1.Deployment) error {
+	logger := logf.FromContext(ctx)
+	deployNamespace := deployment.Namespace
+	modelName := opt.Labels["inference.optimization/modelName"]
+	// Setup Prometheus client
+	// Query 1: Arrival rate (requests per minute)
+	arrivalQuery := fmt.Sprintf(`sum(rate(vllm:requests_count_total{model_name="%s",namespace="%s"}[1m])) * 60`, modelName, deployNamespace)
+	arrivalVal := 0.0
+	if val, warn, err := r.PromAPI.Query(ctx, arrivalQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+		vec := val.(model.Vector)
+		if len(vec) > 0 {
+			arrivalVal = float64(vec[0].Value)
+		}
+		if warn != nil {
+			logger.Info("Prometheus warnings", "warnings", warn)
+		}
+	} else {
+		logger.Error(err, "failed to query Prometheus arrival rate")
 	}
 
-	results := make(map[string][]MetricKV)
-
-	// TODO: deployment can have multiple pods
-	// how do we add per pod metrics to the system
-	for _, pod := range podList.Items {
-		if pod.Status.PodIP == "" || !isPodReady(&pod) {
-			continue
+	// Query 2: Average token length
+	tokenQuery := fmt.Sprintf(`delta(vllm:tokens_count_total{model_name="%s",namespace="%s"}[1m])/delta(vllm:requests_count_total{model_name="%s",namespace="%s"}[1m])`, modelName, deployNamespace, modelName, deployNamespace)
+	avgLen := 0.0
+	if val, _, err := r.PromAPI.Query(ctx, tokenQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+		vec := val.(model.Vector)
+		if len(vec) > 0 {
+			avgLen = float64(vec[0].Value)
 		}
-
-		metricsURL := fmt.Sprintf("http://%s:8000/metrics", pod.Status.PodIP)
-		req, err := http.NewRequestWithContext(ctx, "GET", metricsURL, nil)
-		if err != nil {
-			logf.Log.Error(err, "get failed", "details")
-		}
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			logf.Log.Error(err, "send req failed", "details")
-		}
-
-		logf.Log.Info("data", "resp", resp.Body)
-
-		bodyBytes, err := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		if err != nil {
-			continue
-		}
-
-		parser := expfmt.TextParser{}
-		metricFamilies, err := parser.TextToMetricFamilies(strings.NewReader(string(bodyBytes)))
-		if err != nil {
-			continue
-		}
-
-		var podMetrics []MetricKV
-		for name, family := range metricFamilies {
-			if !strings.HasPrefix(name, "vllm:") {
-				continue
-			}
-
-			for _, m := range family.Metric {
-				val := 0.0
-				switch {
-				case m.Gauge != nil:
-					val = m.Gauge.GetValue()
-				case m.Counter != nil:
-					val = m.Counter.GetValue()
-				default:
-					continue
-				}
-
-				labelMap := make(map[string]string)
-				for _, lp := range m.Label {
-					labelMap[lp.GetName()] = lp.GetValue()
-				}
-
-				podMetrics = append(podMetrics, MetricKV{
-					Name:   name,
-					Labels: labelMap,
-					Value:  val,
-				})
-			}
-		}
-
-		results[pod.Name] = podMetrics
-		if accelMap, ok := newInventory[pod.Spec.NodeName]; ok {
-			for accName, _ := range accelMap {
-				opt.Status.CurrentAlloc.Accelerator = accName
-				break // exit after first entry
-			}
-		}
-
-		opt.Status.CurrentAlloc.NumReplicas = int(*deployment.Spec.Replicas)
-		// TODO: how is cost calculated???
-		opt.Status.CurrentAlloc.Cost = 100
-
-		opt.Status.CurrentAlloc.ITLAverage = "100"
-
-		opt.Status.CurrentAlloc.MaxBatch = 1
-
-		opt.Status.CurrentAlloc.WaitAverage = "12"
-
-		opt.Status.CurrentAlloc.Load.ArrivalCOV = 1
-		opt.Status.CurrentAlloc.Load.ArrivalRate = 1
-		opt.Status.CurrentAlloc.Load.AvgLength = 1
-		opt.Status.CurrentAlloc.Load.ServiceCOV = 1
-
+	} else {
+		logger.Error(err, "failed to query Prometheus average token length")
 	}
 
+	if math.IsNaN(avgLen) || math.IsInf(avgLen, 0) {
+		avgLen = 0
+	}
+
+	opt.Status.CurrentAlloc.NumReplicas = int(*deployment.Spec.Replicas)
+	if acc, ok := opt.Labels["inference.optimization/acceleratorName"]; ok {
+		opt.Status.CurrentAlloc.Accelerator = acc
+	} else {
+		logger.Info("acceleratorName label not found on deployment", "deployment", deployment.Name)
+	}
+	// TODO: how is cost calculated???
+	opt.Status.CurrentAlloc.Cost = 100
+
+	opt.Status.CurrentAlloc.ITLAverage = "100"
+	// TODO: extract max batch size from vllm config present
+	// present in the deployment
+	opt.Status.CurrentAlloc.MaxBatch = 256
+	opt.Status.CurrentAlloc.WaitAverage = "12"
+	opt.Status.CurrentAlloc.Load.ArrivalCOV = 1
+	opt.Status.CurrentAlloc.Load.ArrivalRate = int32(arrivalVal)
+	opt.Status.CurrentAlloc.Load.AvgLength = int32(avgLen)
+	opt.Status.CurrentAlloc.Load.ServiceCOV = 1
 	return nil
-}
-
-// Helper to check if pod is Ready
-func isPodReady(pod *corev1.Pod) bool {
-	for _, cond := range pod.Status.Conditions {
-		if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
-			return true
-		}
-	}
-	return false
-}
-
-func (r *OptimizerReconciler) listPodsByDeployment(ctx context.Context, deployment appsv1.Deployment) (*corev1.PodList, error) {
-	// var deploy appsv1.Deployment
-	// if err := r.Client.Get(ctx, client.ObjectKey{Name: deploymentName, Namespace: namespace}, &deploy); err != nil {
-	// 	return nil, fmt.Errorf("failed to get deployment: %w", err)
-	// }
-
-	// Use the deployment's label selector to list pods
-	selector := client.MatchingLabels(deployment.Spec.Selector.MatchLabels)
-
-	podList := &corev1.PodList{}
-	if err := r.Client.List(ctx, podList, client.InNamespace(deployment.Namespace), selector); err != nil {
-		return nil, fmt.Errorf("failed to list pods: %w", err)
-	}
-
-	return podList, nil
 }

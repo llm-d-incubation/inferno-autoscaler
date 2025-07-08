@@ -4,14 +4,15 @@ apiVersion: llmd.ai/v1alpha1
 kind: Optimizer
 metadata:
   # Unique name of the variant
-  name: vllm-opt125m-deployment-vllm
+  name: vllme-deployment 
   namespace: default
   labels:
-    inference.optimization/modelName: opt-125m
+    inference.optimization/modelName: default
+    inference.optimization/acceleratorName: A100
 # This is essentially static input to the optimizer
 spec:
   # OpenAI API compatible name of the model
-  modelID: facebook/opt-125m
+  modelID: default
   # Add SLOs in configmap, add reference to this per model data
   # to avoid duplication and Move to ISOs when available
   sloClassRef:

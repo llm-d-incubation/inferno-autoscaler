@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -31,6 +32,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	llmdOptv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	"github.com/prometheus/client_golang/api"
+	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
@@ -43,6 +46,8 @@ type OptimizerReconciler struct {
 	mu         sync.Mutex
 	ticker     *time.Ticker
 	stopTicker chan struct{}
+
+	PromAPI promv1.API
 }
 
 // +kubebuilder:rbac:groups=llmd.ai,resources=optimizers,verbs=get;list;watch;create;update;patch;delete
@@ -107,7 +112,7 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		original := updateOpt.DeepCopy()
 
-		err = r.addMetricsToOptStatus(ctx, &updateOpt, deploy, newInventory)
+		err = r.addMetricsToOptStatus(ctx, &updateOpt, deploy)
 
 		if err != nil {
 			logger.Error(err, "unable to fetch metrics, skipping this optimizer loop")
@@ -132,6 +137,15 @@ func (r *OptimizerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	})); err != nil {
 		return err
 	}
+
+	client, err := api.NewClient(api.Config{
+		Address: "http://prometheus-operated.default.svc.cluster.local:9090",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create prometheus client: %w", err)
+	}
+
+	r.PromAPI = promv1.NewAPI(client)
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&llmdOptv1alpha1.Optimizer{}).
