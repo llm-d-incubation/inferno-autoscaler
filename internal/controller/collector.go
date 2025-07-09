@@ -26,7 +26,6 @@ import (
 	"github.com/prometheus/common/model"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -36,33 +35,25 @@ type AcceleratorModelInfo struct {
 }
 
 // Collector holds the k8s client and discovers GPU inventory
-type Collector struct {
-	Client client.Client
-}
-
-// NewCollector returns an initialized Collector
-func NewCollector(c client.Client) *Collector {
-	return &Collector{Client: c}
-}
-
 var vendors = []string{
 	"nvidia.com",
 	"amd.com",
 	"intel.com",
 }
 
+const DEBUG = 4
+
 // CollectInventory lists all Nodes and builds a map[nodeName][model]→info.
 // It checks labels <vendor>/gpu.product, <vendor>/gpu.memory
 // and capacity <vendor>/gpu.
-func (c *Collector) CollectInventoryK8S(ctx context.Context) (map[string]map[string]AcceleratorModelInfo, error) {
+func (r *OptimizerReconciler) CollectInventoryK8S(ctx context.Context) (map[string]map[string]AcceleratorModelInfo, error) {
 	logger := logf.FromContext(ctx)
 
 	logger.Info("collecting inventory")
 
 	var nodeList corev1.NodeList
-	if err := c.Client.List(ctx, &nodeList); err != nil {
-		logger.Error(err, "unable to list nodes")
-		return nil, err
+	if err := r.Client.List(ctx, &nodeList); err != nil {
+		return nil, fmt.Errorf("failed to list nodes: %w", err)
 	}
 
 	inv := make(map[string]map[string]AcceleratorModelInfo)
@@ -85,7 +76,7 @@ func (c *Collector) CollectInventoryK8S(ctx context.Context) (map[string]map[str
 					Count:  count,
 					Memory: mem,
 				}
-				logger.Info("found inventory", "nodeName", nodeName, "model", model, "count", count, "mem", mem)
+				logger.V(DEBUG).Info("found inventory", "nodeName", nodeName, "model", model, "count", count, "mem", mem)
 			}
 		}
 	}

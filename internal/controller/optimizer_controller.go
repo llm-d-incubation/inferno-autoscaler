@@ -74,9 +74,7 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	coll := NewCollector(r.Client)
-
-	newInventory, err := coll.CollectInventoryK8S(ctx)
+	newInventory, err := r.CollectInventoryK8S(ctx)
 
 	if err == nil {
 		logger.Info("current inventory in the cluster", "capacity", newInventory)
