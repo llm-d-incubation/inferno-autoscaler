@@ -71,19 +71,8 @@ make deploy IMG=<some-registry>/inferno-autoscaler:tag
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
 privileges or be logged in as admin.
 
-**Create instances of your solution**
-You can apply the samples (examples) from the sample:
-
-```sh
-kubectl apply -k samples/input_sample.yaml
-```
 
 ### To Uninstall
-**Delete the instances (CRs) from the cluster:**
-
-```sh
-kubectl delete -f amples/input_sample.yaml
-```
 
 **Delete the APIs(CRDs) from the cluster:**
 
@@ -103,6 +92,82 @@ make undeploy
 kind delete cluster -n a100-cluster
 ```
 
+## Local development
+
+Local development will need emulated vllm server, prometheus installed in KinD cluster. 
+
+**Create namespace**
+
+```sh
+kubectl create ns monitoring
+```
+
+**Install prometheus**
+
+```sh
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack -n monitoring
+```
+
+**Wait for prometheus installation to complete**
+``sh
+kubectl apply -f samples/local-dev/prometheus-deploy-all-in-one.yaml
+kubectl get -n default prometheus prometheus -w
+kubectl get services
+
+NAME                  TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)    AGE
+prometheus-operated   ClusterIP   None         <none>        9090/TCP   17s
+
+``
+
+**Access the server**
+
+``sh
+kubectl port-forward svc/prometheus-operated 9090:9090
+# server can be accessed at location: http://localhost:9090
+``
+
+**Create vllm emulated deployment**
+
+``sh
+kubectl apply -f samples/local-dev/vllme-deployment-with-service-and-servicemon.yaml
+
+kubectl get deployments
+NAME               READY   UP-TO-DATE   AVAILABLE   AGE
+vllme-deployment   1/1     1            1           35s
+
+kubectl port-forward svc/vllme-service 8000:80
+``
+
+**Load generation**
+
+```sh
+git clone https://github.com/vishakha-ramani/vllm_emulator.git
+
+sh ./premium-llama-13b-loadgen.sh
+```
+
+**Run sample query**
+
+```sh
+curl -G http://localhost:9090/api/v1/query \
+     --data-urlencode 'query=sum(rate(vllm:requests_count_total[1m])) * 60'
+
+curl -G http://localhost:9090/api/v1/query \
+     --data-urlencode 'query=sum(rate(vllm:requests_count_total[1m])) * 60'
+{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1752075000.160,"9.333333333333332"]}]}}% 
+
+```
+
+**Accessing the Grafana**
+
+
+```sh
+# username:admin
+# password: prom-operator
+kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n monitoring
+```
 ## Project Distribution
 
 Following the options to release and provide this solution to the users.

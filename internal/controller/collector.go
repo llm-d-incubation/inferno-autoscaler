@@ -147,10 +147,7 @@ func (r *OptimizerReconciler) addMetricsToOptStatus(ctx context.Context, opt *v1
 	// TODO: extract max batch size from vllm config present
 	// present in the deployment
 	opt.Status.CurrentAlloc.MaxBatch = 256
-	opt.Status.CurrentAlloc.WaitAverage = "12"
-	opt.Status.CurrentAlloc.Load.ArrivalCOV = 1
 	opt.Status.CurrentAlloc.Load.ArrivalRate = int32(arrivalVal)
 	opt.Status.CurrentAlloc.Load.AvgLength = int32(avgLen)
-	opt.Status.CurrentAlloc.Load.ServiceCOV = 1
 	return nil
 }

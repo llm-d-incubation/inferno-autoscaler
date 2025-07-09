@@ -121,19 +121,11 @@ spec:
                     type: string
                   load:
                     properties:
-                      arrivalCOV:
-                        format: int32
-                        minimum: 0
-                        type: integer
                       arrivalRate:
                         format: int32
                         minimum: 0
                         type: integer
                       avgLength:
-                        format: int32
-                        minimum: 0
-                        type: integer
-                      serviceCOV:
                         format: int32
                         minimum: 0
                         type: integer
@@ -147,9 +139,6 @@ spec:
                   numReplicas:
                     minimum: 0
                     type: integer
-                  waitAverage:
-                    pattern: ^\d+(\.\d+)?$
-                    type: string
                 required:
                 - accelerator
                 - cost
@@ -157,7 +146,6 @@ spec:
                 - load
                 - maxBatch
                 - numReplicas
-                - waitAverage
                 type: object
               desiredOptimizedAlloc:
                 properties:
@@ -176,19 +164,11 @@ spec:
                     type: string
                   load:
                     properties:
-                      arrivalCOV:
-                        format: int32
-                        minimum: 0
-                        type: integer
                       arrivalRate:
                         format: int32
                         minimum: 0
                         type: integer
                       avgLength:
-                        format: int32
-                        minimum: 0
-                        type: integer
-                      serviceCOV:
                         format: int32
                         minimum: 0
                         type: integer

@@ -77,8 +77,8 @@ type Allocation struct {
 	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
 	ITLAverage string `json:"itlAverage"`
 
-	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
-	WaitAverage string `json:"waitAverage"`
+	// // +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
+	// WaitAverage string `json:"waitAverage"`
 
 	Load LoadProfile `json:"load"`
 }
@@ -89,12 +89,6 @@ type LoadProfile struct {
 
 	// +kubebuilder:validation:Minimum=0
 	AvgLength int32 `json:"avgLength"`
-
-	// +kubebuilder:validation:Minimum=0
-	ArrivalCOV int32 `json:"arrivalCOV,omitempty"`
-
-	// +kubebuilder:validation:Minimum=0
-	ServiceCOV int32 `json:"serviceCOV,omitempty"`
 }
 
 type OptimizedAlloc struct {
