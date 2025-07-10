@@ -10,17 +10,17 @@ import (
 type OptimizerEngine interface {
 	Optimize(
 		ctx context.Context,
-		spec llmdOptv1alpha1.OptimizerSpec,
-		analysis []ModelAnalyzeResponse,
+		va llmdOptv1alpha1.Optimizer,
+		analysis ModelAnalyzeResponse,
 		metrics MetricsSnapshot,
-	) (llmdOptv1alpha1.OptimizerStatus, error)
+	) (llmdOptv1alpha1.OptimizedAlloc, error)
 }
 
 // ModelAnalyzer defines the interface for model analysis.
 type ModelAnalyzer interface {
 	AnalyzeModel(
 		ctx context.Context,
-		spec llmdOptv1alpha1.OptimizerSpec,
+		va llmdOptv1alpha1.Optimizer,
 		metrics MetricsSnapshot,
 	) (*ModelAnalyzeResponse, error)
 }

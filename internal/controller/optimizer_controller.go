@@ -35,6 +35,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	llmdOptv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	interfaces "github.com/llm-d-incubation/inferno-autoscaler/internal/interfaces"
+	analyzer "github.com/llm-d-incubation/inferno-autoscaler/internal/modelanalyzer"
+	optimizer "github.com/llm-d-incubation/inferno-autoscaler/internal/optimizer"
 	"github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -139,6 +142,24 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			logger.Error(err, "unable to fetch metrics, skipping this optimizer loop")
 			return ctrl.Result{}, nil
 		}
+		dummyQps := 50.0
+		metrics := interfaces.MetricsSnapshot{
+			ActualQPS: dummyQps,
+		}
+		dummyAnalyzer := analyzer.NewSimplePrefillDecodeAnalyzer()
+		dummyModelAnalyzerResponse, err := dummyAnalyzer.AnalyzeModel(ctx, updateOpt, metrics)
+		if err != nil {
+			logger.Error(err, "unable to perform model optimization, skipping this optimizer loop")
+			return ctrl.Result{}, nil
+		}
+		logger.Info("response from model analyzer", "data", dummyModelAnalyzerResponse)
+		dummyOptimizer := optimizer.NewDummyOptimizerEngine()
+		optimizedAllocation, err := dummyOptimizer.Optimize(ctx, opt, *dummyModelAnalyzerResponse, metrics)
+		if err != nil {
+			logger.Error(err, "unable to perform model optimization, skipping this optimizer loop")
+			return ctrl.Result{}, nil
+		}
+		updateOpt.Status.DesiredOptimizedAlloc = optimizedAllocation
 		patch := client.MergeFrom(original.DeepCopy())
 		if err := r.Client.Patch(ctx, &updateOpt, patch); err != nil {
 			logger.Error(err, "failed to patch status")
