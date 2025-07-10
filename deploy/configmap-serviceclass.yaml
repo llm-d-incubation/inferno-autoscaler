@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service-classes-config
+  namespace: default
+data:
+  premium.yaml: |
+    name: Premium
+    priority: 1
+    data:
+      - model: default
+        slo-itl: 40
+        slo-ttw: 500
+      - model: llama0-70b
+        slo-itl: 80
+        slo-ttw: 500
+  freemium.yaml: |
+    name: Freemium
+    priority: 10
+    data:
+      - model: granite-13b
+        slo-itl: 200
+        slo-ttw: 2000
+      - model: llama0-7b
+        slo-itl: 150
+        slo-ttw: 1500

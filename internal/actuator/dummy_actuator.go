@@ -1,0 +1,51 @@
+package controller
+
+import (
+	"context"
+	"fmt"
+
+	llmdOptv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+type DummyActuator struct {
+	Client client.Client
+}
+
+func NewDummyActuator(k8sClient client.Client) *DummyActuator {
+	return &DummyActuator{Client: k8sClient}
+}
+
+func (a *DummyActuator) ApplyReplicaTargets(ctx context.Context, optimizer *llmdOptv1alpha1.Optimizer) error {
+	desired := optimizer.Status.DesiredOptimizedAlloc
+
+	fmt.Printf("[DummyActuator] ApplyReplicaTargets - Model: %s, Accelerator: %s, TargetReplicas: %d\n",
+		optimizer.Spec.ModelID,
+		desired.Accelerator,
+		desired.NumReplicas,
+	)
+
+	var deploy appsv1.Deployment
+	err := a.Client.Get(ctx, types.NamespacedName{
+		Name:      optimizer.Name,
+		Namespace: optimizer.Namespace,
+	}, &deploy)
+	if err != nil {
+		return fmt.Errorf("failed to get Deployment %s/%s: %w", optimizer.Namespace, optimizer.Name, err)
+	}
+
+	// Patch replicas field
+	original := deploy.DeepCopy()
+	replicas := int32(desired.NumReplicas)
+	deploy.Spec.Replicas = &replicas
+
+	patch := client.MergeFrom(original)
+	if err := a.Client.Patch(ctx, &deploy, patch); err != nil {
+		return fmt.Errorf("failed to patch Deployment %s: %w", deploy.Name, err)
+	}
+
+	fmt.Printf("[DummyActuator] Patched Deployment %s to %d replicas\n", deploy.Name, replicas)
+	return nil
+}

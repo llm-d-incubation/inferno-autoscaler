@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllme-deployment
+  # labels:
+  #   inferno.server.managed: "true"
+  #   inferno.server.name: vllm-001
+  #   inferno.server.model: llama_13b
+  #   inferno.server.class: Premium
+  #   inferno.server.allocation.accelerator: MI250
+  #   inferno.server.allocation.maxbatchsize: "8"
+  #   inferno.server.load.rpm: "30.2"
+  #   inferno.server.load.numtokens: "1560"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllme
+  template:
+    metadata:
+      labels:
+        app: vllme
+    spec:
+      containers:
+      - name: vllme
+        image: quay.io/amalvank/vllme:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllme-service
+  labels:
+    app: vllme
+spec:
+  selector:
+    app: vllme  
+  ports:
+    - name: vllme
+      port: 80
+      protocol: TCP
+      targetPort: 80
+      nodePort: 30000
+  type: NodePort
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vllme-servicemonitor
+  labels:
+    app: vllme
+spec:
+  selector:
+    matchLabels:
+      app: vllme
+  endpoints:
+  - port: vllme
+    path: /metrics
+    interval: 15s
+  namespaceSelector:
+    any: true
+---

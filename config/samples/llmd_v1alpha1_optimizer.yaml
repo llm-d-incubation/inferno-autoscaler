@@ -1,0 +1,9 @@
+apiVersion: llmd.llm-d.ai/v1alpha1
+kind: Optimizer
+metadata:
+  labels:
+    app.kubernetes.io/name: inferno-autoscaler
+    app.kubernetes.io/managed-by: kustomize
+  name: optimizer-sample
+spec:
+  # TODO(user): Add fields here

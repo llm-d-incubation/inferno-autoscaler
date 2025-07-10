@@ -1,155 +1,238 @@
-# Inference system optimizer
+# inferno-autoscaler
+The inferno-autoscaler assigns GPU types to inference model servers and decides on the number of replicas for each model for a given request traffic load and classes of service, as well as the batch size.
 
-The inference system optimizer assigns GPU types to inference model servers and decides on the number of replicas for each model for a given request traffic load and classes of service, as well as the batch size. ([slides](docs/slides/inferno-dynamic.pdf))
+## Description
 
-## Building
+The inferno-autoscaler is a Kubernetes controller that performs optimizated autoscaling using the below components:
 
-```bash
-docker build -t  inferno . --load
+![Diagram](docs/diagrams/inferno-WVA-design.png)
+
+Reconciler:
+
+The controller is implemented using the controller-runtime framework, which reconciles the namespace-scoped Optimizer objects created by the platform administrator, one per model.Due to runtime variability in model behavior (e.g., differences in prompt lengths, output sizes, or server-level contention), we treat model analysis as a continuously reconciled step during every autoscaler loop.
+
+Collector(s):
+The collectors that gather cluster data about the cluster state and the state of vllm servers running inside the controller.
+
+Actuator:
+The actuator is responsible for emitting metrics to the desired sources, like Prometheus, or changing replicas of existing deployments running on the cluster, which is the case with the Inferno autoscaler.
+
+Model Analyzer:
+Model Analyzer is a component that runs per model to perform scaling, estimation, prediction, and tuning.
+
+Proposed sources:
+These include the new [API proposal](https://docs.google.com/document/d/1j2KRAT68_FYxq1iVzG0xVL-DHQhGVUZBqiM22Hd_0hc/edit?usp=drivesdk&resourcekey=0-5cSovS8QcRQNYXj0_kRMiw), which is expected to work in conjunction with the inference scheduler (EPP) to provide insights into the request scheduler's dispatching logic.
+
+For more details please refer to the community proposal [here](https://docs.google.com/document/d/1n6SAhloQaoSyF2k3EveIOerT-f97HuWXTLFm07xcvqk/edit?tab=t.0).
+
+## Getting Started
+
+### Prerequisites
+- go version v1.23.0+
+- docker version 17.03+.
+- kubectl version v1.11.3+.
+- Access to a Kubernetes v1.11.3+ cluster.
+
+### Create cluster with fake GPUs
+
+```sh
+bash deploy/local-cluster.sh
 ```
 
-## Prerequisites
+### To Deploy on the cluster
+**Build and push your image to the location specified by `IMG`:**
 
-- lp_solve Mixed Integer Linear Programming (MILP) solver
-
-  [Installation instructions and code](https://github.com/llm-inferno/lpsolve)
-  
-- IBM CPLEX (optional)
-
-  Information and instructions [IBM CPLEX as a solver](https://github.com/llm-inferno/lpsolve/tree/main/cplex)
-
-## Running
-
-First, install [prerequisites](#prerequisites) if running locally (not using an image).
-
-### I. Optimizer only
-
-There are two ways to run the optimizer.
-
-1. **Direct function calls**: An example is provided in [main.go](demos/main/main.go).
-
-    ```bash
-    cd demos/main
-    go run main.go
-    ```
-
-2. **REST API server**: The optimizer may run as a REST API server ([steps](#steps-to-run-the-optimizer-as-a-rest-api-server)).
-
-### II. Optimized auto-scaler
-
-One may run the optimizer as part of an auto-scaling control system, in one of two ways.
-
-1. **Kubernetes controller**: Running in a Kubernetes cluster and using custom resources and a Kubernetes runtime controller, the optimizer may be excercised in reconciliation to updates to the Optimizer custom resource ([reference](https://github.com/llm-inferno/controller)).
-
-2. **Optimization control loop**: The control loop comprises (1) a Collector to get data about the inference servers through Prometheus and server deployments, (2) an Optimizer to make decisions, (3) an Actuator to realize such decisions by updating server deployments, and (4) a periodic Controller that has access to static and dynamic data. The [control loop](https://github.com/llm-inferno/control-loop) may run either externally or in a Kubernetes cluster.
-
-### Steps to run the optimizer as a REST API server
-
-The REST API specifications are [documented](rest-server/README.md).
-
-Clone this repository and set environment variable `INFERNO_REPO` to the path to it.
-
-#### Option A: Run externally
-
-```bash
-cd $INFERNO_REPO/cmd/optimizer
-go run main.go [-F]
+```sh
+make docker-build docker-push IMG=<some-registry>/inferno-autoscaler:tag
 ```
 
-The default is to run the server in **Stateless** mode. Use the optional `-F` argument to run in **Statefull** mode. ([Description of modes](rest-server/README.md#rest-server-modes))
+**NOTE:** This image ought to be published in the personal registry you specified.
+And it is required to have access to pull the image from the working environment.
+Make sure you have the proper permission to the registry if the above commands don’t work.
 
-You may then curl [API commands](rest-server/README.md#commands-list) to `http://localhost:8080`.
+**Install the CRDs into the cluster:**
 
-#### Option B: Run in cluster
+```sh
+make install
+```
 
-- Deploy optimizer as a deployment, along with a service on port `80`, in name space `inferno` in the cluster. (The deployment yaml file starts the server in a container with the `-F` flag.)
+**Install the configmap to run optimizer loop:**
 
-    ```bash
-    cd $INFERNO_REPO/manifests/yamls
-    kubectl apply -f deploy-optimizer.yaml
-    ```
+```sh
+kubectl apply -f deploy/ticker-configmap.yaml
+```
 
-- Forward port to local host.
+**Deploy the Manager to the cluster with the image specified by `IMG`:**
 
-    ```bash
-    kubectl port-forward service/inferno-optimizer -n inferno 8080:80
-    ```
+```sh
+make deploy IMG=<some-registry>/inferno-autoscaler:tag
+```
 
-    You may then curl API commands (above) to `http://localhost:8080`.
+> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
+privileges or be logged in as admin.
 
-- (Optional) Inspect logs.
 
-    ```bash
-    POD=$(kubectl get pod -l app=inferno-optimizer -n inferno -o jsonpath="{.items[0].metadata.name}")
-    kubectl logs -f $POD -n inferno 
-    ```
+### To Uninstall
 
-- Cleanup.
+**Delete the APIs(CRDs) from the cluster:**
 
-    ```bash
-    kubectl delete -f deploy-optimizer.yaml
-    ```
+```sh
+make uninstall
+```
 
-## Detailed description of the optimizer
+**UnDeploy the controller from the cluster:**
 
-![problem-scope](docs/figs/Slide5.png)
+```sh
+make undeploy
+```
 
-![timing-definitions](docs/figs/Slide30.png)
+**Delete cluster**
 
-![request-batching](docs/figs/Slide6.png)
+```sh
+kind delete cluster -n a100-cluster
+```
 
-![token-time-fitting](docs/figs/Slide7.png)
+## Local development
 
-![modeling-batching](docs/figs/Slide9.png)
+Local development will need emulated vllm server, prometheus installed in KinD cluster. 
 
-![qn-model](docs/figs/Slide8.png)
+**Create namespace**
 
-![system-occupancy](docs/figs/Slide32.png)
+```sh
+kubectl create ns monitoring
+```
 
-![impact-batch](docs/figs/Slide33.png)
+**Install prometheus**
 
-![target-service](docs/figs/Slide34.png)
+```sh
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack -n monitoring
+```
 
-Decision variables
+**Wait for prometheus installation to complete**
+``sh
+kubectl apply -f samples/local-dev/prometheus-deploy-all-in-one.yaml
+kubectl get -n default prometheus prometheus -w
+kubectl get services
 
-For each pair of (class of service, model):
+NAME                  TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)    AGE
+prometheus-operated   ClusterIP   None         <none>        9090/TCP   17s
 
-- gpuProfile: the GPU type allocated
-- numReplicas: the number of replicas
-- batchSize: the batch size, given continuous batching
+``
 
-## Specifications: Accelerators and models
+**Access the server**
 
-![accelerators](docs/figs/Slide13.png)
+``sh
+kubectl port-forward svc/prometheus-operated 9090:9090
+# server can be accessed at location: http://localhost:9090
+``
 
-![models](docs/figs/Slide14.png)
+**Create vllm emulated deployment**
 
-## Example 1: Unlimited accelerators
+``sh
+kubectl apply -f samples/local-dev/vllme-deployment-with-service-and-servicemon.yaml
 
-![unlimited-assign](docs/figs/Slide16.png)
+kubectl get deployments
+NAME               READY   UP-TO-DATE   AVAILABLE   AGE
+vllme-deployment   1/1     1            1           35s
 
-![unlimited-perf](docs/figs/Slide17.png)
+kubectl port-forward svc/vllme-service 8000:80
+``
 
-## Example 2: Load change - Unlimited accelerators
+**Load generation**
 
-![unlimited-change-assign](docs/figs/Slide19.png)
+```sh
+git clone https://github.com/vishakha-ramani/vllm_emulator.git -b new-metric
 
-![unlimited-change](docs/figs/Slide20.png)
+sh ./loadgen.sh
+```
 
-![unlimited-change-perf](docs/figs/Slide21.png)
+**Run sample query**
 
-## Example 3: Limited accelerators
+```sh
+curl -G http://localhost:9090/api/v1/query \
+     --data-urlencode 'query=sum(rate(vllm:requests_count_total[1m])) * 60'
 
-![limited-count](docs/figs/Slide22.png)
+curl -G http://localhost:9090/api/v1/query \
+     --data-urlencode 'query=sum(rate(vllm:requests_count_total[1m])) * 60'
+{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1752075000.160,"9.333333333333332"]}]}}% 
 
-![limited-assign](docs/figs/Slide23.png)
+```
 
-![limited-perf](docs/figs/Slide24.png)
+**Accessing the Grafana**
 
-## Example 4: Load change - Limited accelerators
 
-![limited-change-assign](docs/figs/Slide26.png)
+```sh
+# username:admin
+# password: prom-operator
+kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n monitoring
+```
+## Project Distribution
 
-![limited-change](docs/figs/Slide27.png)
+Following the options to release and provide this solution to the users.
 
-![limited-change-perf](docs/figs/Slide28.png)
+### By providing a bundle with all YAML files
+
+1. Build the installer for the image built and published in the registry:
+
+```sh
+make build-installer IMG=<some-registry>/inferno-autoscaler:tag
+```
+
+**NOTE:** The makefile target mentioned above generates an 'install.yaml'
+file in the dist directory. This file contains all the resources built
+with Kustomize, which are necessary to install this project without its
+dependencies.
+
+2. Using the installer
+
+Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
+the project, i.e.:
+
+```sh
+kubectl apply -f https://raw.githubusercontent.com/<org>/inferno-autoscaler/<tag or branch>/dist/install.yaml
+```
+
+### By providing a Helm Chart
+
+1. Build the chart using the optional helm plugin
+
+```sh
+kubebuilder edit --plugins=helm/v1-alpha
+```
+
+2. See that a chart was generated under 'dist/chart', and users
+can obtain this solution from there.
+
+**NOTE:** If you change the project, you need to update the Helm Chart
+using the same command above to sync the latest changes. Furthermore,
+if you create webhooks, you need to use the above command with
+the '--force' flag and manually ensure that any custom configuration
+previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
+is manually re-applied afterwards.
+
+## Contributing
+
+Please join llmd autoscaling community meetings and feel free to submit github issues and PRs. 
+
+**NOTE:** Run `make help` for more information on all potential `make` targets
+
+More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+
+## License
+
+Copyright 2025.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+

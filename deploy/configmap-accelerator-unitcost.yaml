@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: accelerator-unit-costs
+  namespace: default
+data:
+  A100: "1.23"
+  L4: "0.42"
+  H100: "2.50"
