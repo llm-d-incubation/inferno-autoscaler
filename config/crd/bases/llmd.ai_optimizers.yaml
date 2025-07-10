@@ -113,22 +113,15 @@ spec:
                   accelerator:
                     minLength: 1
                     type: string
-                  cost:
-                    minimum: 0
-                    type: integer
                   itlAverage:
                     pattern: ^\d+(\.\d+)?$
                     type: string
                   load:
                     properties:
                       arrivalRate:
-                        format: int32
-                        minimum: 0
-                        type: integer
+                        type: string
                       avgLength:
-                        format: int32
-                        minimum: 0
-                        type: integer
+                        type: string
                     required:
                     - arrivalRate
                     - avgLength
@@ -139,60 +132,35 @@ spec:
                   numReplicas:
                     minimum: 0
                     type: integer
+                  variantCost:
+                    pattern: ^\d+(\.\d+)?$
+                    type: string
+                  waitAverage:
+                    pattern: ^\d+(\.\d+)?$
+                    type: string
                 required:
                 - accelerator
-                - cost
                 - itlAverage
                 - load
                 - maxBatch
                 - numReplicas
+                - variantCost
+                - waitAverage
                 type: object
               desiredOptimizedAlloc:
                 properties:
                   accelerator:
                     minLength: 2
                     type: string
-                  cost:
-                    format: int32
-                    minimum: 0
-                    type: integer
-                  itlAverage:
-                    pattern: ^\d+(\.\d+)?$
-                    type: string
                   lastRunTime:
                     format: date-time
                     type: string
-                  load:
-                    properties:
-                      arrivalRate:
-                        format: int32
-                        minimum: 0
-                        type: integer
-                      avgLength:
-                        format: int32
-                        minimum: 0
-                        type: integer
-                    required:
-                    - arrivalRate
-                    - avgLength
-                    type: object
-                  maxBatch:
-                    minimum: 0
-                    type: integer
                   numReplicas:
                     minimum: 0
                     type: integer
-                  waitAverage:
-                    pattern: ^\d+(\.\d+)?$
-                    type: string
                 required:
                 - accelerator
-                - cost
-                - itlAverage
-                - load
-                - maxBatch
                 - numReplicas
-                - waitAverage
                 type: object
             type: object
         type: object

@@ -71,24 +71,22 @@ type Allocation struct {
 	// +kubebuilder:validation:Minimum=0
 	MaxBatch int `json:"maxBatch"`
 
-	// +kubebuilder:validation:Minimum=0
-	Cost int `json:"cost"`
+	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
+	VariantCost string `json:"variantCost"`
 
 	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
 	ITLAverage string `json:"itlAverage"`
 
-	// // +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
-	// WaitAverage string `json:"waitAverage"`
+	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
+	WaitAverage string `json:"waitAverage"`
 
 	Load LoadProfile `json:"load"`
 }
 
 type LoadProfile struct {
-	// +kubebuilder:validation:Minimum=0
-	ArrivalRate int32 `json:"arrivalRate"`
+	ArrivalRate string `json:"arrivalRate"`
 
-	// +kubebuilder:validation:Minimum=0
-	AvgLength int32 `json:"avgLength"`
+	AvgLength string `json:"avgLength"`
 }
 
 type OptimizedAlloc struct {
@@ -99,20 +97,6 @@ type OptimizedAlloc struct {
 
 	// +kubebuilder:validation:Minimum=0
 	NumReplicas int `json:"numReplicas"`
-
-	// +kubebuilder:validation:Minimum=0
-	MaxBatch int `json:"maxBatch"`
-
-	// +kubebuilder:validation:Minimum=0
-	Cost int32 `json:"cost"`
-
-	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
-	ITLAverage string `json:"itlAverage"`
-
-	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
-	WaitAverage string `json:"waitAverage"`
-
-	Load LoadProfile `json:"load"`
 }
 
 type ActuationStatus struct {

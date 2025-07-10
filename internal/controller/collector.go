@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
@@ -89,7 +90,7 @@ type MetricKV struct {
 	Value  float64
 }
 
-func (r *OptimizerReconciler) addMetricsToOptStatus(ctx context.Context, opt *v1alpha1.Optimizer, deployment appsv1.Deployment) error {
+func (r *OptimizerReconciler) addMetricsToOptStatus(ctx context.Context, opt *v1alpha1.Optimizer, deployment appsv1.Deployment, acceleratorCostVal float64) error {
 	logger := logf.FromContext(ctx)
 	deployNamespace := deployment.Namespace
 	modelName := opt.Labels["inference.optimization/modelName"]
@@ -125,20 +126,32 @@ func (r *OptimizerReconciler) addMetricsToOptStatus(ctx context.Context, opt *v1
 		avgLen = 0
 	}
 
+	waitQuery := fmt.Sprintf(`sum(rate(vllm:request_queue_time_seconds_sum{model_name="%s",namespace="%s"}[1m]))/sum(rate(vllm:request_queue_time_seconds_count{model_name="%s",namespace="%s"}[1m]))`, modelName, deployNamespace, modelName, deployNamespace)
+	waitAverageTime := 0.0
+	if val, _, err := r.PromAPI.Query(ctx, waitQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+		vec := val.(model.Vector)
+		if len(vec) > 0 {
+			waitAverageTime = float64(vec[0].Value)
+		}
+	} else {
+		logger.Error(err, "failed to query Prometheus average token length")
+	}
+
 	opt.Status.CurrentAlloc.NumReplicas = int(*deployment.Spec.Replicas)
 	if acc, ok := opt.Labels["inference.optimization/acceleratorName"]; ok {
 		opt.Status.CurrentAlloc.Accelerator = acc
 	} else {
 		logger.Info("acceleratorName label not found on deployment", "deployment", deployment.Name)
 	}
-	// TODO: how is cost calculated???
-	opt.Status.CurrentAlloc.Cost = 100
-
-	opt.Status.CurrentAlloc.ITLAverage = "100"
+	opt.Status.CurrentAlloc.WaitAverage = strconv.FormatFloat(float64(waitAverageTime), 'f', 2, 32)
+	opt.Status.CurrentAlloc.ITLAverage = "50"
 	// TODO: extract max batch size from vllm config present
 	// present in the deployment
 	opt.Status.CurrentAlloc.MaxBatch = 256
-	opt.Status.CurrentAlloc.Load.ArrivalRate = int32(arrivalVal)
-	opt.Status.CurrentAlloc.Load.AvgLength = int32(avgLen)
+	opt.Status.CurrentAlloc.Load.ArrivalRate = strconv.FormatFloat(float64(arrivalVal), 'f', 2, 32)
+	opt.Status.CurrentAlloc.Load.AvgLength = strconv.FormatFloat(float64(avgLen), 'f', 2, 32)
+	// TODO read configmap and adjust this value
+	discoveredCost := float64(*deployment.Spec.Replicas) * acceleratorCostVal
+	opt.Status.CurrentAlloc.VariantCost = strconv.FormatFloat(float64(discoveredCost), 'f', 2, 32)
 	return nil
 }

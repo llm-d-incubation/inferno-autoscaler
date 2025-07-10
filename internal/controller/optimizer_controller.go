@@ -19,14 +19,17 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -67,6 +70,18 @@ const (
 func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := logf.FromContext(ctx)
 
+	serviceClassCm, err := r.readServiceClassConfig(ctx, "service-classes-config", "default")
+	if err != nil {
+		log.Log.Error(err, "unable to read serviceclass configmap, skipping optimiziing")
+		return ctrl.Result{}, nil
+	}
+
+	logger.Info("got service class", "data", serviceClassCm)
+
+	acceleratorUnitCostCm, err := r.readServiceClassConfig(ctx, "accelerator-unit-costs", "default")
+
+	logger.Info("got accelerator unit cost", "data", acceleratorUnitCostCm)
+
 	// each optimizer CR corresponds to a variant which spawns exactly one deployment.
 	var optimizerList llmdOptv1alpha1.OptimizerList
 	if err := r.List(ctx, &optimizerList); err != nil {
@@ -85,13 +100,21 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	for _, opt := range optimizerList.Items {
 		modelName := opt.Labels["inference.optimization/modelName"]
 		if modelName == "" {
-			logger.Info("optimizer missing modelName label, skipping", "name", opt.Name)
-			continue
+			logger.Info("optimizer missing modelName label, skipping optimization", "name", opt.Name)
+			return ctrl.Result{}, err
 		}
 
+		acceleratorCostVal, ok := acceleratorUnitCostCm["A100"]
+		if !ok {
+			logger.Info("optimizer missing accelerator cost in configmap, skipping optimization", "name", opt.Name)
+		}
+		acceleratorCostValFloat, err := strconv.ParseFloat(acceleratorCostVal, 32)
+		if err != nil {
+			logger.Info("optimizer unable to parse accelerator cost in configmap, skipping optimization", "name", opt.Name)
+		}
 		// Check if Deployment exists for this Optimizer
 		var deploy appsv1.Deployment
-		err := r.Get(ctx, types.NamespacedName{
+		err = r.Get(ctx, types.NamespacedName{
 			Name:      opt.Name,
 			Namespace: opt.Namespace,
 		}, &deploy)
@@ -110,7 +133,7 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		original := updateOpt.DeepCopy()
 
-		err = r.addMetricsToOptStatus(ctx, &updateOpt, deploy)
+		err = r.addMetricsToOptStatus(ctx, &updateOpt, deploy, acceleratorCostValFloat)
 
 		if err != nil {
 			logger.Error(err, "unable to fetch metrics, skipping this optimizer loop")
@@ -228,4 +251,37 @@ func (r *OptimizerReconciler) watchAndRunLoop() {
 
 		time.Sleep(10 * time.Second)
 	}
+}
+
+func (r *OptimizerReconciler) readServiceClassConfig(ctx context.Context, cmName, cmNamespace string) (map[string]string, error) {
+	logger := log.FromContext(ctx)
+
+	var cm corev1.ConfigMap
+	backoff := wait.Backoff{
+		Duration: 100 * time.Millisecond,
+		Factor:   2.0,
+		Jitter:   0.1,
+		Steps:    5,
+	}
+
+	err := wait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
+		err := r.Get(ctx, client.ObjectKey{Name: cmName, Namespace: cmNamespace}, &cm)
+		if err == nil {
+			return true, nil // success
+		}
+
+		if apierrors.IsNotFound(err) {
+			logger.Error(err, "ConfigMap not found, will not retry", "name", cmName, "namespace", cmNamespace)
+			return false, err // permanent failure: don't retry
+		}
+
+		logger.Error(err, "Transient error fetching ConfigMap, retrying...")
+		return false, nil // transient error: retry
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to read ConfigMap %s/%s: %w", cmNamespace, cmName, err)
+	}
+
+	return cm.Data, nil
 }
