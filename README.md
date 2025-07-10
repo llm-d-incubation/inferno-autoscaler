@@ -143,9 +143,9 @@ kubectl port-forward svc/vllme-service 8000:80
 **Load generation**
 
 ```sh
-git clone https://github.com/vishakha-ramani/vllm_emulator.git
+git clone https://github.com/vishakha-ramani/vllm_emulator.git -b new-metric
 
-sh ./premium-llama-13b-loadgen.sh
+sh ./loadgen.sh
 ```
 
 **Run sample query**
