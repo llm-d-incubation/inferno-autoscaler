@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	llmdOptv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	actuator "github.com/llm-d-incubation/inferno-autoscaler/internal/actuator"
 	interfaces "github.com/llm-d-incubation/inferno-autoscaler/internal/interfaces"
 	analyzer "github.com/llm-d-incubation/inferno-autoscaler/internal/modelanalyzer"
 	optimizer "github.com/llm-d-incubation/inferno-autoscaler/internal/optimizer"
@@ -62,9 +63,8 @@ type OptimizerReconciler struct {
 // +kubebuilder:rbac:groups=llmd.ai,resources=optimizers/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups="",resources=nodes/status,verbs=get;list;update;patch;watch
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;update;list;watch
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 
 const (
 	configMapName      = "inferno-optimizer-config"
@@ -182,6 +182,11 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		patch := client.MergeFrom(original.DeepCopy())
 		if err := r.Client.Patch(ctx, &updateOpt, patch); err != nil {
 			logger.Error(err, "failed to patch status")
+		}
+		dummyActuator := actuator.NewDummyActuator(r.Client)
+		err = dummyActuator.ApplyReplicaTargets(ctx, &opt)
+		if err != nil {
+			logger.Error(err, "unable to change replicas", "deployment", deploy.Name)
 		}
 	}
 
