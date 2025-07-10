@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -70,6 +71,18 @@ const (
 	configMapNamespace = "default"
 )
 
+type ServiceClassEntry struct {
+	Model  string `yaml:"model"`
+	SLOITL int    `yaml:"slo-itl"`
+	SLOTTW int    `yaml:"slo-ttw"`
+}
+
+type ServiceClass struct {
+	Name     string              `yaml:"name"`
+	Priority int                 `yaml:"priority"`
+	Data     []ServiceClassEntry `yaml:"data"`
+}
+
 func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := logf.FromContext(ctx)
 
@@ -78,8 +91,6 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		log.Log.Error(err, "unable to read serviceclass configmap, skipping optimiziing")
 		return ctrl.Result{}, nil
 	}
-
-	logger.Info("got service class", "data", serviceClassCm)
 
 	acceleratorUnitCostCm, err := r.readServiceClassConfig(ctx, "accelerator-unit-costs", "default")
 
@@ -106,6 +117,14 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			logger.Info("optimizer missing modelName label, skipping optimization", "name", opt.Name)
 			return ctrl.Result{}, err
 		}
+
+		entry, className, err := findModelSLO(serviceClassCm, modelName)
+		if err != nil {
+			logger.Error(err, "failed to locate SLO for model")
+			return ctrl.Result{}, nil
+		}
+
+		logger.Info("Found SLO", "model", entry.Model, "class", className, "slo-itl", entry.SLOITL, "slo-ttw", entry.SLOTTW)
 
 		acceleratorCostVal, ok := acceleratorUnitCostCm["A100"]
 		if !ok {
@@ -288,16 +307,16 @@ func (r *OptimizerReconciler) readServiceClassConfig(ctx context.Context, cmName
 	err := wait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
 		err := r.Get(ctx, client.ObjectKey{Name: cmName, Namespace: cmNamespace}, &cm)
 		if err == nil {
-			return true, nil // success
+			return true, nil
 		}
 
 		if apierrors.IsNotFound(err) {
 			logger.Error(err, "ConfigMap not found, will not retry", "name", cmName, "namespace", cmNamespace)
-			return false, err // permanent failure: don't retry
+			return false, err
 		}
 
 		logger.Error(err, "Transient error fetching ConfigMap, retrying...")
-		return false, nil // transient error: retry
+		return false, nil
 	})
 
 	if err != nil {
@@ -305,4 +324,20 @@ func (r *OptimizerReconciler) readServiceClassConfig(ctx context.Context, cmName
 	}
 
 	return cm.Data, nil
+}
+
+func findModelSLO(cmData map[string]string, targetModel string) (*ServiceClassEntry, string /* class name */, error) {
+	for key, val := range cmData {
+		var sc ServiceClass
+		if err := yaml.Unmarshal([]byte(val), &sc); err != nil {
+			return nil, "", fmt.Errorf("failed to parse %s: %w", key, err)
+		}
+
+		for _, entry := range sc.Data {
+			if entry.Model == targetModel {
+				return &entry, sc.Name, nil
+			}
+		}
+	}
+	return nil, "", fmt.Errorf("model %q not found in any service class", targetModel)
 }

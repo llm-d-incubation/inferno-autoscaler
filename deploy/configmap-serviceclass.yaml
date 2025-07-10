@@ -8,7 +8,7 @@ data:
     name: Premium
     priority: 1
     data:
-      - model: granite-13b
+      - model: default
         slo-itl: 40
         slo-ttw: 500
       - model: llama0-70b
@@ -18,7 +18,7 @@ data:
     name: Freemium
     priority: 10
     data:
-      - model: tinymistral
+      - model: granite-13b
         slo-itl: 200
         slo-ttw: 2000
       - model: llama0-7b
