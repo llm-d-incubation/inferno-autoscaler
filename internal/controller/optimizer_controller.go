@@ -44,6 +44,7 @@ import (
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // OptimizerReconciler reconciles a Optimizer object
@@ -93,8 +94,6 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	acceleratorUnitCostCm, err := r.readServiceClassConfig(ctx, "accelerator-unit-costs", "default")
-
-	logger.Info("got accelerator unit cost", "data", acceleratorUnitCostCm)
 
 	// each optimizer CR corresponds to a variant which spawns exactly one deployment.
 	var optimizerList llmdOptv1alpha1.OptimizerList
@@ -154,6 +153,18 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		original := updateOpt.DeepCopy()
+
+		// Add OwnerReference if not already set
+		if !metav1.IsControlledBy(&updateOpt, &deploy) {
+			updateOpt.OwnerReferences = append(updateOpt.OwnerReferences, metav1.OwnerReference{
+				APIVersion:         deploy.APIVersion,
+				Kind:               deploy.Kind,
+				Name:               deploy.Name,
+				UID:                deploy.UID,
+				Controller:         ptr(true),
+				BlockOwnerDeletion: ptr(true),
+			})
+		}
 
 		err = r.addMetricsToOptStatus(ctx, &updateOpt, deploy, acceleratorCostValFloat)
 
@@ -345,4 +356,8 @@ func findModelSLO(cmData map[string]string, targetModel string) (*ServiceClassEn
 		}
 	}
 	return nil, "", fmt.Errorf("model %q not found in any service class", targetModel)
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }
