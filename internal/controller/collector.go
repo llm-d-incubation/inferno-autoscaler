@@ -47,7 +47,7 @@ const DEBUG = 4
 // CollectInventory lists all Nodes and builds a map[nodeName][model]→info.
 // It checks labels <vendor>/gpu.product, <vendor>/gpu.memory
 // and capacity <vendor>/gpu.
-func (r *OptimizerReconciler) CollectInventoryK8S(ctx context.Context) (map[string]map[string]AcceleratorModelInfo, error) {
+func (r *VariantAutoscalingReconciler) CollectInventoryK8S(ctx context.Context) (map[string]map[string]AcceleratorModelInfo, error) {
 	logger := logf.FromContext(ctx)
 
 	logger.Info("collecting inventory")
@@ -90,7 +90,7 @@ type MetricKV struct {
 	Value  float64
 }
 
-func (r *OptimizerReconciler) addMetricsToOptStatus(ctx context.Context, opt *v1alpha1.Optimizer, deployment appsv1.Deployment, acceleratorCostVal float64) error {
+func (r *VariantAutoscalingReconciler) addMetricsToOptStatus(ctx context.Context, opt *v1alpha1.VariantAutoscaling, deployment appsv1.Deployment, acceleratorCostVal float64) error {
 	logger := logf.FromContext(ctx)
 	deployNamespace := deployment.Namespace
 	modelName := opt.Labels["inference.optimization/modelName"]

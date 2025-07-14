@@ -27,10 +27,10 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	llmdv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
 )
 
-var _ = Describe("Optimizer Controller", func() {
+var _ = Describe("VariantAutoscalings Controller", func() {
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
 
@@ -40,13 +40,13 @@ var _ = Describe("Optimizer Controller", func() {
 			Name:      resourceName,
 			Namespace: "default",
 		}
-		optimizer := &llmdv1alpha1.Optimizer{}
+		VariantAutoscalings := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{}
 
 		BeforeEach(func() {
-			By("creating the custom resource for the Kind Optimizer")
-			err := k8sClient.Get(ctx, typeNamespacedName, optimizer)
+			By("creating the custom resource for the Kind VariantAutoscalings")
+			err := k8sClient.Get(ctx, typeNamespacedName, VariantAutoscalings)
 			if err != nil && errors.IsNotFound(err) {
-				resource := &llmdv1alpha1.Optimizer{
+				resource := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
 						Namespace: "default",
@@ -59,16 +59,16 @@ var _ = Describe("Optimizer Controller", func() {
 
 		AfterEach(func() {
 			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &llmdv1alpha1.Optimizer{}
+			resource := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Cleanup the specific resource instance Optimizer")
+			By("Cleanup the specific resource instance VariantAutoscalings")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-			controllerReconciler := &OptimizerReconciler{
+			controllerReconciler := &VariantAutoscalingReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}

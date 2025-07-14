@@ -35,11 +35,11 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	llmdOptv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
 	actuator "github.com/llm-d-incubation/inferno-autoscaler/internal/actuator"
 	interfaces "github.com/llm-d-incubation/inferno-autoscaler/internal/interfaces"
 	analyzer "github.com/llm-d-incubation/inferno-autoscaler/internal/modelanalyzer"
-	optimizer "github.com/llm-d-incubation/inferno-autoscaler/internal/optimizer"
+	variantAutoscalingOptimizer "github.com/llm-d-incubation/inferno-autoscaler/internal/optimizer"
 	"github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -47,8 +47,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// OptimizerReconciler reconciles a Optimizer object
-type OptimizerReconciler struct {
+// VariantAutoscalingReconciler reconciles a variantAutoscaling object
+type VariantAutoscalingReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 
@@ -59,16 +59,16 @@ type OptimizerReconciler struct {
 	PromAPI promv1.API
 }
 
-// +kubebuilder:rbac:groups=llmd.ai,resources=optimizers,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=llmd.ai,resources=optimizers/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=llmd.ai,resources=optimizers/finalizers,verbs=update
+// +kubebuilder:rbac:groups=llmd.ai,resources=variantautoscalings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=llmd.ai,resources=variantautoscalings/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=llmd.ai,resources=variantautoscalings/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups="",resources=nodes/status,verbs=get;list;update;patch;watch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;update;list;watch
 
 const (
-	configMapName      = "inferno-optimizer-config"
+	configMapName      = "inferno-variantautoscaling-config"
 	configMapNamespace = "default"
 )
 
@@ -84,7 +84,7 @@ type ServiceClass struct {
 	Data     []ServiceClassEntry `yaml:"data"`
 }
 
-func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := logf.FromContext(ctx)
 
 	serviceClassCm, err := r.readServiceClassConfig(ctx, "service-classes-config", "default")
@@ -95,10 +95,10 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	acceleratorUnitCostCm, err := r.readServiceClassConfig(ctx, "accelerator-unit-costs", "default")
 
-	// each optimizer CR corresponds to a variant which spawns exactly one deployment.
-	var optimizerList llmdOptv1alpha1.OptimizerList
-	if err := r.List(ctx, &optimizerList); err != nil {
-		logger.Error(err, "unable to list Optimizer resources")
+	// each variantAutoscaling CR corresponds to a variant which spawns exactly one deployment.
+	var variantAutoscalingList llmdVariantAutoscalingV1alpha1.VariantAutoscalingList
+	if err := r.List(ctx, &variantAutoscalingList); err != nil {
+		logger.Error(err, "unable to list variantAutoscaling resources")
 		return ctrl.Result{}, err
 	}
 
@@ -110,10 +110,10 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		logger.Error(err, "failed to get cluster inventory")
 	}
 
-	for _, opt := range optimizerList.Items {
+	for _, opt := range variantAutoscalingList.Items {
 		modelName := opt.Labels["inference.optimization/modelName"]
 		if modelName == "" {
-			logger.Info("optimizer missing modelName label, skipping optimization", "name", opt.Name)
+			logger.Info("variantAutoscaling missing modelName label, skipping optimization", "name", opt.Name)
 			return ctrl.Result{}, err
 		}
 
@@ -127,13 +127,13 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		acceleratorCostVal, ok := acceleratorUnitCostCm["A100"]
 		if !ok {
-			logger.Info("optimizer missing accelerator cost in configmap, skipping optimization", "name", opt.Name)
+			logger.Info("variantAutoscaling missing accelerator cost in configmap, skipping optimization", "name", opt.Name)
 		}
 		acceleratorCostValFloat, err := strconv.ParseFloat(acceleratorCostVal, 32)
 		if err != nil {
-			logger.Info("optimizer unable to parse accelerator cost in configmap, skipping optimization", "name", opt.Name)
+			logger.Info("variantAutoscaling unable to parse accelerator cost in configmap, skipping optimization", "name", opt.Name)
 		}
-		// Check if Deployment exists for this Optimizer
+		// Check if Deployment exists for this variantAutoscaling
 		var deploy appsv1.Deployment
 		err = r.Get(ctx, types.NamespacedName{
 			Name:      opt.Name,
@@ -143,13 +143,13 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			if apierrors.IsNotFound(err) {
 				continue
 			}
-			logger.Error(err, "failed to get Deployment", "optimizer", opt.Name)
+			logger.Error(err, "failed to get Deployment", "variantAutoscaling", opt.Name)
 			return ctrl.Result{}, err
 		}
 
-		var updateOpt llmdOptv1alpha1.Optimizer
+		var updateOpt llmdVariantAutoscalingV1alpha1.VariantAutoscaling
 		if err := r.Get(ctx, client.ObjectKey{Name: deploy.Name, Namespace: deploy.Namespace}, &updateOpt); err != nil {
-			logger.Error(err, "unable to get Optimizer")
+			logger.Error(err, "unable to get variantAutoscaling")
 		}
 
 		original := updateOpt.DeepCopy()
@@ -169,7 +169,7 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		err = r.addMetricsToOptStatus(ctx, &updateOpt, deploy, acceleratorCostValFloat)
 
 		if err != nil {
-			logger.Error(err, "unable to fetch metrics, skipping this optimizer loop")
+			logger.Error(err, "unable to fetch metrics, skipping this variantAutoscaling loop")
 			return ctrl.Result{}, nil
 		}
 		dummyQps := 50.0
@@ -179,14 +179,14 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		dummyAnalyzer := analyzer.NewSimplePrefillDecodeAnalyzer()
 		dummyModelAnalyzerResponse, err := dummyAnalyzer.AnalyzeModel(ctx, updateOpt, metrics)
 		if err != nil {
-			logger.Error(err, "unable to perform model optimization, skipping this optimizer loop")
+			logger.Error(err, "unable to perform model optimization, skipping this variantAutoscaling loop")
 			return ctrl.Result{}, nil
 		}
 		logger.Info("response from model analyzer", "data", dummyModelAnalyzerResponse)
-		dummyOptimizer := optimizer.NewDummyOptimizerEngine()
-		optimizedAllocation, err := dummyOptimizer.Optimize(ctx, opt, *dummyModelAnalyzerResponse, metrics)
+		dummyvariantAutoscaling := variantAutoscalingOptimizer.NewDummyVariantAutoscalingsEngine()
+		optimizedAllocation, err := dummyvariantAutoscaling.Optimize(ctx, opt, *dummyModelAnalyzerResponse, metrics)
 		if err != nil {
-			logger.Error(err, "unable to perform model optimization, skipping this optimizer loop")
+			logger.Error(err, "unable to perform model optimization, skipping this variantAutoscaling loop")
 			return ctrl.Result{}, nil
 		}
 		updateOpt.Status.DesiredOptimizedAlloc = optimizedAllocation
@@ -205,7 +205,7 @@ func (r *OptimizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *OptimizerReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Start watching ConfigMap and ticker logic
 	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
 		<-mgr.Elected() // Wait for leader election
@@ -225,12 +225,12 @@ func (r *OptimizerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.PromAPI = promv1.NewAPI(client)
 
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&llmdOptv1alpha1.Optimizer{}).
-		Named("optimizer").
+		For(&llmdVariantAutoscalingV1alpha1.VariantAutoscaling{}).
+		Named("variantAutoscaling").
 		Complete(r)
 }
 
-func (r *OptimizerReconciler) watchAndRunLoop() {
+func (r *VariantAutoscalingReconciler) watchAndRunLoop() {
 	var lastInterval string
 
 	for {
@@ -309,7 +309,7 @@ func (r *OptimizerReconciler) watchAndRunLoop() {
 	}
 }
 
-func (r *OptimizerReconciler) readServiceClassConfig(ctx context.Context, cmName, cmNamespace string) (map[string]string, error) {
+func (r *VariantAutoscalingReconciler) readServiceClassConfig(ctx context.Context, cmName, cmNamespace string) (map[string]string, error) {
 	logger := log.FromContext(ctx)
 
 	var cm corev1.ConfigMap

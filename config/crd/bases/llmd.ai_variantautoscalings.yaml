@@ -4,14 +4,14 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.2
-  name: optimizers.llmd.ai
+  name: variantautoscalings.llmd.ai
 spec:
   group: llmd.ai
   names:
-    kind: Optimizer
-    listKind: OptimizerList
-    plural: optimizers
-    singular: optimizer
+    kind: VariantAutoscaling
+    listKind: VariantAutoscalingList
+    plural: variantautoscalings
+    singular: variantautoscaling
   scope: Namespaced
   versions:
   - name: v1alpha1

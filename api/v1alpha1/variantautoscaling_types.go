@@ -14,7 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type OptimizerSpec struct {
+type VariantAutoscalingSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	ModelID string `json:"modelID"`
 
@@ -55,7 +55,7 @@ type AcceleratorProfile struct {
 	AtTokens int `json:"atTokens"`
 }
 
-type OptimizerStatus struct {
+type VariantAutoscalingStatus struct {
 	CurrentAlloc          Allocation      `json:"currentAlloc,omitempty"`
 	DesiredOptimizedAlloc OptimizedAlloc  `json:"desiredOptimizedAlloc,omitempty"`
 	Actuation             ActuationStatus `json:"actuation,omitempty"`
@@ -107,22 +107,22 @@ type ActuationStatus struct {
 
 // +kubebuilder:object:root=true
 
-type Optimizer struct {
+type VariantAutoscaling struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   OptimizerSpec   `json:"spec,omitempty"`
-	Status OptimizerStatus `json:"status,omitempty"`
+	Spec   VariantAutoscalingSpec   `json:"spec,omitempty"`
+	Status VariantAutoscalingStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-type OptimizerList struct {
+type VariantAutoscalingList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Optimizer `json:"items"`
+	Items           []VariantAutoscaling `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&Optimizer{}, &OptimizerList{})
+	SchemeBuilder.Register(&VariantAutoscaling{}, &VariantAutoscalingList{})
 }

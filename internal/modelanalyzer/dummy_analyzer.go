@@ -19,7 +19,7 @@ func NewSimplePrefillDecodeAnalyzer() *SimplePrefillDecodeAnalyzer {
 // AnalyzeModel calculates required prefill/decode QPS from ActualQPS.
 func (a *SimplePrefillDecodeAnalyzer) AnalyzeModel(
 	ctx context.Context,
-	spec llmdOptv1alpha1.Optimizer,
+	spec llmdOptv1alpha1.VariantAutoscaling,
 	metrics interfaces.MetricsSnapshot,
 ) (*interfaces.ModelAnalyzeResponse, error) {
 	// dummy traffic shape: 40% prefill, 60% decode

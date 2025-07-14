@@ -37,7 +37,7 @@ rules:
 - apiGroups:
   - llmd.ai
   resources:
-  - optimizers
+  - variantautoscalings
   verbs:
   - create
   - delete
@@ -49,13 +49,13 @@ rules:
 - apiGroups:
   - llmd.ai
   resources:
-  - optimizers/finalizers
+  - variantautoscalings/finalizers
   verbs:
   - update
 - apiGroups:
   - llmd.ai
   resources:
-  - optimizers/status
+  - variantautoscalings/status
   verbs:
   - get
   - patch

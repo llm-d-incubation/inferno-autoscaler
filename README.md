@@ -9,7 +9,7 @@ The inferno-autoscaler is a Kubernetes controller that performs optimizated auto
 
 Reconciler:
 
-The controller is implemented using the controller-runtime framework, which reconciles the namespace-scoped Optimizer objects created by the platform administrator, one per model.Due to runtime variability in model behavior (e.g., differences in prompt lengths, output sizes, or server-level contention), we treat model analysis as a continuously reconciled step during every autoscaler loop.
+The controller is implemented using the controller-runtime framework, which reconciles the namespace-scoped VariantAutoscaling objects created by the platform administrator, one per model.Due to runtime variability in model behavior (e.g., differences in prompt lengths, output sizes, or server-level contention), we treat model analysis as a continuously reconciled step during every autoscaler loop.
 
 Collector(s):
 The collectors that gather cluster data about the cluster state and the state of vllm servers running inside the controller.
@@ -66,6 +66,9 @@ kubectl apply -f deploy/ticker-configmap.yaml
 
 ```sh
 make deploy IMG=<some-registry>/inferno-autoscaler:tag
+
+# prebuilt image
+# make deploy IMG=quay.io/amalvank/inferno:latest
 ```
 
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
@@ -111,7 +114,7 @@ helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack -n
 ```
 
 **Wait for prometheus installation to complete**
-``sh
+```sh
 kubectl apply -f samples/local-dev/prometheus-deploy-all-in-one.yaml
 kubectl get -n default prometheus prometheus -w
 kubectl get services
@@ -119,18 +122,18 @@ kubectl get services
 NAME                  TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)    AGE
 prometheus-operated   ClusterIP   None         <none>        9090/TCP   17s
 
-``
+```
 
 **Access the server**
 
-``sh
+```sh
 kubectl port-forward svc/prometheus-operated 9090:9090
 # server can be accessed at location: http://localhost:9090
-``
+```
 
 **Create vllm emulated deployment**
 
-``sh
+```sh
 kubectl apply -f samples/local-dev/vllme-deployment-with-service-and-servicemon.yaml
 
 kubectl get deployments
@@ -138,14 +141,16 @@ NAME               READY   UP-TO-DATE   AVAILABLE   AGE
 vllme-deployment   1/1     1            1           35s
 
 kubectl port-forward svc/vllme-service 8000:80
-``
+```
 
 **Load generation**
 
 ```sh
 git clone https://github.com/vishakha-ramani/vllm_emulator.git -b new-metric
 
+#run script
 sh ./loadgen.sh
+
 ```
 
 **Run sample query**
@@ -167,6 +172,17 @@ curl -G http://localhost:9090/api/v1/query \
 # username:admin
 # password: prom-operator
 kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n monitoring
+```
+
+**Creating dummy workload**
+ ```sh
+ kubectl apply -f samples/local-dev/vllme-deployment-with-service-and-servicemon.yaml
+ ```
+**Creating variant autoscaling object for controller**
+```sh
+kubectl apply -f samples/local-dev/vllme-variantautoscaling.yaml
+
+# view status of the variant autoscaling object to get status of optimization
 ```
 ## Project Distribution
 

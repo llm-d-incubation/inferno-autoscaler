@@ -11,17 +11,17 @@ metadata:
   labels:
     app.kubernetes.io/name: inferno-autoscaler
     app.kubernetes.io/managed-by: kustomize
-  name: optimizer-admin-role
+  name: variantautoscaling-admin-role
 rules:
 - apiGroups:
   - llmd.llm-d.ai
   resources:
-  - optimizers
+  - VariantAutoscalingss
   verbs:
   - '*'
 - apiGroups:
   - llmd.llm-d.ai
   resources:
-  - optimizers/status
+  - variantautoscalings/status
   verbs:
   - get

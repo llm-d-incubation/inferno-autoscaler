@@ -14,7 +14,7 @@ resources:
   controller: true
   domain: ai
   group: llmd
-  kind: Optimizer
+  kind: VariantAutoscaling
   path: github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1
   version: v1alpha1
 version: "3"

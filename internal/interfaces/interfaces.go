@@ -6,11 +6,11 @@ import (
 	llmdOptv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
 )
 
-// OptimizerEngine defines the interface for the optimization engine.
-type OptimizerEngine interface {
+// VariantAutoscalingsEngine defines the interface for the optimization engine.
+type VariantAutoscalingsEngine interface {
 	Optimize(
 		ctx context.Context,
-		va llmdOptv1alpha1.Optimizer,
+		va llmdOptv1alpha1.VariantAutoscaling,
 		analysis ModelAnalyzeResponse,
 		metrics MetricsSnapshot,
 	) (llmdOptv1alpha1.OptimizedAlloc, error)
@@ -20,7 +20,7 @@ type OptimizerEngine interface {
 type ModelAnalyzer interface {
 	AnalyzeModel(
 		ctx context.Context,
-		va llmdOptv1alpha1.Optimizer,
+		va llmdOptv1alpha1.VariantAutoscaling,
 		metrics MetricsSnapshot,
 	) (*ModelAnalyzeResponse, error)
 }
@@ -30,12 +30,12 @@ type Actuator interface {
 	// To be deprecated
 	ApplyReplicaTargets(
 		ctx context.Context,
-		optimizer *llmdOptv1alpha1.Optimizer,
+		VariantAutoscalings *llmdOptv1alpha1.VariantAutoscaling,
 	) error
 
 	// EmitMetrics publishes metrics about the target state (e.g., desired replicas, reasons).
 	EmitMetrics(
 		ctx context.Context,
-		optimizer *llmdOptv1alpha1.Optimizer,
+		VariantAutoscalings *llmdOptv1alpha1.VariantAutoscaling,
 	) error
 }

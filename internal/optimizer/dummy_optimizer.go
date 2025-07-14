@@ -10,16 +10,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type DummyOptimizerEngine struct{}
+type DummyVariantAutoscalingsEngine struct{}
 
-func NewDummyOptimizerEngine() *DummyOptimizerEngine {
-	return &DummyOptimizerEngine{}
+func NewDummyVariantAutoscalingsEngine() *DummyVariantAutoscalingsEngine {
+	return &DummyVariantAutoscalingsEngine{}
 }
 
 // Optimize implements dummy logic to produce one OptimizedAlloc in status.
-func (e *DummyOptimizerEngine) Optimize(
+func (e *DummyVariantAutoscalingsEngine) Optimize(
 	ctx context.Context,
-	va llmdOptv1alpha1.Optimizer,
+	va llmdOptv1alpha1.VariantAutoscaling,
 	analysis interfaces.ModelAnalyzeResponse,
 	metrics interfaces.MetricsSnapshot,
 ) (llmdOptv1alpha1.OptimizedAlloc, error) {
@@ -40,7 +40,7 @@ func (e *DummyOptimizerEngine) Optimize(
 
 	alloc := llmdOptv1alpha1.OptimizedAlloc{
 		LastRunTime: metav1.NewTime(time.Now()),
-		Accelerator: "A100", // or read from Optimizer spec / label if available
+		Accelerator: "A100", // or read from VariantAutoscalings spec / label if available
 		NumReplicas: replicaTarget,
 	}
 
