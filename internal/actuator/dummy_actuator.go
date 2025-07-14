@@ -8,6 +8,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type DummyActuator struct {
@@ -19,9 +20,10 @@ func NewDummyActuator(k8sClient client.Client) *DummyActuator {
 }
 
 func (a *DummyActuator) ApplyReplicaTargets(ctx context.Context, VariantAutoscalings *llmdOptv1alpha1.VariantAutoscaling) error {
+	logger := logf.FromContext(ctx)
 	desired := VariantAutoscalings.Status.DesiredOptimizedAlloc
 
-	fmt.Printf("[DummyActuator] ApplyReplicaTargets - Model: %s, Accelerator: %s, TargetReplicas: %d\n",
+	logger.Info("ApplyReplicaTargets - Model: %s, Accelerator: %s, TargetReplicas: %d\n",
 		VariantAutoscalings.Spec.ModelID,
 		desired.Accelerator,
 		desired.NumReplicas,
@@ -46,6 +48,6 @@ func (a *DummyActuator) ApplyReplicaTargets(ctx context.Context, VariantAutoscal
 		return fmt.Errorf("failed to patch Deployment %s: %w", deploy.Name, err)
 	}
 
-	fmt.Printf("[DummyActuator] Patched Deployment %s to %d replicas\n", deploy.Name, replicas)
+	logger.Info("Patched Deployment %s to %d replicas\n", deploy.Name, replicas)
 	return nil
 }

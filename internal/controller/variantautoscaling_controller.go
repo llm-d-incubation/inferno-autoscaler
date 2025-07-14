@@ -37,6 +37,7 @@ import (
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
 	actuator "github.com/llm-d-incubation/inferno-autoscaler/internal/actuator"
+	collector "github.com/llm-d-incubation/inferno-autoscaler/internal/collector"
 	interfaces "github.com/llm-d-incubation/inferno-autoscaler/internal/interfaces"
 	analyzer "github.com/llm-d-incubation/inferno-autoscaler/internal/modelanalyzer"
 	variantAutoscalingOptimizer "github.com/llm-d-incubation/inferno-autoscaler/internal/optimizer"
@@ -102,7 +103,7 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	newInventory, err := r.CollectInventoryK8S(ctx)
+	newInventory, err := collector.CollectInventoryK8S(ctx, r.Client)
 
 	if err == nil {
 		logger.Info("current inventory in the cluster", "capacity", newInventory)
@@ -166,7 +167,7 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 			})
 		}
 
-		err = r.addMetricsToOptStatus(ctx, &updateOpt, deploy, acceleratorCostValFloat)
+		err = collector.AddMetricsToOptStatus(ctx, &updateOpt, deploy, acceleratorCostValFloat, r.PromAPI)
 
 		if err != nil {
 			logger.Error(err, "unable to fetch metrics, skipping this variantAutoscaling loop")

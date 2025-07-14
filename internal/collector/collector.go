@@ -1,19 +1,3 @@
-/*
-Copyright 2025.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package controller
 
 import (
@@ -24,9 +8,11 @@ import (
 	"time"
 
 	"github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -47,13 +33,13 @@ const DEBUG = 4
 // CollectInventory lists all Nodes and builds a map[nodeName][model]→info.
 // It checks labels <vendor>/gpu.product, <vendor>/gpu.memory
 // and capacity <vendor>/gpu.
-func (r *VariantAutoscalingReconciler) CollectInventoryK8S(ctx context.Context) (map[string]map[string]AcceleratorModelInfo, error) {
+func CollectInventoryK8S(ctx context.Context, r client.Client) (map[string]map[string]AcceleratorModelInfo, error) {
 	logger := logf.FromContext(ctx)
 
 	logger.Info("collecting inventory")
 
 	var nodeList corev1.NodeList
-	if err := r.Client.List(ctx, &nodeList); err != nil {
+	if err := r.List(ctx, &nodeList); err != nil {
 		return nil, fmt.Errorf("failed to list nodes: %w", err)
 	}
 
@@ -90,7 +76,7 @@ type MetricKV struct {
 	Value  float64
 }
 
-func (r *VariantAutoscalingReconciler) addMetricsToOptStatus(ctx context.Context, opt *v1alpha1.VariantAutoscaling, deployment appsv1.Deployment, acceleratorCostVal float64) error {
+func AddMetricsToOptStatus(ctx context.Context, opt *v1alpha1.VariantAutoscaling, deployment appsv1.Deployment, acceleratorCostVal float64, promAPI promv1.API) error {
 	logger := logf.FromContext(ctx)
 	deployNamespace := deployment.Namespace
 	modelName := opt.Labels["inference.optimization/modelName"]
@@ -98,7 +84,7 @@ func (r *VariantAutoscalingReconciler) addMetricsToOptStatus(ctx context.Context
 	// Query 1: Arrival rate (requests per minute)
 	arrivalQuery := fmt.Sprintf(`sum(rate(vllm:requests_count_total{model_name="%s",namespace="%s"}[1m])) * 60`, modelName, deployNamespace)
 	arrivalVal := 0.0
-	if val, warn, err := r.PromAPI.Query(ctx, arrivalQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+	if val, warn, err := promAPI.Query(ctx, arrivalQuery, time.Now()); err == nil && val.Type() == model.ValVector {
 		vec := val.(model.Vector)
 		if len(vec) > 0 {
 			arrivalVal = float64(vec[0].Value)
@@ -113,7 +99,7 @@ func (r *VariantAutoscalingReconciler) addMetricsToOptStatus(ctx context.Context
 	// Query 2: Average token length
 	tokenQuery := fmt.Sprintf(`delta(vllm:tokens_count_total{model_name="%s",namespace="%s"}[1m])/delta(vllm:requests_count_total{model_name="%s",namespace="%s"}[1m])`, modelName, deployNamespace, modelName, deployNamespace)
 	avgLen := 0.0
-	if val, _, err := r.PromAPI.Query(ctx, tokenQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+	if val, _, err := promAPI.Query(ctx, tokenQuery, time.Now()); err == nil && val.Type() == model.ValVector {
 		vec := val.(model.Vector)
 		if len(vec) > 0 {
 			avgLen = float64(vec[0].Value)
@@ -128,7 +114,7 @@ func (r *VariantAutoscalingReconciler) addMetricsToOptStatus(ctx context.Context
 
 	waitQuery := fmt.Sprintf(`sum(rate(vllm:request_queue_time_seconds_sum{model_name="%s",namespace="%s"}[1m]))/sum(rate(vllm:request_queue_time_seconds_count{model_name="%s",namespace="%s"}[1m]))`, modelName, deployNamespace, modelName, deployNamespace)
 	waitAverageTime := 0.0
-	if val, _, err := r.PromAPI.Query(ctx, waitQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+	if val, _, err := promAPI.Query(ctx, waitQuery, time.Now()); err == nil && val.Type() == model.ValVector {
 		vec := val.(model.Vector)
 		if len(vec) > 0 {
 			waitAverageTime = float64(vec[0].Value)
