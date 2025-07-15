@@ -19,23 +19,16 @@ func NewDummyActuator(k8sClient client.Client) *DummyActuator {
 	return &DummyActuator{Client: k8sClient}
 }
 
-func (a *DummyActuator) ApplyReplicaTargets(ctx context.Context, VariantAutoscalings *llmdOptv1alpha1.VariantAutoscaling) error {
+func (a *DummyActuator) ApplyReplicaTargets(ctx context.Context, VariantAutoscaling *llmdOptv1alpha1.VariantAutoscaling) error {
 	logger := logf.FromContext(ctx)
-	desired := VariantAutoscalings.Status.DesiredOptimizedAlloc
-
-	logger.Info("ApplyReplicaTargets - Model: %s, Accelerator: %s, TargetReplicas: %d\n",
-		VariantAutoscalings.Spec.ModelID,
-		desired.Accelerator,
-		desired.NumReplicas,
-	)
-
+	desired := VariantAutoscaling.Status.DesiredOptimizedAlloc
 	var deploy appsv1.Deployment
 	err := a.Client.Get(ctx, types.NamespacedName{
-		Name:      VariantAutoscalings.Name,
-		Namespace: VariantAutoscalings.Namespace,
+		Name:      VariantAutoscaling.Name,
+		Namespace: VariantAutoscaling.Namespace,
 	}, &deploy)
 	if err != nil {
-		return fmt.Errorf("failed to get Deployment %s/%s: %w", VariantAutoscalings.Namespace, VariantAutoscalings.Name, err)
+		return fmt.Errorf("failed to get Deployment %s/%s: %w", VariantAutoscaling.Namespace, VariantAutoscaling.Name, err)
 	}
 
 	// Patch replicas field
@@ -48,6 +41,6 @@ func (a *DummyActuator) ApplyReplicaTargets(ctx context.Context, VariantAutoscal
 		return fmt.Errorf("failed to patch Deployment %s: %w", deploy.Name, err)
 	}
 
-	logger.Info("Patched Deployment %s to %d replicas\n", deploy.Name, replicas)
+	logger.Info("Patched Deployment", "name", deploy.Name, "num replicas", replicas)
 	return nil
 }

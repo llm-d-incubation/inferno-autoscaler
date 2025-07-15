@@ -95,6 +95,10 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	acceleratorUnitCostCm, err := r.readServiceClassConfig(ctx, "accelerator-unit-costs", "default")
+	if err != nil {
+		log.Log.Error(err, "unable to read accelerator unit cost configmap, skipping optimiziing")
+		return ctrl.Result{}, nil
+	}
 
 	// each variantAutoscaling CR corresponds to a variant which spawns exactly one deployment.
 	var variantAutoscalingList llmdVariantAutoscalingV1alpha1.VariantAutoscalingList
@@ -110,6 +114,10 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 	} else {
 		logger.Error(err, "failed to get cluster inventory")
 	}
+
+	var updateList llmdVariantAutoscalingV1alpha1.VariantAutoscalingList
+	var allAnalyzerResponses = make(map[string]interfaces.ModelAnalyzeResponse)
+	var allMetrics = make(map[string]interfaces.MetricsSnapshot)
 
 	for _, opt := range variantAutoscalingList.Items {
 		modelName := opt.Labels["inference.optimization/modelName"]
@@ -134,6 +142,7 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if err != nil {
 			logger.Info("variantAutoscaling unable to parse accelerator cost in configmap, skipping optimization", "name", opt.Name)
 		}
+		//TODO: remove calling duplicate deployment calls
 		// Check if Deployment exists for this variantAutoscaling
 		var deploy appsv1.Deployment
 		err = r.Get(ctx, types.NamespacedName{
@@ -153,19 +162,7 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 			logger.Error(err, "unable to get variantAutoscaling")
 		}
 
-		original := updateOpt.DeepCopy()
-
-		// Add OwnerReference if not already set
-		if !metav1.IsControlledBy(&updateOpt, &deploy) {
-			updateOpt.OwnerReferences = append(updateOpt.OwnerReferences, metav1.OwnerReference{
-				APIVersion:         deploy.APIVersion,
-				Kind:               deploy.Kind,
-				Name:               deploy.Name,
-				UID:                deploy.UID,
-				Controller:         ptr(true),
-				BlockOwnerDeletion: ptr(true),
-			})
-		}
+		//original := updateOpt.DeepCopy()
 
 		err = collector.AddMetricsToOptStatus(ctx, &updateOpt, deploy, acceleratorCostValFloat, r.PromAPI)
 
@@ -183,23 +180,76 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 			logger.Error(err, "unable to perform model optimization, skipping this variantAutoscaling loop")
 			return ctrl.Result{}, nil
 		}
-		logger.Info("response from model analyzer", "data", dummyModelAnalyzerResponse)
-		dummyvariantAutoscaling := variantAutoscalingOptimizer.NewDummyVariantAutoscalingsEngine()
-		optimizedAllocation, err := dummyvariantAutoscaling.Optimize(ctx, opt, *dummyModelAnalyzerResponse, metrics)
+		allMetrics[opt.Name] = metrics
+		allAnalyzerResponses[opt.Name] = dummyModelAnalyzerResponse
+		updateList.Items = append(updateList.Items, updateOpt)
+	}
+	// Call Optimize ONCE across all variants
+	dummyvariantAutoscaling := variantAutoscalingOptimizer.NewDummyVariantAutoscalingsEngine()
+	optimizedAllocation, err := dummyvariantAutoscaling.Optimize(ctx, updateList, allAnalyzerResponses, allMetrics)
+	if err != nil {
+		logger.Error(err, "unable to perform model optimization, skipping this variantAutoscaling loop")
+		return ctrl.Result{}, nil
+	}
+
+	for i := range updateList.Items {
+		va := &updateList.Items[i]
+		// Fetch the latest version from API server
+		var updateVa llmdVariantAutoscalingV1alpha1.VariantAutoscaling
+		if err := r.Get(ctx, client.ObjectKeyFromObject(va), &updateVa); err != nil {
+			logger.Error(err, "failed to get latest VariantAutoscaling from API server", "name", va.Name)
+			continue
+		}
+
+		original := updateVa.DeepCopy()
+
+		//TODO: remove calling duplicate deployment calls
+		// Check if Deployment exists for this variantAutoscaling
+		var deploy appsv1.Deployment
+		err = r.Get(ctx, types.NamespacedName{
+			Name:      va.Name,
+			Namespace: va.Namespace,
+		}, &deploy)
 		if err != nil {
-			logger.Error(err, "unable to perform model optimization, skipping this variantAutoscaling loop")
-			return ctrl.Result{}, nil
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			logger.Error(err, "failed to get Deployment", "variantAutoscaling", updateVa.Name)
+			return ctrl.Result{}, err
 		}
-		updateOpt.Status.DesiredOptimizedAlloc = optimizedAllocation
-		patch := client.MergeFrom(original.DeepCopy())
-		if err := r.Client.Patch(ctx, &updateOpt, patch); err != nil {
-			logger.Error(err, "failed to patch status")
+
+		// Add OwnerReference if not already set
+		if !metav1.IsControlledBy(&updateVa, &deploy) {
+			updateVa.OwnerReferences = append(updateVa.OwnerReferences, metav1.OwnerReference{
+				APIVersion:         deploy.APIVersion,
+				Kind:               deploy.Kind,
+				Name:               deploy.Name,
+				UID:                deploy.UID,
+				Controller:         ptr(true),
+				BlockOwnerDeletion: ptr(true),
+			})
+
+			// Patch metadata change (ownerReferences)
+			patch := client.MergeFrom(original)
+			if err := r.Client.Patch(ctx, &updateVa, patch); err != nil {
+				logger.Error(err, "failed to patch ownerReference", "name", updateVa.Name)
+				return ctrl.Result{}, err
+			}
 		}
-		dummyActuator := actuator.NewDummyActuator(r.Client)
-		err = dummyActuator.ApplyReplicaTargets(ctx, &opt)
-		if err != nil {
-			logger.Error(err, "unable to change replicas", "deployment", deploy.Name)
+		updateVa.Status.CurrentAlloc = va.Status.CurrentAlloc
+		updateVa.Status.DesiredOptimizedAlloc = optimizedAllocation[va.Name]
+		//patch := client.MergeFrom(original)
+		//patch
+		if err := r.Client.Status().Update(ctx, &updateVa); err != nil {
+			logger.Error(err, "failed to patch status", "name", updateVa.Name)
+			continue
 		}
+
+		act := actuator.NewDummyActuator(r.Client)
+		if err := act.ApplyReplicaTargets(ctx, &updateVa); err != nil {
+			logger.Error(err, "failed to apply replicas")
+		}
+
 	}
 
 	return ctrl.Result{}, nil

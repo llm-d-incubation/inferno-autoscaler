@@ -11,10 +11,28 @@ spec:
     kind: VariantAutoscaling
     listKind: VariantAutoscalingList
     plural: variantautoscalings
+    shortNames:
+    - va
     singular: variantautoscaling
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.modelID
+      name: Model
+      type: string
+    - jsonPath: .status.currentAlloc.accelerator
+      name: Accelerator
+      type: string
+    - jsonPath: .status.currentAlloc.numReplicas
+      name: CurrentReplicas
+      type: integer
+    - jsonPath: .status.desiredOptimizedAlloc.numReplicas
+      name: Optimized
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         properties:
@@ -166,3 +184,5 @@ spec:
         type: object
     served: true
     storage: true
+    subresources:
+      status: {}

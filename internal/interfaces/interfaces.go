@@ -10,10 +10,10 @@ import (
 type VariantAutoscalingsEngine interface {
 	Optimize(
 		ctx context.Context,
-		va llmdOptv1alpha1.VariantAutoscaling,
-		analysis ModelAnalyzeResponse,
+		va llmdOptv1alpha1.VariantAutoscalingList,
+		analysis map[string]*ModelAnalyzeResponse,
 		metrics MetricsSnapshot,
-	) (llmdOptv1alpha1.OptimizedAlloc, error)
+	) (map[string]llmdOptv1alpha1.OptimizedAlloc, error)
 }
 
 // ModelAnalyzer defines the interface for model analysis.

@@ -21,7 +21,7 @@ func (a *SimplePrefillDecodeAnalyzer) AnalyzeModel(
 	ctx context.Context,
 	spec llmdOptv1alpha1.VariantAutoscaling,
 	metrics interfaces.MetricsSnapshot,
-) (*interfaces.ModelAnalyzeResponse, error) {
+) (interfaces.ModelAnalyzeResponse, error) {
 	// dummy traffic shape: 40% prefill, 60% decode
 	prefillRatio := 0.4
 	decodeRatio := 0.6
@@ -35,7 +35,7 @@ func (a *SimplePrefillDecodeAnalyzer) AnalyzeModel(
 		prefillRatio*100, decodeRatio*100,
 	)
 
-	return &interfaces.ModelAnalyzeResponse{
+	return interfaces.ModelAnalyzeResponse{
 		RequiredPrefillQPS: requiredPrefill,
 		RequiredDecodeQPS:  requiredDecode,
 		Reason:             reason,

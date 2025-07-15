@@ -19,30 +19,40 @@ func NewDummyVariantAutoscalingsEngine() *DummyVariantAutoscalingsEngine {
 // Optimize implements dummy logic to produce one OptimizedAlloc in status.
 func (e *DummyVariantAutoscalingsEngine) Optimize(
 	ctx context.Context,
-	va llmdOptv1alpha1.VariantAutoscaling,
-	analysis interfaces.ModelAnalyzeResponse,
-	metrics interfaces.MetricsSnapshot,
-) (llmdOptv1alpha1.OptimizedAlloc, error) {
+	va llmdOptv1alpha1.VariantAutoscalingList,
+	analysis map[string]interfaces.ModelAnalyzeResponse,
+	metrics map[string]interfaces.MetricsSnapshot,
+) (map[string]llmdOptv1alpha1.OptimizedAlloc, error) {
 
-	var totalPrefillQPS, totalDecodeQPS float64
+	result := make(map[string]llmdOptv1alpha1.OptimizedAlloc)
 
-	totalPrefillQPS = analysis.RequiredPrefillQPS
-	totalDecodeQPS = analysis.RequiredDecodeQPS
+	for _, va := range va.Items {
+		name := va.Name
 
-	// Dummy per-replica capacities
-	perReplicaPrefill := 100.0
-	perReplicaDecode := 300.0
+		analysis, ok1 := analysis[name]
+		_, ok2 := metrics[name]
+		if !ok1 || !ok2 {
+			// Skip if either analysis or metrics are missing
+			continue
+		}
 
-	// Determine required replicas
-	replicasPrefill := math.Ceil(totalPrefillQPS / perReplicaPrefill)
-	replicasDecode := math.Ceil(totalDecodeQPS / perReplicaDecode)
-	replicaTarget := int(math.Max(replicasPrefill, replicasDecode))
+		// Dummy per-replica capacities
+		perReplicaPrefill := 100.0
+		perReplicaDecode := 300.0
 
-	alloc := llmdOptv1alpha1.OptimizedAlloc{
-		LastRunTime: metav1.NewTime(time.Now()),
-		Accelerator: "A100", // or read from VariantAutoscalings spec / label if available
-		NumReplicas: replicaTarget,
+		// Compute required replicas
+		replicasPrefill := math.Ceil(analysis.RequiredPrefillQPS / perReplicaPrefill)
+		replicasDecode := math.Ceil(analysis.RequiredDecodeQPS / perReplicaDecode)
+		replicaTarget := int(math.Max(replicasPrefill, replicasDecode))
+
+		alloc := llmdOptv1alpha1.OptimizedAlloc{
+			LastRunTime: metav1.NewTime(time.Now()),
+			Accelerator: "A100", // hardcoded dummy value
+			NumReplicas: replicaTarget + 1,
+		}
+
+		result[name] = alloc
 	}
 
-	return alloc, nil
+	return result, nil
 }

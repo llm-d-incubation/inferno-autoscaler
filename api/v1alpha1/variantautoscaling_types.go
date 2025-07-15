@@ -1,13 +1,3 @@
-// +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
-// +kubebuilder:resource:shortName=opt
-// +kubebuilder:printcolumn:name="Model",type=string,JSONPath=".spec.modelID"
-// +kubebuilder:printcolumn:name="Current",type=string,JSONPath=".status.currentAlloc.accelerator"
-// +kubebuilder:printcolumn:name="Desired",type=string,JSONPath=".status.desiredOptimizedAlloc.accelerator"
-// +kubebuilder:printcolumn:name="Replicas",type=integer,JSONPath=".status.currentAlloc.numReplicas"
-// +kubebuilder:printcolumn:name="Actuated",type=string,JSONPath=".status.actuation.applied"
-// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
-
 package v1alpha1
 
 import (
@@ -106,6 +96,13 @@ type ActuationStatus struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=va
+// +kubebuilder:printcolumn:name="Model",type=string,JSONPath=".spec.modelID"
+// +kubebuilder:printcolumn:name="Accelerator",type=string,JSONPath=".status.currentAlloc.accelerator"
+// +kubebuilder:printcolumn:name="CurrentReplicas",type=integer,JSONPath=".status.currentAlloc.numReplicas"
+// +kubebuilder:printcolumn:name="Optimized",type=string,JSONPath=".status.desiredOptimizedAlloc.numReplicas"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 type VariantAutoscaling struct {
 	metav1.TypeMeta   `json:",inline"`
