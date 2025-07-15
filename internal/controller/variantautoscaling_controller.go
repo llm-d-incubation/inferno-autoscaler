@@ -30,7 +30,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -278,6 +280,20 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&llmdVariantAutoscalingV1alpha1.VariantAutoscaling{}).
 		Named("variantAutoscaling").
+		WithEventFilter(predicate.Funcs{
+			CreateFunc: func(e event.CreateEvent) bool {
+				return true
+			},
+			UpdateFunc: func(e event.UpdateEvent) bool {
+				return false
+			},
+			DeleteFunc: func(e event.DeleteEvent) bool {
+				return false
+			},
+			GenericFunc: func(e event.GenericEvent) bool {
+				return false
+			},
+		}).
 		Complete(r)
 }
 
