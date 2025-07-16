@@ -239,18 +239,17 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 				return ctrl.Result{}, err
 			}
 		}
-		updateVa.Status.CurrentAlloc = va.Status.CurrentAlloc
-		updateVa.Status.DesiredOptimizedAlloc = optimizedAllocation[va.Name]
-		//patch := client.MergeFrom(original)
-		//patch
-		if err := r.Client.Status().Update(ctx, &updateVa); err != nil {
-			logger.Log.Error(err, "failed to patch status", "name", updateVa.Name)
-			continue
-		}
 
 		act := actuator.NewDummyActuator(r.Client)
 		if err := act.ApplyReplicaTargets(ctx, &updateVa); err != nil {
 			logger.Log.Error(err, "failed to apply replicas")
+		}
+		updateVa.Status.CurrentAlloc = va.Status.CurrentAlloc
+		updateVa.Status.DesiredOptimizedAlloc = optimizedAllocation[va.Name]
+		updateVa.Status.Actuation.Applied = true
+		if err := r.Client.Status().Update(ctx, &updateVa); err != nil {
+			logger.Log.Error(err, "failed to patch status", "name", updateVa.Name)
+			continue
 		}
 
 	}
