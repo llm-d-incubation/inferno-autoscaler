@@ -7,8 +7,9 @@ import (
 	llmdOptv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/llm-d-incubation/inferno-autoscaler/internal/logger"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type DummyActuator struct {
@@ -20,7 +21,6 @@ func NewDummyActuator(k8sClient client.Client) *DummyActuator {
 }
 
 func (a *DummyActuator) ApplyReplicaTargets(ctx context.Context, VariantAutoscaling *llmdOptv1alpha1.VariantAutoscaling) error {
-	logger := logf.FromContext(ctx)
 	desired := VariantAutoscaling.Status.DesiredOptimizedAlloc
 	var deploy appsv1.Deployment
 	err := a.Client.Get(ctx, types.NamespacedName{
@@ -41,6 +41,6 @@ func (a *DummyActuator) ApplyReplicaTargets(ctx context.Context, VariantAutoscal
 		return fmt.Errorf("failed to patch Deployment %s: %w", deploy.Name, err)
 	}
 
-	logger.Info("Patched Deployment", "name", deploy.Name, "num replicas", replicas)
+	logger.Log.Info("Patched Deployment", "name", deploy.Name, "num replicas", replicas)
 	return nil
 }

@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	"github.com/llm-d-incubation/inferno-autoscaler/internal/logger"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type AcceleratorModelInfo struct {
@@ -28,16 +29,10 @@ var vendors = []string{
 	"intel.com",
 }
 
-const DEBUG = 4
-
 // CollectInventory lists all Nodes and builds a map[nodeName][model]→info.
 // It checks labels <vendor>/gpu.product, <vendor>/gpu.memory
 // and capacity <vendor>/gpu.
 func CollectInventoryK8S(ctx context.Context, r client.Client) (map[string]map[string]AcceleratorModelInfo, error) {
-	logger := logf.FromContext(ctx)
-
-	logger.Info("collecting inventory")
-
 	var nodeList corev1.NodeList
 	if err := r.List(ctx, &nodeList); err != nil {
 		return nil, fmt.Errorf("failed to list nodes: %w", err)
@@ -63,7 +58,7 @@ func CollectInventoryK8S(ctx context.Context, r client.Client) (map[string]map[s
 					Count:  count,
 					Memory: mem,
 				}
-				logger.V(DEBUG).Info("found inventory", "nodeName", nodeName, "model", model, "count", count, "mem", mem)
+				logger.Log.Debug("found inventory", "nodeName", nodeName, "model", model, "count", count, "mem", mem)
 			}
 		}
 	}
@@ -76,10 +71,15 @@ type MetricKV struct {
 	Value  float64
 }
 
-func AddMetricsToOptStatus(ctx context.Context, opt *v1alpha1.VariantAutoscaling, deployment appsv1.Deployment, acceleratorCostVal float64, promAPI promv1.API) error {
-	logger := logf.FromContext(ctx)
+func AddMetricsToOptStatus(ctx context.Context, opt *v1alpha1.VariantAutoscaling, deployment appsv1.Deployment, acceleratorCostVal float64, promAPI promv1.API) (llmdVariantAutoscalingV1alpha1.Allocation, error) {
 	deployNamespace := deployment.Namespace
 	modelName := opt.Labels["inference.optimization/modelName"]
+
+	// hardcoded for dummy optimizer, need to change when real optimizer is integrated
+	currentAlloc := llmdVariantAutoscalingV1alpha1.Allocation{
+		MaxBatch:   256,
+		ITLAverage: "50",
+	}
 	// Setup Prometheus client
 	// Query 1: Arrival rate (requests per minute)
 	arrivalQuery := fmt.Sprintf(`sum(rate(vllm:requests_count_total{model_name="%s",namespace="%s"}[1m])) * 60`, modelName, deployNamespace)
@@ -90,10 +90,10 @@ func AddMetricsToOptStatus(ctx context.Context, opt *v1alpha1.VariantAutoscaling
 			arrivalVal = float64(vec[0].Value)
 		}
 		if warn != nil {
-			logger.Info("Prometheus warnings", "warnings", warn)
+			logger.Log.Info("Prometheus warnings", "warnings", warn)
 		}
 	} else {
-		logger.Error(err, "failed to query Prometheus arrival rate")
+		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
 	}
 
 	// Query 2: Average token length
@@ -105,7 +105,7 @@ func AddMetricsToOptStatus(ctx context.Context, opt *v1alpha1.VariantAutoscaling
 			avgLen = float64(vec[0].Value)
 		}
 	} else {
-		logger.Error(err, "failed to query Prometheus average token length")
+		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
 	}
 
 	if math.IsNaN(avgLen) || math.IsInf(avgLen, 0) {
@@ -120,24 +120,24 @@ func AddMetricsToOptStatus(ctx context.Context, opt *v1alpha1.VariantAutoscaling
 			waitAverageTime = float64(vec[0].Value)
 		}
 	} else {
-		logger.Error(err, "failed to query Prometheus average token length")
+		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
 	}
 
-	opt.Status.CurrentAlloc.NumReplicas = int(*deployment.Spec.Replicas)
+	currentAlloc.NumReplicas = int(*deployment.Spec.Replicas)
 	if acc, ok := opt.Labels["inference.optimization/acceleratorName"]; ok {
-		opt.Status.CurrentAlloc.Accelerator = acc
+		currentAlloc.Accelerator = acc
 	} else {
-		logger.Info("acceleratorName label not found on deployment", "deployment", deployment.Name)
+		logger.Log.Info("acceleratorName label not found on deployment", "deployment", deployment.Name)
 	}
-	opt.Status.CurrentAlloc.WaitAverage = strconv.FormatFloat(float64(waitAverageTime), 'f', 2, 32)
+	currentAlloc.WaitAverage = strconv.FormatFloat(float64(waitAverageTime), 'f', 2, 32)
 	opt.Status.CurrentAlloc.ITLAverage = "50"
 	// TODO: extract max batch size from vllm config present
 	// present in the deployment
-	opt.Status.CurrentAlloc.MaxBatch = 256
-	opt.Status.CurrentAlloc.Load.ArrivalRate = strconv.FormatFloat(float64(arrivalVal), 'f', 2, 32)
-	opt.Status.CurrentAlloc.Load.AvgLength = strconv.FormatFloat(float64(avgLen), 'f', 2, 32)
+	currentAlloc.MaxBatch = 256
+	currentAlloc.Load.ArrivalRate = strconv.FormatFloat(float64(arrivalVal), 'f', 2, 32)
+	currentAlloc.Load.AvgLength = strconv.FormatFloat(float64(avgLen), 'f', 2, 32)
 	// TODO read configmap and adjust this value
 	discoveredCost := float64(*deployment.Spec.Replicas) * acceleratorCostVal
-	opt.Status.CurrentAlloc.VariantCost = strconv.FormatFloat(float64(discoveredCost), 'f', 2, 32)
-	return nil
+	currentAlloc.VariantCost = strconv.FormatFloat(float64(discoveredCost), 'f', 2, 32)
+	return currentAlloc, nil
 }
