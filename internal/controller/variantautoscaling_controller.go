@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"os"
 	"strconv"
 	"sync"
@@ -195,22 +194,12 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	modelAnalyzer := analyzer.NewModelAnalyzer(system)
 	for _, s := range system.Servers() {
-		allAllocations := make(map[string]*inferno.Allocation)
 		modelAnalyzeResponse, err := modelAnalyzer.AnalyzeModel(ctx, *vaMap[s.Name()])
 		if err != nil {
 			logger.Log.Error("model analyzer error", "failed to analyze", err)
 			return ctrl.Result{}, err
 		}
 		allAnalyzerResponses[s.Name()] = modelAnalyzeResponse
-		allocations := analyzer.CreateAllocationsFromModelAnalyzeResponse(modelAnalyzeResponse)
-		for acceleratorName, alloc := range allocations {
-			if s.CurAllocation() != nil {
-				penalty := s.CurAllocation().TransitionPenalty(alloc)
-				alloc.SetValue(penalty)
-			}
-			allAllocations[acceleratorName] = alloc
-		}
-		maps.Copy(s.AllAllocations(), allAllocations)
 	}
 	logger.Log.Info("inferno data ", "systemData ", systemData)
 

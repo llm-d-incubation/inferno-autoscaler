@@ -178,12 +178,13 @@ func AddServerInfoToSystemData(
 
 	// all server data
 	serverSpec := &infernoConfig.ServerSpec{
-		Name:           FullName(va.Name, va.Namespace),
-		Class:          className,
-		Model:          va.Spec.ModelID,
-		MinNumReplicas: 1,
-		CurrentAlloc:   *AllocationData,
-		DesiredAlloc:   infernoConfig.AllocationData{},
+		Name:            FullName(va.Name, va.Namespace),
+		Class:           className,
+		Model:           va.Spec.ModelID,
+		KeepAccelerator: true,
+		MinNumReplicas:  1,
+		CurrentAlloc:    *AllocationData,
+		DesiredAlloc:    infernoConfig.AllocationData{},
 	}
 	sd.Spec.Servers.Spec = append(sd.Spec.Servers.Spec, *serverSpec)
 	return nil

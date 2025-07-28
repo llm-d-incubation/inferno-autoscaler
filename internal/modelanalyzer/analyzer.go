@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
 	llmdOptv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
 	interfaces "github.com/llm-d-incubation/inferno-autoscaler/internal/interfaces"
@@ -26,12 +27,9 @@ func (ma *ModelAnalyzer) AnalyzeModel(ctx context.Context,
 	va llmdOptv1alpha1.VariantAutoscaling) (*interfaces.ModelAnalyzeResponse, error) {
 
 	serverName := utils.FullName(va.Name, va.Namespace)
-	allocations := make(map[string]*inferno.Allocation)
-	for _, accelerator := range ma.system.Accelerators() {
-		acceleratorName := accelerator.Name()
-		if alloc := inferno.CreateAllocation(serverName, acceleratorName); alloc != nil {
-			allocations[acceleratorName] = alloc
-		}
+	if server, exists := ma.system.Servers()[serverName]; exists {
+		server.Calculate(ma.system.Accelerators())
+		return CreateModelAnalyzeResponseFromAllocations(server.AllAllocations()), nil
 	}
-	return CreateModelAnalyzeResponseFromAllocations(allocations), nil
+	return nil, fmt.Errorf("server %s not found", serverName)
 }
