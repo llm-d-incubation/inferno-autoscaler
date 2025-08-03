@@ -201,7 +201,7 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 	}
 
 	for _, va := range activeVAs {
-		modelName := va.Labels["inference.optimization/modelName"]
+		modelName := va.Spec.ModelID
 		if modelName == "" {
 			logger.Log.Info("variantAutoscaling missing modelName label, skipping optimization", "name", va.Name)
 			continue

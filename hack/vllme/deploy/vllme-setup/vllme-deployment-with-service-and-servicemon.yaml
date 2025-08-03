@@ -23,7 +23,7 @@ spec:
         imagePullPolicy: Always
         env: 
         - name: MODEL_NAME
-          value: "default" 
+          value: "default/default" 
         - name: DECODE_TIME
           value: "20"        # In milliseconds, e.g., 50ms per token decode
         - name: PREFILL_TIME
