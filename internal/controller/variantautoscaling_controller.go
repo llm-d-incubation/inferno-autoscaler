@@ -49,8 +49,6 @@ import (
 	"github.com/llm-d-incubation/inferno-autoscaler/internal/utils"
 	infernoConfig "github.com/llm-inferno/optimizer-light/pkg/config"
 	inferno "github.com/llm-inferno/optimizer-light/pkg/core"
-	infernoManager "github.com/llm-inferno/optimizer-light/pkg/manager"
-	infernoSolver "github.com/llm-inferno/optimizer-light/pkg/solver"
 	"github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -130,26 +128,45 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	// analyze
-	system := inferno.NewSystem()
-	optimizerSpec := system.SetFromSpec(&systemData.Spec)
-	optimizer := infernoSolver.NewOptimizerFromSpec(optimizerSpec)
-	manager := infernoManager.NewManager(system, optimizer)
-
-	modelAnalyzer := analyzer.NewModelAnalyzer(system)
-	for _, s := range system.Servers() {
-		modelAnalyzeResponse := modelAnalyzer.AnalyzeModel(ctx, *vaMap[s.Name()])
-		if len(modelAnalyzeResponse.Allocations) == 0 {
-			logger.Log.Info("No allocations found for server", "serverName", s.Name())
-			continue
-		}
-		allAnalyzerResponses[s.Name()] = modelAnalyzeResponse
+	// Create comprehensive cluster data structure for optimizer plugins
+	clusterData := &variantAutoscalingOptimizer.ComprehensiveClusterData{
+		AcceleratorConfig:    acceleratorCm,
+		ServiceClassConfig:   serviceClassCm,
+		VariantAutoscalings:  activeVAs,
+		Inventory:           newInventory,
+		SystemData:          systemData,
+		UpdateList:          updateList,
+		VAMap:               vaMap,
+		AllAnalyzerResponses: allAnalyzerResponses,
 	}
-	logger.Log.Debug("System data prepared for optimization", "systemData", systemData)
 
-	engine := variantAutoscalingOptimizer.NewVariantAutoscalingsEngine(manager, system)
+	// Create optimizer engine based on configuration
+	optimizerConfig := variantAutoscalingOptimizer.GetOptimizerConfigFromEnv()
+	optimizer := variantAutoscalingOptimizer.NewOptimizerEngine(
+		optimizerConfig,
+		r.Client,
+		r.PromAPI,
+		clusterData,
+	)
 
-	optimizedAllocation, err := engine.Optimize(ctx, *updateList, allAnalyzerResponses)
+	// For Go optimizer, we need to run the model analysis using the system from factory
+	// For Python optimizer, this will be handled internally
+	if optimizerConfig.Type == variantAutoscalingOptimizer.OptimizerTypeGo && optimizer.System != nil {
+		logger.Log.Debug("Running model analysis for Go optimizer")
+		
+		modelAnalyzer := analyzer.NewModelAnalyzer(optimizer.System)
+		for _, s := range optimizer.System.Servers() {
+			modelAnalyzeResponse := modelAnalyzer.AnalyzeModel(ctx, *vaMap[s.Name()])
+			if len(modelAnalyzeResponse.Allocations) == 0 {
+				logger.Log.Info("No allocations found for server", "serverName", s.Name())
+				continue
+			}
+			allAnalyzerResponses[s.Name()] = modelAnalyzeResponse
+		}
+		logger.Log.Debug("Model analysis completed for Go optimizer", "analyzed_servers", len(allAnalyzerResponses))
+	}
+
+	optimizedAllocation, err := optimizer.Engine.Optimize(ctx, *updateList, allAnalyzerResponses)
 	if err != nil {
 		logger.Log.Error(err, "unable to perform model optimization, retrying")
 		return ctrl.Result{}, err

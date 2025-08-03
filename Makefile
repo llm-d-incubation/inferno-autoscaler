@@ -4,6 +4,10 @@ IMG_TAG ?= latest
 IMG ?= $(IMAGE_TAG_BASE)/inferno-controller:$(IMG_TAG)
 KIND_ARGS ?= -t mix -n 3 -g 2   # Default: 3 nodes, 2 GPUs per node, mixed vendors
 
+# Optimizer configuration
+OPTIMIZER ?= full  # Options: "go" (lightweight), "full" (go+python)
+DOCKERFILE ?= $(if $(filter go,$(OPTIMIZER)),Dockerfile_GO,Dockerfile)
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -43,6 +47,27 @@ help: ## Display this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 ##@ Development
+
+.PHONY: install-python-deps
+install-python-deps: ## Install Python dependencies for Python optimizer
+	@echo "Installing Python dependencies..."
+	@cd autoscaler && pip install -r requirements.txt
+
+.PHONY: setup-env-go
+setup-env-go: ## Set up environment for Go optimizer
+	@echo "Setting up environment for Go optimizer..."
+	@echo "export INFERNO_OPTIMIZER_TYPE=go" > .env.local
+	@echo "export INFERNO_WORKING_DIR=/tmp" >> .env.local
+	@echo "Environment configured for Go optimizer. Source with: source .env.local"
+
+.PHONY: setup-env-python
+setup-env-python: install-python-deps ## Set up environment for Python optimizer
+	@echo "Setting up environment for Python optimizer..."
+	@echo "export INFERNO_OPTIMIZER_TYPE=python" > .env.local
+	@echo "export INFERNO_PYTHON_PATH=python3" >> .env.local
+	@echo "export INFERNO_PYTHON_SCRIPT=$$(pwd)/autoscaler/cmd_folder/go_autoscaler_wrapper.py" >> .env.local
+	@echo "export INFERNO_WORKING_DIR=/tmp" >> .env.local
+	@echo "Environment configured for Python optimizer. Source with: source .env.local"
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
@@ -138,6 +163,45 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	$(GOLANGCI_LINT) config verify
 
+##@ Optimizer Setup
+
+.PHONY: setup-go
+setup-go: setup-env-go ## Complete setup for Go optimizer development
+	@echo "✅ Go optimizer setup complete!"
+	@echo "💡 Tip: Run 'source .env.local && make run' to start with Go optimizer"
+
+.PHONY: setup-python  
+setup-python: setup-env-python ## Complete setup for Python optimizer development
+	@echo "✅ Python optimizer setup complete!"
+	@echo "💡 Tip: Run 'source .env.local && make run' to start with Python optimizer"
+
+.PHONY: build-and-deploy-go
+build-and-deploy-go: docker-build-go docker-push deploy ## Build Go image and deploy
+	@echo "✅ Go optimizer deployed successfully!"
+
+.PHONY: build-and-deploy-full
+build-and-deploy-full: docker-build-full docker-push deploy ## Build full image and deploy
+	@echo "✅ Full optimizer deployed successfully!"
+
+.PHONY: clean-env
+clean-env: ## Clean up generated environment files
+	@rm -f .env.local
+	@echo "🧹 Cleaned up environment files"
+
+.PHONY: status
+status: ## Show current optimizer configuration
+	@echo "🔧 Current Configuration:"
+	@echo "  OPTIMIZER: $(OPTIMIZER)"
+	@echo "  DOCKERFILE: $(DOCKERFILE)"
+	@echo "  IMG: $(IMG)"
+	@echo ""
+	@if [ -f .env.local ]; then \
+		echo "📋 Local Environment (.env.local):"; \
+		cat .env.local | sed 's/^/  /'; \
+	else \
+		echo "📋 No local environment file found. Run 'make setup-go' or 'make setup-python'"; \
+	fi
+
 ##@ Build
 
 .PHONY: build
@@ -152,8 +216,19 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
-docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG} .
+docker-build: ## Build docker image with the manager. Use OPTIMIZER=go for lightweight build.
+	@echo "Building $(OPTIMIZER) optimizer image using $(DOCKERFILE)..."
+	$(CONTAINER_TOOL) build -f $(DOCKERFILE) -t ${IMG} .
+
+.PHONY: docker-build-go
+docker-build-go: ## Build lightweight Go-only optimizer image (~20MB)
+	@echo "Building Go-only optimizer image..."
+	$(CONTAINER_TOOL) build -f Dockerfile_GO -t ${IMG} .
+
+.PHONY: docker-build-full
+docker-build-full: ## Build full optimizer image with Go and Python support (~200MB)
+	@echo "Building full optimizer image with Python support..."
+	$(CONTAINER_TOOL) build -f Dockerfile -t ${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -168,8 +243,9 @@ docker-push: ## Push docker image with the manager.
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
+	@echo "Building $(OPTIMIZER) optimizer for multiple platforms using $(DOCKERFILE)..."
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
-	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
+	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' $(DOCKERFILE) > Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name inferno-autoscaler-builder
 	$(CONTAINER_TOOL) buildx use inferno-autoscaler-builder
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .

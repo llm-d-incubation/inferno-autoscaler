@@ -33,6 +33,91 @@ For more details please refer to the community proposal [here](https://docs.goog
 - kubectl version v1.11.3+.
 - Access to a Kubernetes v1.11.3+ cluster.
 
+## Optimizer Options
+
+The inferno-autoscaler supports two optimization engines:
+
+### **Go Optimizer (Default)**
+- **Description**: Uses the existing `inferno-optimizer-light` library
+- **Benefits**: Lightweight, fast, minimal dependencies
+- **Use cases**: Production deployments, resource-constrained environments
+- **Prerequisites**: Go build environment only
+- **Image size**: ~20MB (distroless)
+
+### **Python Optimizer**
+- **Description**: Advanced mathematical optimization using Python-based solvers
+- **Benefits**: More sophisticated optimization algorithms, flexibility for research
+- **Use cases**: Advanced optimization scenarios, research environments
+- **Prerequisites**: Python 3.11+ with dependencies (numpy, pandas, scipy, docplex)
+- **Image size**: ~200MB (includes Python runtime)
+
+## Docker Build Options
+
+Choose the appropriate Docker build based on your optimizer needs:
+
+### **Option 1: Go Optimizer Only (Lightweight)**
+```bash
+# Build minimal Go-only image
+docker build -f Dockerfile_GO -t your-registry/inferno:go .
+
+# Deploy with Go optimizer
+kubectl set env deployment/inferno-autoscaler INFERNO_OPTIMIZER_TYPE=go
+```
+
+### **Option 2: Full Support (Go + Python)**
+```bash
+# Build full-featured image (default)
+docker build -t your-registry/inferno:full .
+
+# Or use make command
+make docker-build IMG=your-registry/inferno:full
+```
+
+### **Environment Configuration**
+
+Control optimizer behavior with environment variables:
+
+```bash
+# Optimizer selection
+INFERNO_OPTIMIZER_TYPE=go          # "go" or "python" (default: go)
+
+# Python optimizer configuration (when INFERNO_OPTIMIZER_TYPE=python)
+INFERNO_PYTHON_PATH=python3        # Python executable path
+INFERNO_PYTHON_SCRIPT=/autoscaler/cmd_folder/go_autoscaler_wrapper.py
+INFERNO_WORKING_DIR=/tmp           # Temporary files directory
+
+# Common configuration
+PROMETHEUS_BASE_URL=http://localhost:9090
+GLOBAL_OPT_INTERVAL=60s
+GLOBAL_OPT_TRIGGER=false
+```
+
+### **Quick Start Guide**
+
+**For Go Optimizer (Recommended for most users):**
+```bash
+# Use lightweight image
+docker build -f Dockerfile_GO -t inferno:go .
+# Default environment variables work out of the box
+```
+
+**For Python Optimizer:**
+```bash
+# Use full image with Python support
+docker build -t inferno:full .
+# Set optimizer type
+export INFERNO_OPTIMIZER_TYPE=python
+```
+
+**Development Setup:**
+```bash
+# Copy environment template
+cp .env.example .env
+# Edit .env to choose your optimizer and configuration
+# Source the environment
+source .env
+```
+
 ## Quickstart: Emulated Deployment on Kind
 - Emulated deployment, creates fake gpu resources on the node and deploys inferno on the cluster where inferno consumes fake gpu resources. As well as the emulated vllm server (vllme).
 
@@ -265,11 +350,25 @@ kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n inferno-autosc
 
 If running the controller locally using `make run`, make sure to install [prerequisites](https://github.com/llm-inferno/optimizer?tab=readme-ov-file#prerequisites) first.
 
+**For Python Optimizer (local development):**
+```bash
+# Install Python dependencies
+cd autoscaler
+pip install -r requirements.txt
+cd ..
+
+# Set environment variables
+export INFERNO_OPTIMIZER_TYPE=python
+export INFERNO_PYTHON_SCRIPT=$PWD/autoscaler/cmd_folder/go_autoscaler_wrapper.py
+```
+
 Once you've forwarded prometheus to localhost:9090, the command to run:
 
 ```shell
 make run PROMETHEUS_BASE_URL=http://localhost:9090
 ```
+
+**Note**: The controller will automatically detect the optimizer type from environment variables. See [Optimizer Options](#optimizer-options) for configuration details.
 
 **Prometheus Configuration**
 

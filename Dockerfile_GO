@@ -1,14 +1,13 @@
-# Dockerfile: Full optimizer support (Go + Python)
-#
-# Use this for:
-# - Both Go and Python optimizers
-# - Development and testing
-# - Production deployments that need optimizer flexibility
-# - Default for make docker-build
-#
-# Build: docker build -t your-registry/inferno:full .
+# Dockerfile_GO: Minimal Go-only optimizer image
 # 
-# Build the manager binary (same as Dockerfile_GO)
+# Use this for:
+# - Go optimizer only (INFERNO_OPTIMIZER_TYPE=go)
+# - Minimal footprint (~20MB)
+# - Production deployments that don't need Python
+#
+# Build: docker build -f Dockerfile_GO -t your-registry/inferno:go .
+#
+# Build the manager binary
 FROM docker.io/golang:1.23 AS builder
 ARG TARGETOS
 ARG TARGETARCH
@@ -33,31 +32,15 @@ COPY internal/ internal/
 # by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager cmd/main.go
 
-# Python runtime stage - supports both Go and Python optimizers
-FROM python:3.11-slim AS runtime
+# Use distroless as minimal base image to package the manager binary (Go optimizer only)
+# Refer to https://github.com/GoogleContainerTools/distroless for more details
+FROM gcr.io/distroless/static:nonroot
 WORKDIR /
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy the manager binary from builder
 COPY --from=builder /workspace/manager .
+USER 65532:65532
 
-# Copy Python autoscaler code and install dependencies
-COPY autoscaler/ /autoscaler/
-RUN cd /autoscaler && pip install --no-cache-dir -r requirements.txt
-
-# Create non-root user
-RUN groupadd -r inferno && useradd -r -g inferno inferno
-RUN chown -R inferno:inferno /autoscaler
-USER inferno
-
-# Set environment variables - defaults to Go optimizer for backwards compatibility
+# Set environment variables for Go optimizer (default)
 ENV INFERNO_OPTIMIZER_TYPE=go
-ENV INFERNO_PYTHON_PATH=python3
-ENV INFERNO_PYTHON_SCRIPT=/autoscaler/cmd_folder/go_autoscaler_wrapper.py
 ENV INFERNO_WORKING_DIR=/tmp
 ENV PROMETHEUS_BASE_URL=""
 ENV GLOBAL_OPT_INTERVAL=60s
