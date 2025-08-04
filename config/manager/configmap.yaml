@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: variantautoscaling-config
+  name: inferno-autoscaler-variantautoscaling-config
   namespace: inferno-autoscaler-system
   labels:
     app.kubernetes.io/name: inferno-autoscaler

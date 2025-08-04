@@ -5,7 +5,7 @@ kind: VariantAutoscaling
 metadata:
   # Unique name of the variant
   name: vllme-deployment 
-  namespace: default
+  namespace: llm-d-sim
   labels:
     inference.optimization/acceleratorName: A100
 # This is essentially static input to the optimizer
