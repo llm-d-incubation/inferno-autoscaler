@@ -90,25 +90,6 @@ Its objective is to mimize total cost, while satisfying the SLOs for all variant
 In case there are not enough accelerators to satisfy all SLOs, the variant with higher priority will be satisfied first.
 The optimizer uses the model analyzer to estimate the number of replicas needed for each variant to satisfy its SLOs, given the observed load statistics.
 
-## Roadmap
-
-Planned extensions to WVA.
-
-- **Decision variables:** In addition to the number of replicas, WVA decides on
-
-    1. the accelerators assigned to a given variant, in a heterogeneous environment, and
-    2. the maximum request concurrency for a variant (This could be achieved through setting the maximum batch size of the vllm server or configuring a maximum concurrency parameter for the request scheduler to impose).
-
-- **Workload criticality:** Consider tradeoffs among variants with different criticality, in case the SLOs cannot be met with the given load. For example, dropping requests to maintain SLOs.
-
-- **P/D disaggregation:** Extend queueing model to handle P and D only, as well as P/D processing.
-
-- **Flexible objective function:** Extend the objective function beyond minimizing cost.
-
-- **Collaboration with scheduler:** There are cases where WVA and the scheduler could collaboratively help each other, through passing hints.
-
-- **Batch workload:** Extend WVA to not only handle interactive workload, but also batch workloads, and combinations of both workloads.
-
 ## References
 
 [^Agrawal2024]: Agrawal, Amey, et al. "[Taming Throughput-Latency tradeoff in LLM inference with Sarathi-Serve.](https://www.usenix.org/system/files/osdi24-agrawal.pdf)" 18th USENIX Symposium on Operating Systems Design and Implementation (OSDI 24). 2024.

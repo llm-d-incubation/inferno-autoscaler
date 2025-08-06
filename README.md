@@ -35,7 +35,7 @@ These include the new [API proposal](https://docs.google.com/document/d/1j2KRAT6
 
 For more details please refer to the community proposal [here](https://docs.google.com/document/d/1n6SAhloQaoSyF2k3EveIOerT-f97HuWXTLFm07xcvqk/edit?tab=t.0).
 
-Modeling and optimization techniques used in the inferno-autoscaler are described in this [document](./docs/modeling-optimization.md)
+Modeling and optimization techniques used in the inferno-autoscaler are described in this [document](./docs/modeling-optimization.md).
 
 ## Getting Started
 
