@@ -53,6 +53,91 @@ Modeling and optimization techniques used in the inferno-autoscaler are describe
 - kubectl version v1.11.3+.
 - Access to a Kubernetes v1.11.3+ cluster.
 
+## Optimizer Options
+
+The inferno-autoscaler supports two optimization engines:
+
+### **Go Optimizer (Default)**
+- **Description**: Uses the existing `inferno-optimizer-light` library
+- **Benefits**: Lightweight, fast, minimal dependencies
+- **Use cases**: Production deployments, resource-constrained environments
+- **Prerequisites**: Go build environment only
+- **Image size**: ~20MB (distroless)
+
+### **Python Optimizer**
+- **Description**: Advanced mathematical optimization using Python-based solvers
+- **Benefits**: More sophisticated optimization algorithms, flexibility for research
+- **Use cases**: Advanced optimization scenarios, research environments
+- **Prerequisites**: Python 3.11+ with dependencies (numpy, pandas, scipy, docplex)
+- **Image size**: ~200MB (includes Python runtime)
+
+## Docker Build Options
+
+Choose the appropriate Docker build based on your optimizer needs:
+
+### **Option 1: Go Optimizer Only (Lightweight)**
+```bash
+# Build minimal Go-only image
+docker build -f Dockerfile_GO -t your-registry/inferno:go .
+
+# Deploy with Go optimizer
+kubectl set env deployment/inferno-autoscaler INFERNO_OPTIMIZER_TYPE=go
+```
+
+### **Option 2: Full Support (Go + Python)**
+```bash
+# Build full-featured image (default)
+docker build -t your-registry/inferno:full .
+
+# Or use make command
+make docker-build IMG=your-registry/inferno:full
+```
+
+### **Environment Configuration**
+
+Control optimizer behavior with environment variables:
+
+```bash
+# Optimizer selection
+INFERNO_OPTIMIZER_TYPE=go          # "go" or "python" (default: go)
+
+# Python optimizer configuration (when INFERNO_OPTIMIZER_TYPE=python)
+INFERNO_PYTHON_PATH=python3        # Python executable path
+INFERNO_PYTHON_SCRIPT=/autoscaler/cmd_folder/go_autoscaler_wrapper.py
+INFERNO_WORKING_DIR=/tmp           # Temporary files directory
+
+# Common configuration
+PROMETHEUS_BASE_URL=http://localhost:9090
+GLOBAL_OPT_INTERVAL=60s
+GLOBAL_OPT_TRIGGER=false
+```
+
+### **Quick Start Guide**
+
+**For Go Optimizer (Recommended for most users):**
+```bash
+# Use lightweight image
+docker build -f Dockerfile_GO -t inferno:go .
+# Default environment variables work out of the box
+```
+
+**For Python Optimizer:**
+```bash
+# Use full image with Python support
+docker build -t inferno:full .
+# Set optimizer type
+export INFERNO_OPTIMIZER_TYPE=python
+```
+
+**Development Setup:**
+```bash
+# Copy environment template
+cp .env.example .env
+# Edit .env to choose your optimizer and configuration
+# Source the environment
+source .env
+```
+
 ## Quickstart Guide: Installation of Inferno-autoscaler along with llm-d infrastructure emulated deployment on a Kind cluster
 
 Use this target to spin up a local test environment integrated with llm-d core components:
@@ -409,6 +494,173 @@ For detailed information about the custom metrics, see [Custom Metrics Documenta
 # username:admin
 # password: prom-operator
 kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n inferno-autoscaler-monitoring
+```
+
+**Running the controller locally for dev**
+
+If running the controller locally using `make run`, make sure to install [prerequisites](https://github.com/llm-inferno/optimizer?tab=readme-ov-file#prerequisites) first.
+
+**For Python Optimizer (local development):**
+```bash
+# Install Python dependencies
+cd autoscaler
+pip install -r requirements.txt
+cd ..
+
+# Set environment variables
+export INFERNO_OPTIMIZER_TYPE=python
+export INFERNO_PYTHON_SCRIPT=$PWD/autoscaler/cmd_folder/go_autoscaler_wrapper.py
+```
+
+Once you've forwarded prometheus to localhost:9090, the command to run:
+
+```shell
+make run PROMETHEUS_BASE_URL=http://localhost:9090
+```
+
+**Note**: The controller will automatically detect the optimizer type from environment variables. See [Optimizer Options](#optimizer-options) for configuration details.
+
+**Prometheus Configuration**
+
+The controller supports flexible Prometheus configuration through multiple methods (in order of precedence):
+
+1. **Environment Variable** (highest priority):
+   ```shell
+   PROMETHEUS_BASE_URL=http://localhost:9090
+   ```
+
+2. **ConfigMap Configuration**:
+   The `inferno-autoscaler-variantautoscaling-config` ConfigMap in the `inferno-autoscaler-system` namespace contains:
+   ```yaml
+   data:
+     PROMETHEUS_BASE_URL: "http://prometheus-operated.inferno-autoscaler-monitoring.svc.cluster.local:9090"
+     GLOBAL_OPT_INTERVAL: "60s"
+     GLOBAL_OPT_TRIGGER: "false"
+   ```
+
+3. **Default In-Cluster Address** (fallback):
+   ```shell
+   http://prometheus-operated.inferno-autoscaler-monitoring.svc.cluster.local:9090
+   ```
+
+**Customizing Prometheus URL for Different Environments:**
+
+**Local Development:**
+```shell
+# When running locally with port-forwarded Prometheus
+PROMETHEUS_BASE_URL=http://localhost:9090
+```
+
+**Different Cluster Namespace:**
+```shell
+# If Prometheus is in a different namespace
+PROMETHEUS_BASE_URL=http://prometheus-operated.monitoring.svc.cluster.local:9090
+```
+
+**External Prometheus:**
+```shell
+# For external Prometheus instances
+PROMETHEUS_BASE_URL=https://prometheus.example.com:9090
+```
+
+**Custom Prometheus Installation:**
+```shell
+# For custom Prometheus deployments
+PROMETHEUS_BASE_URL=http://my-prometheus.my-namespace.svc.cluster.local:9090
+```
+
+**Note**: The `PROMETHEUS_BASE_URL` is now automatically set in the deployment configuration for in-cluster deployments. The controller includes retry logic to handle Prometheus startup delays and will wait up to 5 minutes for Prometheus to become available.
+
+## Security Considerations
+
+### Metrics Endpoint Security
+The controller's metrics endpoint is currently configured for HTTP access on port 8080 without TLS encryption. This configuration is suitable for development and testing environments but should be secured for production deployments.
+
+**For Production Deployments:**
+1. Enable secure metrics by setting `--metrics-secure=true`
+2. Configure TLS certificates for the metrics endpoint
+3. Use network policies to restrict access to the metrics port
+4. Consider using a reverse proxy with TLS termination
+
+**Example Production Configuration:**
+```yaml
+# In config/default/manager_metrics_patch.yaml
+- op: replace
+  path: /spec/template/spec/containers/0/args/1
+  value: --metrics-secure=true
+
+## Integration with llm-d 
+
+Use this target to spin up a local test environment integrated with llm-d core components:
+
+```sh
+make deploy-llm-d-inferno-emulated-on-kind
+```
+
+This target deploys an environment ready for testing, integrating the llm-d infrastructure and the Inferno-autoscaler.
+
+The default set up:
+- Deploys a 3 Kind nodes, 2 GPUs per node, mixed vendors with fake GPU resources
+- Includes the Inferno autoscaler
+- Installs the [llm-d core infrastructure for simulation purposes](https://github.com/llm-d-incubation/llm-d-infra/blob/main/quickstart/examples/sim/README.md)
+- Includes vLLM emulator and load generator (OpenAI-based)
+
+To curl the Gateway:
+1. Find the gateway service:
+```sh
+kubectl get services -n llm-d-sim
+NAME                          TYPE        CLUSTER-IP    EXTERNAL-IP   PORT(S)             AGE
+gaie-sim-epp                  ClusterIP   10.16.2.6     <none>        9002/TCP,9090/TCP   42s
+infra-sim-inference-gateway   NodePort    10.16.2.157   <none>        80:37479/TCP        64s
+```
+
+2. Then `port-forward` the gateway service to we can curl it:
+```sh
+kubectl port-forward -n llm-d-sim service/infra-sim-inference-gateway 8000:80
+```
+
+3. Launch the `loadgen.py` load generator to send requests to the `v1/chat/completions` endpoint:
+```sh
+cd hack/vllme/vllm_emulator
+python loadgen.py
+```
+
+- To request the gateway, as '*server base URL*' use **http://localhost:8000/v1** [**option 3**]
+- As '*model name*', insert: "**vllm**"
+
+**Note**: since the environment uses vllm-emulator, the **Criticality** parameter is set to `critical` for emulation purposes.
+
+### Uninstalling llm-d and Inferno-autoscaler 
+Use this target to undeploy the integrated test environment and related resources:
+
+```sh
+make undeploy-llm-d-inferno-emulated-on-kind
+```
+
+## Project Distribution
+
+Following the options to release and provide this solution to the users.
+
+### By providing a bundle with all YAML files
+
+1. Build the installer for the image built and published in the registry:
+
+```sh
+make build-installer IMG=<some-registry>/inferno-autoscaler:tag
+```
+
+**NOTE:** The makefile target mentioned above generates an 'install.yaml'
+file in the dist directory. This file contains all the resources built
+with Kustomize, which are necessary to install this project without its
+dependencies.
+
+2. Using the installer
+
+Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
+the project, i.e.:
+
+```sh
+kubectl apply -f https://raw.githubusercontent.com/<org>/inferno-autoscaler/<tag or branch>/dist/install.yaml
 ```
 
 ## Contributing

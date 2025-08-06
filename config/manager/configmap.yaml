@@ -12,4 +12,10 @@ data:
   
   # Optimization configuration
   GLOBAL_OPT_INTERVAL: "60s"
-  GLOBAL_OPT_TRIGGER: "false" 
+  GLOBAL_OPT_TRIGGER: "false"
+  
+  # Optimizer engine configuration
+  INFERNO_OPTIMIZER_TYPE: "go"
+  INFERNO_PYTHON_PATH: "python3"
+  INFERNO_PYTHON_SCRIPT: "autoscaler/cmd_folder/go_autoscaler_wrapper.py"
+  INFERNO_WORKING_DIR: "/tmp" 
