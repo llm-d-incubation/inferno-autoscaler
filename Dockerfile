@@ -50,9 +50,9 @@ COPY autoscaler/ /autoscaler/
 RUN cd /autoscaler && pip install --no-cache-dir -r requirements.txt
 
 # Create non-root user
-RUN groupadd -r inferno && useradd -r -g inferno inferno
-RUN chown -R inferno:inferno /autoscaler
-USER inferno
+RUN groupadd -r -g 65532 inferno && useradd -r -u 65532 -g inferno inferno
+RUN chown -R 65532:65532 /autoscaler
+USER 65532:65532
 
 # Set environment variables - defaults to Go optimizer for backwards compatibility
 ENV INFERNO_OPTIMIZER_TYPE=go
