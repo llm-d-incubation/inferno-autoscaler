@@ -37,7 +37,7 @@ func (engine *VariantAutoscalingsEngine) Optimize(ctx context.Context,
 	}
 	allocationSolution := engine.system.GenerateSolution()
 	if allocationSolution == nil || len(allocationSolution.Spec) == 0 {
-		return nil, fmt.Errorf("no feasible solution found")
+		return nil, fmt.Errorf("No feasible solution found: ")
 	}
 
 	logger.Log.Debug("Optimization solution", "system", engine.system)

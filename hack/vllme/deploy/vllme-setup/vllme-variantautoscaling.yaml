@@ -7,18 +7,17 @@ metadata:
   name: vllme-deployment 
   namespace: llm-d-sim
   labels:
-    inference.optimization/modelName: default
     inference.optimization/acceleratorName: A100
 # This is essentially static input to the optimizer
 spec:
   # OpenAI API compatible name of the model
-  modelID: default
+  modelID: default/default
   # Add SLOs in configmap, add reference to this per model data
   # to avoid duplication and Move to ISOs when available
   sloClassRef:
     # Configmap name to load in the same namespace as optimizer object
     # we start with static (non-changing) ConfigMaps (for ease of implementation only)
-    name: premium-slo
+    name: premium
     # Key (modelID) present inside configmap
     key: opt-125m
   # Static profiled benchmarked data for a variant running on different accelerators

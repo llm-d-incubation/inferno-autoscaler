@@ -23,7 +23,7 @@ spec:
         imagePullPolicy: Always
         env: 
         - name: MODEL_NAME
-          value: "default" 
+          value: "default/default" 
         - name: DECODE_TIME
           value: "20"        # In milliseconds, e.g., 50ms per token decode
         - name: PREFILL_TIME
@@ -52,9 +52,11 @@ spec:
           limits:
             cpu: 500m
             memory: 1Gi
+            nvidia.com/gpu: "1"  # Limit to 1 GPU
           requests:
             cpu: 100m
             memory: 500Mi
+            nvidia.com/gpu: "1"  # Request 1 GPU
 ---
 apiVersion: v1
 kind: Service

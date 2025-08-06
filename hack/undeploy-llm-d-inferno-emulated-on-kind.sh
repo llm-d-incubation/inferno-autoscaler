@@ -10,15 +10,10 @@ LLMD_NAMESPACE="llm-d-sim"
 INFRA_RELEASE_NAME="infra-sim"
 GATEWAY="kgateway"
 
-INFERNO_DEFAULT_IMAGE="quay.io/infernoautoscaler/inferno-controller:latest"
-
 function undeploy_inferno() {
     echo ">>> Undeploying Inferno Autoscaler..."
     make undeploy-inferno-on-kind
-    if [[ $? -ne 0 ]]; then
-        echo "ERROR: Inferno Autoscaler undeployment failed."
-        exit 1
-    fi
+    kubectl delete -f $PROJ_ROOT_DIR/deploy/configmap-accelerator-unitcost.yaml -f $PROJ_ROOT_DIR/deploy/configmap-serviceclass.yaml --ignore-not-found
 }
 
 undeploy_inferno
@@ -26,11 +21,7 @@ undeploy_inferno
 cd "$INFRA_REPO_DIR/quickstart"
 
 echo ">>> Running the llm-d-infra installer script to uninstall llm-d..."
-./llmd-infra-installer.sh --namespace "$LLMD_NAMESPACE" -r "$INFRA_RELEASE_NAME" --gateway "$GATEWAY" -u
-if [[ $? -ne 0 ]]; then
-    echo "ERROR: llm-d-infra installer script failed to uninstall llm-d."
-    exit 1
-fi
+./llmd-infra-installer.sh --namespace "$LLMD_NAMESPACE" -r "$INFRA_RELEASE_NAME" --gateway "$GATEWAY" --uninstall
 
 cd "$PROJ_ROOT_DIR"
 

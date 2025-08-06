@@ -4,7 +4,7 @@ inferenceExtension:
     # Either image will work, you just need to bring the correct plugins per image. In this example we will bring the upstream default plugin
     ###################
     name: llm-d-inference-scheduler
-    hub: quay.io/grpereir
+    hub: quay.io/infernoautoscaler
     tag: v0.2.1-arm64
     ###################
     # name: epp

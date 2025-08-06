@@ -46,7 +46,7 @@ func (a *Actuator) ApplyReplicaTargets(ctx context.Context, VariantAutoscaling *
 		return fmt.Errorf("failed to patch Deployment %s: %w", deploy.Name, err)
 	}
 
-	logger.Log.Info("Patched Deployment", "name: ", deploy.Name, " num-replicas: ", replicas)
+	logger.Log.Info("Patched Deployment: ", "name: ", deploy.Name, " num-replicas: ", replicas)
 
 	// Emit metrics for replica scaling
 	if replicas > *original.Spec.Replicas {

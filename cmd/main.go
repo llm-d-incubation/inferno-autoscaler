@@ -251,7 +251,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting manager")
+	setupLog.Info("Starting manager")
 
 	// Sync the custom logger before starting the manager
 	if logger.Log != nil {

@@ -102,6 +102,10 @@ while [[ $(kubectl get nodes "${control_plane_node}" --no-headers 2>/dev/null | 
     sleep 1
 done
 
+echo "[2.1/6] Removing control-plane node taint to allow scheduling..."
+
+kubectl taint nodes "${control_plane_node}" node-role.kubernetes.io/control-plane- || true
+
 # --------------------------------------------------------------------
 # Patch Node Labels
 # --------------------------------------------------------------------

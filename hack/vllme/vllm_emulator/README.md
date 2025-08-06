@@ -12,7 +12,6 @@ Code Structure:
 vllm_model.py - All relevant classes and modelling is here
 experiment.py - instantiate the vLLM model instance and run offline inference to get statistics  (python experiment.py)
 server.py     - instantiate a vLLM model instance and start a (local) server to use it - (uvicorn server:app)
-client.py     - Send one single request to the server (python client.py)
 logs/run.log  - logs from all runs are stored here. Refreshed on each new run
 ```
 
@@ -31,10 +30,3 @@ $ docker run -p 8000:80 vllme
 ```
 
 `-p 8000:80` tells docker to publish the container port 80 to your host port 8000.
-
-Finally you can test it by sending a request:
-
-```
-$ python client.py
-Request stats: arrival time = 2050, completion time = 5600, ttft = 50, input_token_len = 18, output_token_len = 89
-```

@@ -47,7 +47,7 @@ func CollectInventoryK8S(ctx context.Context, r client.Client) (map[string]map[s
 				// found a GPU of this vendor
 				mem := node.Labels[memKey]
 				count := 0
-				if cap, ok := node.Status.Capacity[corev1.ResourceName(vendor+"/gpu")]; ok {
+				if cap, ok := node.Status.Allocatable[corev1.ResourceName(vendor+"/gpu")]; ok {
 					count = int(cap.Value())
 				}
 				if inv[nodeName] == nil {
@@ -57,7 +57,7 @@ func CollectInventoryK8S(ctx context.Context, r client.Client) (map[string]map[s
 					Count:  count,
 					Memory: mem,
 				}
-				logger.Log.Debug("found inventory", "nodeName", nodeName, "model", model, "count", count, "mem", mem)
+				logger.Log.Debug("Found inventory: ", "nodeName - ", nodeName, " , model - ", model, " , count - ", count, " , mem - ", mem)
 			}
 		}
 	}
@@ -77,7 +77,7 @@ func AddMetricsToOptStatus(ctx context.Context,
 	promAPI promv1.API) (llmdVariantAutoscalingV1alpha1.Allocation, error) {
 
 	deployNamespace := deployment.Namespace
-	modelName := opt.Labels["inference.optimization/modelName"]
+	modelName := opt.Spec.ModelID
 
 	// Setup Prometheus client
 	// TODO: agree on using standard vllm metrics
