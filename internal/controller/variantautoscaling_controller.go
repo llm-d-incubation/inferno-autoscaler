@@ -182,7 +182,7 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// Create optimizer engine based on configuration
-	optimizerConfig := variantAutoscalingOptimizer.GetOptimizerConfigFromEnv()
+	optimizerConfig := variantAutoscalingOptimizer.GetOptimizerConfig(r.Client, ctx)
 	optimizer := variantAutoscalingOptimizer.NewOptimizerEngine(
 		optimizerConfig,
 		r.Client,
