@@ -1,0 +1,53 @@
+name: CI - PR Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies (ZeroMQ)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libzmq3-dev pkg-config
+
+      - name: Sanity check repo contents
+        run: ls -la
+
+      - name: Extract Go version from go.mod
+        run: sed -En 's/^go (.*)$/GO_VERSION=\1/p' go.mod >> $GITHUB_ENV
+
+      - name: Set up Go with cache
+        uses: actions/setup-go@v5
+        with:
+          go-version: "${{ env.GO_VERSION }}"
+          cache-dependency-path: ./go.sum
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.1.6
+          args: ""
+
+      - name: Run precommit checks
+        run: make precommit
+
+      - name: Run make build
+        shell: bash
+        run: |
+          make build
+
+      - name: Run make test
+        shell: bash
+        run: |
+          make test
