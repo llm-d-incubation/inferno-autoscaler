@@ -1,0 +1,16 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: vllm
+  namespace: vllm-test
+  labels:
+    app: vllm
+spec:
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8000
+      targetPort: http
+  selector:
+    app: vllm
+  type: ClusterIP   # default, enables load-balancing

@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: guidellm-job-2
+  namespace: vllm-test
+spec:
+  template:
+    spec:
+      containers:
+      - name: guidellm-benchmark-container
+        image: quay.io/vishakharamani/guidellm:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: HF_HOME
+          value: "/tmp"
+        command: ["/usr/local/bin/guidellm"]
+        args:
+        - "benchmark"
+        - "--target"
+        - "http://vllm:8000"
+        - "--rate-type"
+        - "constant"
+        - "--rate"
+        - "8"
+        - "--max-seconds"
+        - "360"
+        - "--model"
+        - "unsloth/Meta-Llama-3.1-8B"
+        - "--data"
+        - "prompt_tokens=128,output_tokens=512"
+        - "--output-path"
+        - "/tmp/benchmarks.json" 
+      restartPolicy: Never
+  backoffLimit: 4

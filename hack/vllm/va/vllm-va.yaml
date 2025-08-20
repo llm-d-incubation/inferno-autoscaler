@@ -1,0 +1,21 @@
+apiVersion: llmd.ai/v1alpha1
+kind: VariantAutoscaling
+metadata:
+  name: vllm
+  namespace: vllm-test
+  labels:
+    inference.optimization/modelName: Meta-Llama-3.1-8B
+    inference.optimization/acceleratorName: H100
+spec:
+  modelID: unsloth/Meta-Llama-3.1-8B
+  sloClassRef:
+    name: premium-slo
+    key: opt-125m
+  modelProfile:
+    accelerators:
+      - acc: "H100"
+        accCount: 1
+        alpha: "6.356"
+        beta: "0.044"
+        maxBatchSize: 512
+        atTokens: 512

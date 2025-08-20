@@ -27,3 +27,8 @@ data:
     "device": "Intel-Gaudi-2-96GB",
     "cost": "23.00"
     }
+  H100: |
+    {
+    "device": "NVIDIA-H100-80GB-HBM3",
+    "cost": "100.0"
+    }

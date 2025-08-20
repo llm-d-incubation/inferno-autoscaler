@@ -99,7 +99,7 @@ func AddMetricsToOptStatus(ctx context.Context,
 
 	// Query 2: Average token length
 	// TODO: split composite query to individual queries
-	tokenQuery := fmt.Sprintf(`delta(vllm:tokens_total{model_name="%s",namespace="%s"}[1m])/delta(vllm:request_success_total{model_name="%s",namespace="%s"}[1m])`,
+	tokenQuery := fmt.Sprintf(`sum(rate(vllm:request_generation_tokens_sum{model_name="%s",namespace="%s"}[1m]))/sum(rate(vllm:request_generation_tokens_count{model_name="%s",namespace="%s"}[1m]))`,
 		modelName, deployNamespace, modelName, deployNamespace)
 	avgLen := 0.0
 	if val, _, err := promAPI.Query(ctx, tokenQuery, time.Now()); err == nil && val.Type() == model.ValVector {
