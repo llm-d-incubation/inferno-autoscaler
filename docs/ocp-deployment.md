@@ -1,4 +1,4 @@
-# Deploying the Inferno-Autoscaler on OpenShift
+# Deploying the Inferno-Autoscaler and llm-d on OpenShift
 
 This guide shows how to deploy the Inferno-Autoscaler (integrated with the HorizontalPodAutoscaler) on OpenShift (OCP), allowing vLLM servers to scale accordingly to the observed load.
 
@@ -16,16 +16,20 @@ After deploying the Inferno-autoscaler following the provided guides, this guide
 
 4. **HPA** reads the value for the `inferno_desired_replicas` metrics and adjusts Deployment replicas accordingly
 
+5. **llm-d infrastructure**: a Gateway and the Inference Scheduler are deployed to forward requests to the pods running vLLM instances.
+
 ## Prerequisites
 
 - Prometheus stack already present on the OCP cluster
 - All components must be fully ready before proceeding: 2-3 minutes may be needed after the deployment
 
-### 0. Deploy the Inferno-Autoscaler and the vLLM Deployment
+### 0. Deploy the Inferno-Autoscaler and llm-d
 
 #### Deploying the Inferno-Autoscaler
 
-Before running the Make target to deploy Inferno-Autoscaler, the `PROMETHEUS_BASE_URL` in the `config/manager/configmap.yaml` must be changed into the following, to be able to connect to Thanos:
+Before running the Make target to deploy Inferno-Autoscaler, the `PROMETHEUS_BASE_URL` in the `config/manager/configmap.yaml` must be changed into a valid URL, to be able to connect to Thanos:
+
+**Note**: the Prometheus/Thanos URL may change depending on your OCP setup.
 
 ```yaml
 # ...
@@ -53,25 +57,71 @@ An example of this configuration can be found [at the end of this README](#servi
 kubectl apply -f config/samples/inferno-servicemon-ocp.yaml
 ```
 
-#### Deploying the vLLM Deployment
+Finally, deploy the Service and ServiceMonitor, needed by Prometheus to scrape metrics from the vLLM Deployment that will be installed by **llm-d**. An example of this configuration can be found [at the end of this README](#service-and-servicemonitor-for-vllm-configuration-example-configsamplesvllm-deployment-service-servicemonyaml).
 
-First, create a secret containing your HuggingFace token:
+#### Deploying the llm-d infrastructure
+
+*Note*:
+
+- This guide will follow the steps for the recommended out of the box scheduling configuration for most vLLM deployments using **llm-d**, [available here](https://github.com/llm-d-incubation/llm-d-infra/tree/main/quickstart/examples/inference-scheduling).
+
+- If you want to deploy other examples using **llm-d**, please refer to the [llm-d infrastructure repo](https://github.com/llm-d-incubation/llm-d-infra/tree/main/quickstart/examples).
+
+```sh
+export BASE_NAME="inference-scheduler"
+export NAMESPACE="llm-d-$BASE_NAME"
+export EXAMPLES_DIR="examples/$BASE_NAME"
+```
+
+1. First, create a secret containing your HuggingFace token:
 
 ```sh
 export HF_TOKEN="<your-hf-token>"
-kubectl create secret -n llm-d-sim generic llm-d-hf-token --from-literal=token="$HF_TOKEN"
+kubectl create secret generic llm-d-hf-token \
+    --from-literal="HF_TOKEN=${HF_TOKEN}" \
+    --namespace "${NAMESPACE}" \
+    --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-Then, create a Deployment for vLLM. An example of this configuration can be found [at the end of this README](#vllm-deployment-example-configsamplesvllm-deployment-service-servicemonyaml).
+2. Then, clone the llm-d infrastructure repository:
 
 ```sh
-## After creating the file `config/samples/vllm-deployment-service-servicemon.yaml`
-kubectl apply -f config/samples/vllm-deployment-service-servicemon.yaml
+export OWNER="llm-d-incubation" 
+export PROJECT="llm-d-infra"
+export RELEASE="v1.3.1"
+git clone -b $RELEASE -- https://github.com/$OWNER/$PROJECT.git $PROJECT
 ```
 
-### 1. Create Thanos CA ConfigMap
+3. Install the required dependencies, including the Gateway API and Inference Extension CRDs:
+
+```sh
+cd $PROJECT/quickstart
+bash dependencies/install-deps.sh
+bash gateway-control-plane-providers/install-gateway-provider-dependencies.sh
+```
+
+4. Install the Gateway provider CRDs:
+
+```sh
+ # switching to kgateway v2.0.3
+yq eval '.releases[].version = "v2.0.3"' -i "gateway-control-plane-providers/kgateway.helmfile.yaml"
+helmfile apply -f "gateway-control-plane-providers/kgateway.helmfile.yaml"
+```
+
+*Note*: this setup was tested using `kgateway`. Currently, there are issues with `kgateway v2.0.4` used with **llm-d**, therefore we need to switch to `v2.0.3`.
+
+5. Install the llm-d core components:
+
+```sh
+cd $EXAMPLES_DIR
+helmfile apply -e kgateway
+```
+
+### 1. Prometheus: create Thanos CA ConfigMap
 
 Prometheus and Thanos are deployed on OCPs with TLS (HTTPS) for security. The Prometheus Adapter needs to connect to Thanos at https://thanos-querier.openshift-monitoring.svc.cluster.local.
+
+**Note**: the Prometheus/Thanos URL and secret may change depending on your OCP setup.
 
 We will use a CA configmap for TLS Certificate Verification:
 
@@ -112,7 +162,7 @@ kubectl apply -f config/samples/vllm-va.yaml
 You can verify that metrics are being emitted and fetched by querying for the following:
 
 ```bash
-kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-sim/inferno_desired_replicas" | jq
+kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/$NAMESPACE/inferno_desired_replicas" | jq
 
 {
   "kind": "ExternalMetricValueList",
@@ -125,7 +175,7 @@ kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-sim/in
         "__name__": "inferno_desired_replicas",
         "accelerator_type": "H100",
         "endpoint": "https",
-        "exported_namespace": "llm-d-sim",
+        "exported_namespace": "llm-d-inference-scheduler",
         "instance": "10.130.3.58:8443",
         "job": "inferno-autoscaler-controller-manager-metrics-service",
         "managed_cluster": "dc670625-c0d1-48d6-bcc3-b932aaceecb4",
@@ -159,7 +209,7 @@ kubectl apply -f config/samples/hpa-integration.yaml
 - Check the status of HPA (should show actual target values, not `<unknown>/1`):
 
 ```sh
-kubectl get hpa -n llm-d-sim
+kubectl get hpa -n $NAMESPACE
 NAME                  REFERENCE                                                      TARGETS     MINPODS   MAXPODS   REPLICAS   AGE
 vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1/1 (avg)   1         10        1          147m
 ```
@@ -167,166 +217,103 @@ vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-deco
 - Check the VariantAutoscaling resource:
 
 ```sh
-kubectl get variantautoscaling -n llm-d-sim
+kubectl get variantautoscaling -n $NAMESPACE
 NAME                                                MODEL             ACCELERATOR   CURRENTREPLICAS   OPTIMIZED   AGE
 ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           3h41m
 ```
 
 ## Example: scale-up scenario
 
-1. Port-forward the Service:
+1. Expose and port-forward the Gateway service:
 
 ```bash
-
-# If you deployed Inferno-autoscaler without llm-d:
-kubectl port-forward -n llm-d-sim svc/vllm-service 8000:8200
+kubectl port-forward -n $NAMESPACE svc/infra-$BASE_NAME-inference-gateway 8000:80
 ```
 
-2. Launch the load generator via the following command (*Note*: this will generate traffic for 3 minutes):
+2. Launch GuideLLM to send load to the vLLM servers via the following command (*Note*: this will generate traffic for 5 minutes):
 
 ```bash
-cd hack/vllme/vllm_emulator
-pip install -r requirements.txt
-python loadgen.py --model Qwen/Qwen3-0.6B --rate '[[180, 50]]' --url http://localhost:8000/v1 --content 150
+pip install guidellm # if not present
+guidellm benchmark --target "http://localhost:8000" --rate-type "constant" --rate 1  --max-seconds 300 --model "Qwen/Qwen3-0.6B" --data "prompt_tokens=128,output_tokens=128"
 ```
 
 3. After a while, you will see a scale out happening:
 
 ```sh
-kubectl get hpa -n llm-d-sim -w                                                             
+kubectl get hpa -n $NAMESPACE -w                                                             
 NAME                  REFERENCE                                                      TARGETS     MINPODS   MAXPODS   REPLICAS   AGE
-vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1/1 (avg)   1         10        1          150m
-vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   3/1 (avg)   1         10        1          151m
-vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1/1 (avg)   1         10        3          151m
-vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1334m/1 (avg)   1         10        3          152m
-vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1/1 (avg)       1         10        4          152m
+vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1/1 (avg)   1         10        1          51m
+vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   2/1 (avg)   1         10        1          54m
+vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1/1 (avg)   1         10        2          54m
 
-kubectl get va -n llm-d-sim -w
+kubectl get va -n $NAMESPACE -w
 NAME                                                MODEL             ACCELERATOR   CURRENTREPLICAS   OPTIMIZED   AGE
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           3h44m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 3           3h45m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 3           3h45m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          3                 4           3h46m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          3                 4           3h46m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          4                 4           3h47m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           54m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 2           55m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 2           55m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 2           55m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           56m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           56m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           56m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           57m
 
-kubectl get deployment -n llm-d-sim -w
+kubectl get deployment -n $NAMESPACE  -w
 NAME                                                READY   UP-TO-DATE   AVAILABLE   AGE
-ms-inference-scheduling-llm-d-modelservice-decode   1/1     1            1           3h56m
-ms-inference-scheduling-llm-d-modelservice-decode   1/3     1            1           3h57m
-ms-inference-scheduling-llm-d-modelservice-decode   1/3     1            1           3h57m
-ms-inference-scheduling-llm-d-modelservice-decode   1/3     1            1           3h57m
-ms-inference-scheduling-llm-d-modelservice-decode   1/3     3            1           3h57m
-ms-inference-scheduling-llm-d-modelservice-decode   1/4     3            1           3h58m
-ms-inference-scheduling-llm-d-modelservice-decode   1/4     3            1           3h58m
-ms-inference-scheduling-llm-d-modelservice-decode   1/4     3            1           3h58m
-ms-inference-scheduling-llm-d-modelservice-decode   1/4     4            1           3h58m
-ms-inference-scheduling-llm-d-modelservice-decode   2/4     4            2           3h58m
-ms-inference-scheduling-llm-d-modelservice-decode   3/4     4            3           3h58m
-ms-inference-scheduling-llm-d-modelservice-decode   4/4     4            4           3h58m
+ms-inference-scheduling-llm-d-modelservice-decode   1/1     1            1           55m
+ms-inference-scheduling-llm-d-modelservice-decode   1/2     1            1           57m
+ms-inference-scheduling-llm-d-modelservice-decode   1/2     1            1           57m
+ms-inference-scheduling-llm-d-modelservice-decode   1/2     1            1           57m
+ms-inference-scheduling-llm-d-modelservice-decode   1/2     2            1           57m
+ms-inference-scheduling-llm-d-modelservice-decode   2/2     2            2           57m
 ```
 
-It can be verified that the Inferno-autoscaler is optimizing and emitting metrics:
+4. Once the load has stopped, the vLLM deployment will be scaled in to 1 replica:
 
 ```bash
-kubectl logs -n inferno-autoscaler-system deploy/inferno-autoscaler-controller-manager
-
-###
-2025-09-04T18:37:23.826150182Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.826Z","msg":"Found inventory: nodeName - pokprod-b93r38s1 , model - NVIDIA-H100-80GB-HBM3 , count - 8 , mem - 81559"}
-2025-09-04T18:37:23.826150182Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.826Z","msg":"Found inventory: nodeName - pokprod-b93r38s2 , model - NVIDIA-H100-80GB-HBM3 , count - 8 , mem - 81559"}
-2025-09-04T18:37:23.826150182Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.826Z","msg":"Found inventory: nodeName - pokprod-b93r39s1 , model - NVIDIA-H100-80GB-HBM3 , count - 8 , mem - 81559"}
-2025-09-04T18:37:23.826150182Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.826Z","msg":"Found inventory: nodeName - pokprod-b93r38s0 , model - NVIDIA-H100-80GB-HBM3 , count - 8 , mem - 81559"}
-2025-09-04T18:37:23.826336765Z {"level":"INFO","ts":"2025-09-04T18:37:23.826Z","msg":"Found SLO for model - model: Qwen/Qwen3-0.6B, class: Premium, slo-tpot: 24, slo-ttft: 500"}
-2025-09-04T18:37:23.835891964Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.835Z","msg":"System data prepared for optimization: - { count: [  {   type: NVIDIA-H100-80GB-HBM3,   count: 32  } ]}"}
-2025-09-04T18:37:23.835935875Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.835Z","msg":"System data prepared for optimization: - { accelerators: [  {   name: A100,   type: NVIDIA-A100-PCIE-80GB,   multiplicity: 1,   memSize: 0,   memBW: 0,   power: {    idle: 0,    full: 0,    midPower: 0,    midUtil: 0   },   cost: 40  },  {   name: G2,   type: Intel-Gaudi-2-96GB,   multiplicity: 1,   memSize: 0,   memBW: 0,   power: {    idle: 0,    full: 0,    midPower: 0,    midUtil: 0   },   cost: 23  },  {   name: H100,   type: NVIDIA-H100-80GB-HBM3,   multiplicity: 1,   memSize: 0,   memBW: 0,   power: {    idle: 0,    full: 0,    midPower: 0,    midUtil: 0   },   cost: 50  },  {   name: MI300X,   type: AMD-MI300X-192GB,   multiplicity: 1,   memSize: 0,   memBW: 0,   power: {    idle: 0,    full: 0,    midPower: 0,    midUtil: 0   },   cost: 65  } ]}"}
-2025-09-04T18:37:23.835967164Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.835Z","msg":"System data prepared for optimization: - { serviceClasses: [  {   name: Freemium,   priority: 10,   modelTargets: [    {     model: granite-13b,     slo-itl: 200,     slo-ttw: 2000,     slo-tps: 0    },    {     model: llama0-7b,     slo-itl: 150,     slo-ttw: 1500,     slo-tps: 0    }   ]  },  {   name: Premium,   priority: 1,   modelTargets: [    {     model: Qwen/Qwen3-0.6B,     slo-itl: 24,     slo-ttw: 500,     slo-tps: 0    },    {     model: llama0-70b,     slo-itl: 80,     slo-ttw: 500,     slo-tps: 0    }   ]  } ]}"}
-2025-09-04T18:37:23.836000274Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.835Z","msg":"System data prepared for optimization: - { models: [  {   name: Qwen/Qwen3-0.6B,   acc: A100,   accCount: 1,   alpha: 20.58,   beta: 0.41,   maxBatchSize: 4,   atTokens: 0  },  {   name: Qwen/Qwen3-0.6B,   acc: H100,   accCount: 1,   alpha: 20.58,   beta: 0.41,   maxBatchSize: 4,   atTokens: 0  },  {   name: Qwen/Qwen3-0.6B,   acc: MI300X,   accCount: 1,   alpha: 7.77,   beta: 0.15,   maxBatchSize: 4,   atTokens: 0  },  {   name: Qwen/Qwen3-0.6B,   acc: G2,   accCount: 1,   alpha: 17.15,   beta: 0.34,   maxBatchSize: 4,   atTokens: 0  } ]}"}
-2025-09-04T18:37:23.836014318Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.836Z","msg":"System data prepared for optimization: - { optimizer: {  unlimited: true,  delayedBestEffort: false,  saturationPolicy: None }}"}
-2025-09-04T18:37:23.836051359Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.836Z","msg":"System data prepared for optimization: - { servers: [  {   name: ms-inference-scheduling-llm-d-modelservice-decode:llm-d-sim,   class: Premium,   model: Qwen/Qwen3-0.6B,   keepAccelerator: true,   minNumReplicas: 1,   maxBatchSize: 4,   currentAlloc: {    accelerator: H100,    numReplicas: 1,    maxBatch: 256,    cost: 50,    itlAverage: 7.82,    waitAverage: 0.03,    load: {     arrivalRate: 37.5,     avgLength: 279,     arrivalCOV: 0,     serviceCOV: 0    }   },   desiredAlloc: {    accelerator: ,    numReplicas: 0,    maxBatch: 0,    cost: 0,    itlAverage: 0,    waitAverage: 0,    load: {     arrivalRate: 0,     avgLength: 0,     arrivalCOV: 0,     serviceCOV: 0    }   }  } ]}"}
-2025-09-04T18:37:23.836078086Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.836Z","msg":"Optimization solution - system: Solution: \ns=ms-inference-scheduling-llm-d-modelservice-decode:llm-d-sim; c=Premium; m=Qwen/Qwen3-0.6B; rate=37.5; tk=279; sol=1, sat=false, alloc={acc=H100; num=3; maxBatch=4; cost=150, val=100, servTime=21.48383, waitTime=101.370605, rho=0.7103443, maxRPM=14.308867}; slo-itl=24, slo-ttw=500, slo-tps=0 \nAllocationByType: \nname=NVIDIA-H100-80GB-HBM3, count=3, limit=32, cost=150 \ntotalCost=150 \n"}
-2025-09-04T18:37:23.836081984Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.836Z","msg":"Optimization completed successfully, emitting optimization metrics"}
-2025-09-04T18:37:23.836081984Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.836Z","msg":"Optimized allocation map - numKeys: 1, updateList_count: 1"}
-2025-09-04T18:37:23.836093387Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.836Z","msg":"Optimized allocation entry - key: ms-inference-scheduling-llm-d-modelservice-decode, value: {2025-09-04 18:37:23.836074464 +0000 UTC m=+8140.676611163 H100 3}"}
-2025-09-04T18:37:23.836093387Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.836Z","msg":"Optimization metrics emitted, starting to process variants - variant_count: 1"}
-2025-09-04T18:37:23.836097655Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.836Z","msg":"Processing variant - index: 0, variantAutoscaling-name: ms-inference-scheduling-llm-d-modelservice-decode, namespace: llm-d-sim, has_optimized_alloc: true"}
-2025-09-04T18:37:23.836156850Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.836Z","msg":"EmitReplicaMetrics completed for variantAutoscaling-name: ms-inference-scheduling-llm-d-modelservice-decode, current-replicas: 1, desired-replicas: 3, accelerator: H100"}
-2025-09-04T18:37:23.836156850Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.836Z","msg":"Successfully emitted optimization signals for external autoscalers - variant: ms-inference-scheduling-llm-d-modelservice-decode"}
-2025-09-04T18:37:23.841748006Z {"level":"DEBUG","ts":"2025-09-04T18:37:23.841Z","msg":"Completed variant processing loop"}
-2025-09-04T18:37:23.841748006Z {"level":"INFO","ts":"2025-09-04T18:37:23.841Z","msg":"Reconciliation completed - variants_processed: 1, optimization_successful: true"}
-2025-09-04T18:37:24.059226028Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.059Z","msg":"Found inventory: nodeName - pokprod-b93r38s0 , model - NVIDIA-H100-80GB-HBM3 , count - 8 , mem - 81559"}
-2025-09-04T18:37:24.059226028Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.059Z","msg":"Found inventory: nodeName - pokprod-b93r38s1 , model - NVIDIA-H100-80GB-HBM3 , count - 8 , mem - 81559"}
-2025-09-04T18:37:24.059226028Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.059Z","msg":"Found inventory: nodeName - pokprod-b93r38s2 , model - NVIDIA-H100-80GB-HBM3 , count - 8 , mem - 81559"}
-2025-09-04T18:37:24.059226028Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.059Z","msg":"Found inventory: nodeName - pokprod-b93r39s1 , model - NVIDIA-H100-80GB-HBM3 , count - 8 , mem - 81559"}
-2025-09-04T18:37:24.059258682Z {"level":"INFO","ts":"2025-09-04T18:37:24.059Z","msg":"Found SLO for model - model: Qwen/Qwen3-0.6B, class: Premium, slo-tpot: 24, slo-ttft: 500"}
-2025-09-04T18:37:24.068919675Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.068Z","msg":"System data prepared for optimization: - { count: [  {   type: NVIDIA-H100-80GB-HBM3,   count: 32  } ]}"}
-2025-09-04T18:37:24.068919675Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.068Z","msg":"System data prepared for optimization: - { accelerators: [  {   name: A100,   type: NVIDIA-A100-PCIE-80GB,   multiplicity: 1,   memSize: 0,   memBW: 0,   power: {    idle: 0,    full: 0,    midPower: 0,    midUtil: 0   },   cost: 40  },  {   name: G2,   type: Intel-Gaudi-2-96GB,   multiplicity: 1,   memSize: 0,   memBW: 0,   power: {    idle: 0,    full: 0,    midPower: 0,    midUtil: 0   },   cost: 23  },  {   name: H100,   type: NVIDIA-H100-80GB-HBM3,   multiplicity: 1,   memSize: 0,   memBW: 0,   power: {    idle: 0,    full: 0,    midPower: 0,    midUtil: 0   },   cost: 50  },  {   name: MI300X,   type: AMD-MI300X-192GB,   multiplicity: 1,   memSize: 0,   memBW: 0,   power: {    idle: 0,    full: 0,    midPower: 0,    midUtil: 0   },   cost: 65  } ]}"}
-2025-09-04T18:37:24.068919675Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.068Z","msg":"System data prepared for optimization: - { serviceClasses: [  {   name: Premium,   priority: 1,   modelTargets: [    {     model: Qwen/Qwen3-0.6B,     slo-itl: 24,     slo-ttw: 500,     slo-tps: 0    },    {     model: llama0-70b,     slo-itl: 80,     slo-ttw: 500,     slo-tps: 0    }   ]  },  {   name: Freemium,   priority: 10,   modelTargets: [    {     model: granite-13b,     slo-itl: 200,     slo-ttw: 2000,     slo-tps: 0    },    {     model: llama0-7b,     slo-itl: 150,     slo-ttw: 1500,     slo-tps: 0    }   ]  } ]}"}
-2025-09-04T18:37:24.068919675Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.068Z","msg":"System data prepared for optimization: - { models: [  {   name: Qwen/Qwen3-0.6B,   acc: A100,   accCount: 1,   alpha: 20.58,   beta: 0.41,   maxBatchSize: 4,   atTokens: 0  },  {   name: Qwen/Qwen3-0.6B,   acc: H100,   accCount: 1,   alpha: 20.58,   beta: 0.41,   maxBatchSize: 4,   atTokens: 0  },  {   name: Qwen/Qwen3-0.6B,   acc: MI300X,   accCount: 1,   alpha: 7.77,   beta: 0.15,   maxBatchSize: 4,   atTokens: 0  },  {   name: Qwen/Qwen3-0.6B,   acc: G2,   accCount: 1,   alpha: 17.15,   beta: 0.34,   maxBatchSize: 4,   atTokens: 0  } ]}"}
-2025-09-04T18:37:24.068950491Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.068Z","msg":"System data prepared for optimization: - { optimizer: {  unlimited: true,  delayedBestEffort: false,  saturationPolicy: None }}"}
-2025-09-04T18:37:24.068967341Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.068Z","msg":"System data prepared for optimization: - { servers: [  {   name: ms-inference-scheduling-llm-d-modelservice-decode:llm-d-sim,   class: Premium,   model: Qwen/Qwen3-0.6B,   keepAccelerator: true,   minNumReplicas: 1,   maxBatchSize: 4,   currentAlloc: {    accelerator: H100,    numReplicas: 1,    maxBatch: 256,    cost: 50,    itlAverage: 7.82,    waitAverage: 0.03,    load: {     arrivalRate: 37.5,     avgLength: 279,     arrivalCOV: 0,     serviceCOV: 0    }   },   desiredAlloc: {    accelerator: ,    numReplicas: 0,    maxBatch: 0,    cost: 0,    itlAverage: 0,    waitAverage: 0,    load: {     arrivalRate: 0,     avgLength: 0,     arrivalCOV: 0,     serviceCOV: 0    }   }  } ]}"}
-2025-09-04T18:37:24.068998313Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.068Z","msg":"Optimization solution - system: Solution: \ns=ms-inference-scheduling-llm-d-modelservice-decode:llm-d-sim; c=Premium; m=Qwen/Qwen3-0.6B; rate=37.5; tk=279; sol=1, sat=false, alloc={acc=H100; num=3; maxBatch=4; cost=150, val=100, servTime=21.48383, waitTime=101.370605, rho=0.7103443, maxRPM=14.308867}; slo-itl=24, slo-ttw=500, slo-tps=0 \nAllocationByType: \nname=NVIDIA-H100-80GB-HBM3, count=3, limit=32, cost=150 \ntotalCost=150 \n"}
-2025-09-04T18:37:24.068998313Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.068Z","msg":"Optimization completed successfully, emitting optimization metrics"}
-2025-09-04T18:37:24.069008299Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.068Z","msg":"Optimized allocation map - numKeys: 1, updateList_count: 1"}
-2025-09-04T18:37:24.069012141Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.069Z","msg":"Optimized allocation entry - key: ms-inference-scheduling-llm-d-modelservice-decode, value: {2025-09-04 18:37:24.068994567 +0000 UTC m=+8140.909531265 H100 3}"}
-2025-09-04T18:37:24.069012141Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.069Z","msg":"Optimization metrics emitted, starting to process variants - variant_count: 1"}
-2025-09-04T18:37:24.069015490Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.069Z","msg":"Processing variant - index: 0, variantAutoscaling-name: ms-inference-scheduling-llm-d-modelservice-decode, namespace: llm-d-sim, has_optimized_alloc: true"}
-2025-09-04T18:37:24.069093141Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.069Z","msg":"EmitReplicaMetrics completed for variantAutoscaling-name: ms-inference-scheduling-llm-d-modelservice-decode, current-replicas: 1, desired-replicas: 3, accelerator: H100"}
-2025-09-04T18:37:24.069093141Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.069Z","msg":"Successfully emitted optimization signals for external autoscalers - variant: ms-inference-scheduling-llm-d-modelservice-decode"}
-2025-09-04T18:37:24.074410146Z {"level":"DEBUG","ts":"2025-09-04T18:37:24.074Z","msg":"Completed variant processing loop"}
-2025-09-04T18:37:24.074410146Z {"level":"INFO","ts":"2025-09-04T18:37:24.074Z","msg":"Reconciliation completed - variants_processed: 1, optimization_successful: true"}
-```
-
-4. Once the load is stopped, the vLLM deployment will be scaled in to 1 replica:
-
-```bash
-kubectl get hpa -n llm-d-sim -w                                                             
+kubectl get hpa -n $NAMESPACE -w
 NAME                  REFERENCE                                                      TARGETS     MINPODS   MAXPODS   REPLICAS   AGE
-vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1/1 (avg)   1         10        1          150m
-vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   3/1 (avg)   1         10        1          151m
-vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1/1 (avg)   1         10        3          151m
-vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1334m/1 (avg)   1         10        3          152m
-vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1/1 (avg)       1         10        4          152m
-vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   500m/1 (avg)    1         10        4          154m
-vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1/1 (avg)       1         10        2          154m
-vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   500m/1 (avg)    1         10        2          155m
-vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1/1 (avg)       1         10        1          155m
+vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1/1 (avg)   1         10        1          51m
+vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   2/1 (avg)   1         10        1          54m
+vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1/1 (avg)   1         10        2          54m
+vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   500m/1 (avg)   1         10        2          58m
+vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1/1 (avg)      1         10        1          58m
 
-kubectl get deployment -n llm-d-sim -w
-NAME                                                READY   UP-TO-DATE   AVAILABLE   AGE
-ms-inference-scheduling-llm-d-modelservice-decode   1/1     1            1           3h56m
-ms-inference-scheduling-llm-d-modelservice-decode   1/3     1            1           3h57m
-ms-inference-scheduling-llm-d-modelservice-decode   1/3     1            1           3h57m
-ms-inference-scheduling-llm-d-modelservice-decode   1/3     1            1           3h57m
-ms-inference-scheduling-llm-d-modelservice-decode   1/3     3            1           3h57m
-ms-inference-scheduling-llm-d-modelservice-decode   1/4     3            1           3h58m
-ms-inference-scheduling-llm-d-modelservice-decode   1/4     3            1           3h58m
-ms-inference-scheduling-llm-d-modelservice-decode   1/4     3            1           3h58m
-ms-inference-scheduling-llm-d-modelservice-decode   1/4     4            1           3h58m
-ms-inference-scheduling-llm-d-modelservice-decode   2/4     4            2           3h58m
-ms-inference-scheduling-llm-d-modelservice-decode   3/4     4            3           3h58m
-ms-inference-scheduling-llm-d-modelservice-decode   4/4     4            4           3h58m
-ms-inference-scheduling-llm-d-modelservice-decode   4/2     4            4           4h
-ms-inference-scheduling-llm-d-modelservice-decode   4/2     4            4           4h
-ms-inference-scheduling-llm-d-modelservice-decode   2/2     2            2           4h
-ms-inference-scheduling-llm-d-modelservice-decode   2/1     2            2           4h1m
-ms-inference-scheduling-llm-d-modelservice-decode   2/1     2            2           4h1m
-ms-inference-scheduling-llm-d-modelservice-decode   1/1     1            1           4h1m
-
-kubectl get va -n llm-d-sim -w
+kubectl get va -n $NAMESPACE -w
 NAME                                                MODEL             ACCELERATOR   CURRENTREPLICAS   OPTIMIZED   AGE
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           3h44m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 3           3h45m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 3           3h45m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          3                 4           3h46m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          3                 4           3h46m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          4                 4           3h47m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          4                 4           3h47m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          4                 2           3h48m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          4                 2           3h48m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 1           3h49m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 1           3h49m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           3h50m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           3h50m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           53m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           54m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           54m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           54m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 2           55m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 2           55m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 2           55m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           56m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           56m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           56m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           57m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           57m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           57m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           58m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           58m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           58m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 1           59m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 1           59m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 1           59m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           60m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           60m
+ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           60m
+
+kubectl get deployment -n $NAMESPACE -w
+NAME                                                READY   UP-TO-DATE   AVAILABLE   AGE
+ms-inference-scheduling-llm-d-modelservice-decode   1/1     1            1           55m
+ms-inference-scheduling-llm-d-modelservice-decode   1/2     1            1           57m
+ms-inference-scheduling-llm-d-modelservice-decode   1/2     1            1           57m
+ms-inference-scheduling-llm-d-modelservice-decode   1/2     1            1           57m
+ms-inference-scheduling-llm-d-modelservice-decode   1/2     2            1           57m
+ms-inference-scheduling-llm-d-modelservice-decode   2/2     2            2           57m
+ms-inference-scheduling-llm-d-modelservice-decode   2/1     2            2           61m
+ms-inference-scheduling-llm-d-modelservice-decode   2/1     2            2           61m
+ms-inference-scheduling-llm-d-modelservice-decode   1/1     1            1           61m
 ```
 
 ## Configuration Files
@@ -427,139 +414,19 @@ spec:
       control-plane: controller-manager
 ```
 
-### vLLM Deployment Example (`config/samples/vllm-deployment-service-servicemon.yaml`)
+### Service and ServiceMonitor for vLLM configuration Example (`config/samples/vllm-deployment-service-servicemon.yaml`)
 
 ```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  annotations:
-    meta.helm.sh/release-name: ms-inference-scheduling
-    meta.helm.sh/release-namespace: llm-d-sim
-  name: ms-inference-scheduling-llm-d-modelservice-decode
-  namespace: llm-d-sim
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: vllm
-      llm-d.ai/inferenceServing: "true"
-      llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
-      llm-d.ai/role: decode
-  strategy:
-    rollingUpdate:
-      maxSurge: 25%
-      maxUnavailable: 25%
-    type: RollingUpdate
-  template:
-    metadata:
-      labels:
-        app: vllm
-        llm-d.ai/inferenceServing: "true"
-        llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
-        llm-d.ai/role: decode
-    spec:
-      containers:
-      - args:
-        - Qwen/Qwen3-0.6B
-        - --port
-        - "8200"
-        - --served-model-name
-        - Qwen/Qwen3-0.6B
-        - --enforce-eager
-        - --kv-transfer-config
-        - '{"kv_connector":"NixlConnector", "kv_role":"kv_both"}'
-        command:
-        - vllm
-        - serve
-        env:
-        - name: CUDA_VISIBLE_DEVICES
-          value: "0"
-        - name: UCX_TLS
-          value: cuda_ipc,cuda_copy,tcp
-        - name: VLLM_NIXL_SIDE_CHANNEL_HOST
-          valueFrom:
-            fieldRef:
-              apiVersion: v1
-              fieldPath: status.podIP
-        - name: VLLM_NIXL_SIDE_CHANNEL_PORT
-          value: "5557"
-        - name: VLLM_LOGGING_LEVEL
-          value: DEBUG
-        - name: DP_SIZE
-          value: "1"
-        - name: TP_SIZE
-          value: "1"
-        - name: HF_HOME
-          value: /model-cache
-        - name: HF_TOKEN
-          valueFrom:
-            secretKeyRef:
-              key: HF_TOKEN
-              name: llm-d-hf-token
-        image: ghcr.io/llm-d/llm-d:v0.2.0
-        imagePullPolicy: IfNotPresent
-        name: vllm
-        resources:
-          limits:
-            nvidia.com/gpu: "1"
-          requests:
-            nvidia.com/gpu: "1"
-        terminationMessagePath: /dev/termination-log
-        terminationMessagePolicy: File
-        volumeMounts:
-        - mountPath: /.config
-          name: metrics-volume
-        - mountPath: /.cache
-          name: torch-compile-cache
-        - mountPath: /model-cache
-          name: model-storage
-      dnsPolicy: ClusterFirst
-      initContainers:
-      - args:
-        - --port=8000
-        - --vllm-port=8200
-        - --connector=nixlv2
-        - -v=5
-        - --secure-proxy=false
-        image: ghcr.io/llm-d/llm-d-routing-sidecar:v0.2.0
-        imagePullPolicy: Always
-        name: routing-proxy
-        ports:
-        - containerPort: 8000
-          protocol: TCP
-        resources: {}
-        restartPolicy: Always
-        securityContext:
-          allowPrivilegeEscalation: false
-          runAsNonRoot: true
-        terminationMessagePath: /dev/termination-log
-        terminationMessagePolicy: File
-      restartPolicy: Always
-      schedulerName: default-scheduler
-      securityContext: {}
-      # serviceAccount: ms-inference-scheduling-llm-d-modelservice
-      # serviceAccountName: ms-inference-scheduling-llm-d-modelservice
-      terminationGracePeriodSeconds: 30
-      volumes:
-      - emptyDir: {}
-        name: metrics-volume
-      - emptyDir: {}
-        name: torch-compile-cache
-      - emptyDir:
-          sizeLimit: 20Gi
-        name: model-storage
----
 apiVersion: v1
 kind: Service
 metadata:
   name: vllm-service
-  namespace: llm-d-sim
+  namespace: llm-d-inference-scheduler
   labels:
-    app: vllm
+    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
 spec:
   selector:
-    app: vllm
+    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
   ports:
     - name: vllm
       port: 8200
@@ -574,11 +441,11 @@ metadata:
   name: vllm-servicemonitor
   namespace: openshift-user-workload-monitoring
   labels:
-    app: vllm
+    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
 spec:
   selector:
     matchLabels:
-      app: vllm
+      llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
   endpoints:
   - port: vllm
     path: /metrics
@@ -656,7 +523,7 @@ kind: VariantAutoscaling
 metadata:
   # Unique name of the variant
   name: ms-inference-scheduling-llm-d-modelservice-decode 
-  namespace: llm-d-sim
+  namespace: llm-d-inference-scheduler
   labels:
     inference.optimization/acceleratorName: H100
 # This is essentially static input to the optimizer
@@ -703,7 +570,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: vllm-deployment-hpa
-  namespace: llm-d-sim
+  namespace: llm-d-inference-scheduler
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
