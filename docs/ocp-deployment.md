@@ -580,13 +580,13 @@ spec:
   maxReplicas: 10
   behavior:
     scaleUp:
-      stabilizationWindowSeconds: 0
+      stabilizationWindowSeconds: 0 # tune this value 
       policies:
       - type: Pods
         value: 10
         periodSeconds: 15
     scaleDown:
-      stabilizationWindowSeconds: 0
+      stabilizationWindowSeconds: 0 # tune this value
       policies:
       - type: Pods
         value: 10
@@ -603,3 +603,18 @@ spec:
         type: AverageValue
         averageValue: "1"
 ```
+
+**Note**: the HPA `StabilizationWindow` is a configuration parameter that aims to smooth *flapping* behaviors, where the desired number of replicas is continuously changing, causing the startup and termination of vLLM servers that may take a while to be ready, and would waste resources too.
+This behavior could happen in rapid load rate changes, and therefore this parameter should be tuned accordingly.
+
+For instance, if you aim to test your setup sending load for 1 minute, then expect no load for the following minute before resuming it, to optimize resources you should use:
+
+```yaml
+scaleUp:
+      stabilizationWindowSeconds: 0
+# ...
+ scaleDown:
+      stabilizationWindowSeconds: 120
+```
+
+This way, HPA does not scale out the number of replicas just to bring it up again when load resumes, avoiding waste of resources and preventing a second vLLM instance to be started up.
