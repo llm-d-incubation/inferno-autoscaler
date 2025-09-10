@@ -2,7 +2,7 @@
 
 This guide shows how to deploy the Inferno-Autoscaler (integrated with the HorizontalPodAutoscaler) on OpenShift (OCP), allowing vLLM servers to scale accordingly to the observed load.
 
-**Note**: the deployment was tested on a cluster with *admin* privileges.
+**Note**: the deployment was tested on an OCP cluster with *admin* privileges.
 
 ## Overview
 
@@ -220,6 +220,24 @@ vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-deco
 kubectl get variantautoscaling -n $NAMESPACE
 NAME                                                MODEL             ACCELERATOR   CURRENTREPLICAS   OPTIMIZED   AGE
 ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           3h41m
+```
+
+### Adding probe definition to vLLM deployment for clean startup
+
+As of today, the `llm-d-infra` deployed example (`inference scheduling`) uses a ModelService that does **not** include probe definition for the vLLM deployment. This could cause newly spawned Pods to be prematurely marked as `Ready` by Kubernetes, and consequently to be scored and picked by the Inference Scheduler to serve incoming requests, although the vLLM server still has not finished its startup configuration.
+
+The side effects of this behavior are:
+
+- Requests of any criticality level forwarded to the new Pod(s) are dropped.
+
+- A consequent decrease in the incoming request rate is observed by the Workload Variant Autoscaler.
+
+The latter could even bring the WVA to wrongly decrease the desired number of replicas, causing effective SLO violation. Because of that, there is the need to have a clean startup configuration using readiness and startup probes: a `yaml` example snippet for the patch can be found [at the bottom of this README](#hpa-configuration-example-configsampleshpa-integrationyaml).
+
+```bash
+# After creating the file `config/samples/probes-patch.yaml`
+# Apply probe patch for the existing vLLM deployment
+kubectl patch deployment ms-inference-scheduling-llm-d-modelservice-decode -n $NAMESPACE$ --patch-file config/samples/probes-patch.yaml
 ```
 
 ## Example: scale-up scenario
@@ -618,3 +636,52 @@ scaleUp:
 ```
 
 This way, HPA does not scale out the number of replicas just to bring it up again when load resumes, avoiding waste of resources and preventing a second vLLM instance to be started up.
+
+### vLLM Deployment Probes Patch Example (`config/samples/probes-patch.yaml`)
+
+```yaml
+spec:
+  template:
+    spec:
+      containers:
+      - name: vllm
+        readinessProbe:
+            httpGet:
+              path: /health
+              port: 8200
+              scheme: HTTP
+            # vLLM's health check is simple, so we can more aggressively probe it.  Readiness
+            # check endpoints should always be suitable for aggressive probing, but may be
+            # slightly more expensive than readiness probes.
+            periodSeconds: 1
+            successThreshold: 1
+            # vLLM has a very simple health implementation, which means that any failure is
+            # likely significant,
+            failureThreshold: 1
+            timeoutSeconds: 1
+          # We set a startup probe so that we don't begin directing traffic or checking
+          # liveness to this instance until the model is loaded.
+        startupProbe:
+            # Failure threshold is when we believe startup will not happen at all, and is set
+            # to the maximum possible time we believe loading a model will take. In our
+            # default configuration we are downloading a model from HuggingFace, which may
+            # take a long time, then the model must load into the accelerator. We choose
+            # 10 minutes as a reasonable maximum startup time before giving up and attempting
+            # to restart the pod.
+            #
+            # IMPORTANT: If the core model takes more than 10 minutes to load, pods will crash
+            # loop forever. Be sure to set this appropriately.
+            failureThreshold: 600
+            # Set delay to start low so that if the base model changes to something smaller
+            # or an optimization is deployed, we don't wait unneccesarily.
+            initialDelaySeconds: 30
+            # As a startup probe, this stops running and so we can more aggressively probe
+            # even a moderately complex startup - this is a very important workload.
+            periodSeconds: 1
+            httpGet:
+              # vLLM does not start the OpenAI server (and hence make /health available)
+              # until models are loaded. This may not be true for all model servers.
+              path: /health
+              port: 8200
+              scheme: HTTP
+```
