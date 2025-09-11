@@ -117,6 +117,15 @@ cd $EXAMPLES_DIR
 helmfile apply -e kgateway
 ```
 
+6. **Note** this step is required **only** up to `llm-d-infra v1.3.1`, as later versions will provide a fix for this bug.
+
+Because of a known bug on the `prefix-cache-scorer` used by the `inference-scheduler`, we are disabling it for this example, by applying an edited version of the EPP ConfigMap. A `yaml` example snippet for the `cm` can be found [at the end of this README](#epp-configmap-configuration-example-configsamplesepp-cmyaml).
+
+```bash
+## After creating the file `config/samples/epp-cm.yaml`
+kubectl apply -f config/samples/epp-cm.yaml
+```
+
 ### 1. Prometheus: create Thanos CA ConfigMap
 
 Prometheus and Thanos are deployed on OCPs with TLS (HTTPS) for security. The Prometheus Adapter needs to connect to Thanos at https://thanos-querier.openshift-monitoring.svc.cluster.local.
@@ -471,6 +480,98 @@ spec:
   namespaceSelector:
     any: true
 ---
+```
+
+### EPP ConfigMap Configuration Example (`config/samples/epp-cm.yaml`)
+
+```yaml
+apiVersion: v1
+data:
+  default-plugins.yaml: |
+    apiVersion: inference.networking.x-k8s.io/v1alpha1
+    kind: EndpointPickerConfig
+    plugins:
+    - type: low-queue-filter
+      parameters:
+        threshold: 128
+    - type: lora-affinity-filter
+      parameters:
+        threshold: 0.999
+    - type: least-queue-filter
+    - type: least-kv-cache-filter
+    - type: decision-tree-filter
+      name: low-latency-filter
+      parameters:
+        current:
+          pluginRef: low-queue-filter
+        nextOnSuccess:
+          decisionTree:
+            current:
+              pluginRef: lora-affinity-filter
+            nextOnSuccessOrFailure:
+              decisionTree:
+                current:
+                  pluginRef: least-queue-filter
+                nextOnSuccessOrFailure:
+                  decisionTree:
+                    current:
+                      pluginRef: least-kv-cache-filter
+        nextOnFailure:
+          decisionTree:
+            current:
+              pluginRef: least-queue-filter
+            nextOnSuccessOrFailure:
+              decisionTree:
+                current:
+                  pluginRef: lora-affinity-filter
+                nextOnSuccessOrFailure:
+                  decisionTree:
+                    current:
+                      pluginRef: least-kv-cache-filter
+    - type: random-picker
+      parameters:
+        maxNumOfEndpoints: 1
+    - type: single-profile-handler
+    schedulingProfiles:
+    - name: default
+      plugins:
+      - pluginRef: low-latency-filter
+      - pluginRef: random-picker
+  plugins-v2.yaml: |
+    apiVersion: inference.networking.x-k8s.io/v1alpha1
+    kind: EndpointPickerConfig
+    plugins:
+    - type: queue-scorer
+    - type: kv-cache-scorer
+    # - type: prefix-cache-scorer
+      parameters:
+        hashBlockSize: 64
+        maxPrefixBlocksToMatch: 256
+        lruCapacityPerServer: 31250
+    - type: max-score-picker
+      parameters:
+        maxNumOfEndpoints: 1
+    - type: single-profile-handler
+    schedulingProfiles:
+    - name: default
+      plugins:
+      - pluginRef: queue-scorer
+        weight: 1
+      - pluginRef: kv-cache-scorer
+        weight: 1
+      # - pluginRef: prefix-cache-scorer
+      #   weight: 1
+      - pluginRef: max-score-picker
+kind: ConfigMap
+metadata:
+  annotations:
+    meta.helm.sh/release-name: gaie-inference-scheduling
+    meta.helm.sh/release-namespace: llm-d-inference-scheduler
+  labels:
+    app.kubernetes.io/managed-by: Helm
+  name: gaie-inference-scheduling-epp
+  namespace: llm-d-sim
+
 ```
 
 ### Prometheus Adapter Values (`config/samples/prometheus-adapter-values.yaml`)
