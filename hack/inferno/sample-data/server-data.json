@@ -1,0 +1,184 @@
+{
+    "servers": [
+        {
+            "name": "Premium-llama_13b",
+            "class": "Premium",
+            "model": "llama_13b",
+            "currentAlloc": {
+                "load": {
+                    "arrivalRate": 60,
+                    "AvgInTokens": 128,
+                    "AvgOutTokens": 1024
+                }
+            }
+        },
+        {
+            "name": "Premium-llama_70b",
+            "class": "Premium",
+            "model": "llama_70b",
+            "currentAlloc": {
+                "load": {
+                    "arrivalRate": 60,
+                    "AvgInTokens": 128,
+                    "AvgOutTokens": 1024
+                }
+            }
+        },
+        {
+            "name": "Premium-granite_13b",
+            "class": "Premium",
+            "model": "granite_13b",
+            "currentAlloc": {
+                "load": {
+                    "arrivalRate": 60,
+                    "AvgInTokens": 128,
+                    "AvgOutTokens": 1024
+                }
+            }
+        },
+        {
+            "name": "Premium-granite_34b",
+            "class": "Premium",
+            "model": "granite_34b",
+            "currentAlloc": {
+                "load": {
+                    "arrivalRate": 60,
+                    "AvgInTokens": 128,
+                    "AvgOutTokens": 1024
+                }
+            }
+        },
+        {
+            "name": "Premium-mixtral_8_7b",
+            "class": "Premium",
+            "model": "mixtral_8_7b",
+            "currentAlloc": {
+                "load": {
+                    "arrivalRate": 60,
+                    "AvgInTokens": 128,
+                    "AvgOutTokens": 1024
+                }
+            }
+        },
+        {
+            "name": "Bronze-llama_13b",
+            "class": "Bronze",
+            "model": "llama_13b",
+            "currentAlloc": {
+                "load": {
+                    "arrivalRate": 120,
+                    "AvgInTokens": 128,
+                    "AvgOutTokens": 1024
+                }
+            }
+        },
+        {
+            "name": "Bronze-llama_70b",
+            "class": "Bronze",
+            "model": "llama_70b",
+            "currentAlloc": {
+                "load": {
+                    "arrivalRate": 120,
+                    "AvgInTokens": 128,
+                    "AvgOutTokens": 1024
+                }
+            }
+        },
+        {
+            "name": "Bronze-granite_13b",
+            "class": "Bronze",
+            "model": "granite_13b",
+            "currentAlloc": {
+                "load": {
+                    "arrivalRate": 120,
+                    "AvgInTokens": 128,
+                    "AvgOutTokens": 1024
+                }
+            }
+        },
+        {
+            "name": "Bronze-granite_34b",
+            "class": "Bronze",
+            "model": "granite_34b",
+            "currentAlloc": {
+                "load": {
+                    "arrivalRate": 120,
+                    "AvgInTokens": 128,
+                    "AvgOutTokens": 1024
+                }
+            }
+        },
+        {
+            "name": "Bronze-mixtral_8_7b",
+            "class": "Bronze",
+            "model": "mixtral_8_7b",
+            "currentAlloc": {
+                "load": {
+                    "arrivalRate": 120,
+                    "AvgInTokens": 128,
+                    "AvgOutTokens": 1024
+                }
+            }
+        },
+        {
+            "name": "Free-llama_13b",
+            "class": "Free",
+            "model": "llama_13b",
+            "currentAlloc": {
+                "load": {
+                    "arrivalRate": 240,
+                    "AvgInTokens": 128,
+                    "AvgOutTokens": 1024
+                }
+            }
+        },
+        {
+            "name": "Free-llama_70b",
+            "class": "Free",
+            "model": "llama_70b",
+            "currentAlloc": {
+                "load": {
+                    "arrivalRate": 240,
+                    "AvgInTokens": 128,
+                    "AvgOutTokens": 1024
+                }
+            }
+        },
+        {
+            "name": "Free-granite_13b",
+            "class": "Free",
+            "model": "granite_13b",
+            "currentAlloc": {
+                "load": {
+                    "arrivalRate": 240,
+                    "AvgInTokens": 128,
+                    "AvgOutTokens": 1024
+                }
+            }
+        },
+        {
+            "name": "Free-granite_34b",
+            "class": "Free",
+            "model": "granite_34b",
+            "currentAlloc": {
+                "load": {
+                    "arrivalRate": 240,
+                    "AvgInTokens": 128,
+                    "AvgOutTokens": 1024
+                }
+            }
+        },
+        {
+            "name": "Free-mixtral_8_7b",
+            "class": "Free",
+            "model": "mixtral_8_7b",
+            "currentAlloc": {
+                "load": {
+                    "arrivalRate": 240,
+                    "AvgInTokens": 128,
+                    "AvgOutTokens": 1024
+                }
+            }
+        }
+    ]
+}

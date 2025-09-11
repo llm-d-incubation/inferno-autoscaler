@@ -1,0 +1,88 @@
+{
+    "accelerators": [
+        {
+            "name": "L4",
+            "type": "L4",
+            "multiplicity": 1,
+            "memSize": 24,
+            "memBW": 300,
+            "power": {
+                "idle": 25,
+                "full": 75,
+                "midPower": 65,
+                "midUtil": 0.6
+            },
+            "cost": 6.00
+        },
+        {
+            "name": "A100",
+            "type": "A100",
+            "multiplicity": 1,
+            "memSize": 80,
+            "memBW": 2000,
+            "power": {
+                "idle": 150,
+                "full": 400,
+                "midPower": 320,
+                "midUtil": 0.6
+            },
+            "cost": 40.00
+        },
+        {
+            "name": "AIU2",
+            "type": "AIU2",
+            "multiplicity": 1,
+            "memSize": 128,
+            "memBW": 204,
+            "power": {
+                "idle": 25,
+                "full": 75,
+                "midPower": 65,
+                "midUtil": 0.6
+            },
+            "cost": 3.75
+        },
+        {
+            "name": "G2",
+            "type": "G2",
+            "multiplicity": 1,
+            "memSize": 96,
+            "memBW": 2400,
+            "power": {
+                "idle": 180,
+                "full": 600,
+                "midPower": 500,
+                "midUtil": 0.6
+            },
+            "cost": 23.00
+        },
+        {
+            "name": "2xAIU2",
+            "type": "AIU2",
+            "multiplicity": 2,
+            "memSize": 256,
+            "memBW": 408,
+            "power": {
+                "idle": 50,
+                "full": 150,
+                "midPower": 130,
+                "midUtil": 0.6
+            },
+            "cost": 7.50
+        },
+        {
+            "name": "4xA100",
+            "type": "A100",
+            "multiplicity": 4,
+            "memSize": 320,
+            "memBW": 8000,
+            "power": {
+                "idle": 600,
+                "full": 1600,
+                "midPower": 1280,
+                "midUtil": 0.6
+            },
+            "cost": 160.00
+        }
+    ]
+}

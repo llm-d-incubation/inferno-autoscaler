@@ -1,0 +1,454 @@
+{
+  "models": [
+    {
+      "name": "granite_13b",
+      "acc": "AIU2",
+      "accCount": 1,
+      "maxBatchSize": 51,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 205.8,
+        "beta": 4.1
+      },
+      "prefillParms": {
+        "gamma": 1646.4,
+        "delta": 0.128125
+      }
+    },
+    {
+      "name": "granite_13b",
+      "acc": "L4",
+      "accCount": 2,
+      "maxBatchSize": 9,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 137.2,
+        "beta": 2.73
+      },
+      "prefillParms": {
+        "gamma": 1097.6,
+        "delta": 0.0853125
+      }
+    },
+    {
+      "name": "granite_13b",
+      "acc": "A100",
+      "accCount": 1,
+      "maxBatchSize": 32,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 20.58,
+        "beta": 0.41
+      },
+      "prefillParms": {
+        "gamma": 164.64,
+        "delta": 0.0128125
+      }
+    },
+    {
+      "name": "granite_13b",
+      "acc": "G2",
+      "accCount": 1,
+      "maxBatchSize": 38,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 17.15,
+        "beta": 0.34
+      },
+      "prefillParms": {
+        "gamma": 137.2,
+        "delta": 0.010625
+      }
+    },
+    {
+      "name": "granite_13b",
+      "acc": "2xAIU2",
+      "accCount": 1,
+      "maxBatchSize": 51,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 147,
+        "beta": 2.93
+      },
+      "prefillParms": {
+        "gamma": 1176,
+        "delta": 0.0915625
+      }
+    },
+    {
+      "name": "granite_13b",
+      "acc": "4xA100",
+      "accCount": 1,
+      "maxBatchSize": 32,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 10.29,
+        "beta": 0.21
+      },
+      "prefillParms": {
+        "gamma": 82.32,
+        "delta": 0.0065625
+      }
+    },
+    {
+      "name": "granite_34b",
+      "acc": "AIU2",
+      "accCount": 1,
+      "maxBatchSize": 19,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 487.7,
+        "beta": 8.2
+      },
+      "prefillParms": {
+        "gamma": 3901.6,
+        "delta": 0.25625
+      }
+    },
+    {
+      "name": "granite_34b",
+      "acc": "L4",
+      "accCount": 4,
+      "maxBatchSize": 3,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 325.13,
+        "beta": 5.47
+      },
+      "prefillParms": {
+        "gamma": 2601.04,
+        "delta": 0.1709375
+      }
+    },
+    {
+      "name": "granite_34b",
+      "acc": "A100",
+      "accCount": 2,
+      "maxBatchSize": 12,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 48.77,
+        "beta": 0.82
+      },
+      "prefillParms": {
+        "gamma": 390.16,
+        "delta": 0.025625
+      }
+    },
+    {
+      "name": "granite_34b",
+      "acc": "G2",
+      "accCount": 2,
+      "maxBatchSize": 14,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 40.64,
+        "beta": 0.68
+      },
+      "prefillParms": {
+        "gamma": 325.12,
+        "delta": 0.02125
+      }
+    },
+    {
+      "name": "granite_34b",
+      "acc": "2xAIU2",
+      "accCount": 1,
+      "maxBatchSize": 19,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 348.36,
+        "beta": 5.86
+      },
+      "prefillParms": {
+        "gamma": 2786.88,
+        "delta": 0.183125
+      }
+    },
+    {
+      "name": "granite_34b",
+      "acc": "4xA100",
+      "accCount": 1,
+      "maxBatchSize": 12,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 24.39,
+        "beta": 0.41
+      },
+      "prefillParms": {
+        "gamma": 195.12,
+        "delta": 0.0128125
+      }
+    },
+    {
+      "name": "llama_13b",
+      "acc": "AIU2",
+      "accCount": 1,
+      "maxBatchSize": 51,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 201.3,
+        "beta": 8.7
+      },
+      "prefillParms": {
+        "gamma": 1610.4,
+        "delta": 0.271875
+      }
+    },
+    {
+      "name": "llama_13b",
+      "acc": "L4",
+      "accCount": 2,
+      "maxBatchSize": 9,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 134.2,
+        "beta": 5.8
+      },
+      "prefillParms": {
+        "gamma": 1073.6,
+        "delta": 0.18125
+      }
+    },
+    {
+      "name": "llama_13b",
+      "acc": "A100",
+      "accCount": 1,
+      "maxBatchSize": 32,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 20.13,
+        "beta": 0.87
+      },
+      "prefillParms": {
+        "gamma": 161.04,
+        "delta": 0.0271875
+      }
+    },
+    {
+      "name": "llama_13b",
+      "acc": "G2",
+      "accCount": 1,
+      "maxBatchSize": 38,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 16.78,
+        "beta": 0.73
+      },
+      "prefillParms": {
+        "gamma": 134.24,
+        "delta": 0.0228125
+      }
+    },
+    {
+      "name": "llama_13b",
+      "acc": "2xAIU2",
+      "accCount": 1,
+      "maxBatchSize": 51,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 143.79,
+        "beta": 6.21
+      },
+      "prefillParms": {
+        "gamma": 1150.32,
+        "delta": 0.1940625
+      }
+    },
+    {
+      "name": "llama_13b",
+      "acc": "4xA100",
+      "accCount": 1,
+      "maxBatchSize": 32,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 10.07,
+        "beta": 0.44
+      },
+      "prefillParms": {
+        "gamma": 80.56,
+        "delta": 0.01375
+      }
+    },
+    {
+      "name": "llama_70b",
+      "acc": "AIU2",
+      "accCount": 2,
+      "maxBatchSize": 8,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 274.1,
+        "beta": 70.7
+      },
+      "prefillParms": {
+        "gamma": 2192.8,
+        "delta": 2.209375
+      }
+    },
+    {
+      "name": "llama_70b",
+      "acc": "L4",
+      "accCount": 8,
+      "maxBatchSize": 1,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 182.73,
+        "beta": 47.13
+      },
+      "prefillParms": {
+        "gamma": 1461.84,
+        "delta": 1.4728125
+      }
+    },
+    {
+      "name": "llama_70b",
+      "acc": "A100",
+      "accCount": 4,
+      "maxBatchSize": 5,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 27.41,
+        "beta": 7.07
+      },
+      "prefillParms": {
+        "gamma": 219.28,
+        "delta": 0.2209375
+      }
+    },
+    {
+      "name": "llama_70b",
+      "acc": "G2",
+      "accCount": 4,
+      "maxBatchSize": 6,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 22.84,
+        "beta": 5.89
+      },
+      "prefillParms": {
+        "gamma": 182.72,
+        "delta": 0.1840625
+      }
+    },
+    {
+      "name": "llama_70b",
+      "acc": "2xAIU2",
+      "accCount": 1,
+      "maxBatchSize": 8,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 195.79,
+        "beta": 50.5
+      },
+      "prefillParms": {
+        "gamma": 1566.32,
+        "delta": 1.578125
+      }
+    },
+    {
+      "name": "llama_70b",
+      "acc": "4xA100",
+      "accCount": 1,
+      "maxBatchSize": 5,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 13.71,
+        "beta": 3.54
+      },
+      "prefillParms": {
+        "gamma": 109.68,
+        "delta": 0.110625
+      }
+    },
+    {
+      "name": "mixtral_8_7b",
+      "acc": "AIU2",
+      "accCount": 2,
+      "maxBatchSize": 12,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 296.3,
+        "beta": 60.1
+      },
+      "prefillParms": {
+        "gamma": 2370.4,
+        "delta": 1.878125
+      }
+    },
+    {
+      "name": "mixtral_8_7b",
+      "acc": "L4",
+      "accCount": 8,
+      "maxBatchSize": 2,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 197.53,
+        "beta": 40.07
+      },
+      "prefillParms": {
+        "gamma": 1580.24,
+        "delta": 1.2521875
+      }
+    },
+    {
+      "name": "mixtral_8_7b",
+      "acc": "A100",
+      "accCount": 4,
+      "maxBatchSize": 8,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 29.63,
+        "beta": 6.01
+      },
+      "prefillParms": {
+        "gamma": 237.04,
+        "delta": 0.1878125
+      }
+    },
+    {
+      "name": "mixtral_8_7b",
+      "acc": "G2",
+      "accCount": 2,
+      "maxBatchSize": 9,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 24.69,
+        "beta": 5.01
+      },
+      "prefillParms": {
+        "gamma": 197.52,
+        "delta": 0.1565625
+      }
+    },
+    {
+      "name": "mixtral_8_7b",
+      "acc": "2xAIU2",
+      "accCount": 1,
+      "maxBatchSize": 12,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 211.64,
+        "beta": 42.93
+      },
+      "prefillParms": {
+        "gamma": 1693.12,
+        "delta": 1.3415625
+      }
+    },
+    {
+      "name": "mixtral_8_7b",
+      "acc": "4xA100",
+      "accCount": 1,
+      "maxBatchSize": 8,
+      "atTokens": 512,
+      "decodeParms": {
+        "alpha": 14.82,
+        "beta": 3.01
+      },
+      "prefillParms": {
+        "gamma": 118.56,
+        "delta": 0.0940625
+      }
+    }
+  ]
+}

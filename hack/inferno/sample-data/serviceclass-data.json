@@ -1,0 +1,97 @@
+{
+    "serviceClasses": [
+        {
+            "name": "Premium",
+            "priority": 1,
+            "modelTargets": [
+                {
+                    "model": "llama_13b",
+                    "slo-itl": 80,
+                    "slo-ttft": 1000
+                },
+                {
+                    "model": "llama_70b",
+                    "slo-itl": 80,
+                    "slo-ttft": 1000
+                },
+                {
+                    "model": "granite_13b",
+                    "slo-itl": 40,
+                    "slo-ttft": 1000
+                },
+                {
+                    "model": "granite_34b",
+                    "slo-itl": 80,
+                    "slo-ttft": 1000
+                },
+                {
+                    "model": "mixtral_8_7b",
+                    "slo-itl": 80,
+                    "slo-ttft": 1000
+                }
+            ]
+        },
+        {
+            "name": "Bronze",
+            "priority": 2,
+            "modelTargets": [
+                {
+                    "model": "llama_13b",
+                    "slo-itl": 160,
+                    "slo-ttft": 2000
+                },
+                {
+                    "model": "llama_70b",
+                    "slo-itl": 160,
+                    "slo-ttft": 2000
+                },
+                {
+                    "model": "granite_13b",
+                    "slo-itl": 80,
+                    "slo-ttft": 2000
+                },
+                {
+                    "model": "granite_34b",
+                    "slo-itl": 160,
+                    "slo-ttft": 2000
+                },
+                {
+                    "model": "mixtral_8_7b",
+                    "slo-itl": 160,
+                    "slo-ttft": 2000
+                }
+            ]
+        },
+        {
+            "name": "Free",
+            "priority": 3,
+            "modelTargets": [
+                {
+                    "model": "llama_13b",
+                    "slo-itl": 320,
+                    "slo-ttft": 4000
+                },
+                {
+                    "model": "llama_70b",
+                    "slo-itl": 320,
+                    "slo-ttft": 4000
+                },
+                {
+                    "model": "granite_13b",
+                    "slo-itl": 160,
+                    "slo-ttft": 4000
+                },
+                {
+                    "model": "granite_34b",
+                    "slo-itl": 320,
+                    "slo-ttft": 4000
+                },
+                {
+                    "model": "mixtral_8_7b",
+                    "slo-itl": 320,
+                    "slo-ttft": 4000
+                }
+            ]
+        }
+    ]
+}
