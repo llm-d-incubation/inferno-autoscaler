@@ -80,6 +80,11 @@ spec:
                 key: PROMETHEUS_TLS_INSECURE_SKIP_VERIFY
           - name: PROMETHEUS_TOKEN_PATH
             value: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+          - name: WVA_SCALE_TO_ZERO
+            valueFrom:
+              configMapKeyRef:
+                name: variantautoscaling-config
+                key: WVA_SCALE_TO_ZERO
         name: manager
         ports: []
         securityContext:

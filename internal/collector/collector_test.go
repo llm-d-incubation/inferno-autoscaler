@@ -300,11 +300,11 @@ var _ = Describe("Collector", func() {
 			Expect(allocation.Accelerator).To(Equal("A100"))
 			Expect(allocation.NumReplicas).To(Equal(2))
 			Expect(allocation.MaxBatch).To(Equal(256))
-			Expect(allocation.VariantCost).To(Equal("80.00"))      // 2 replicas * 40.0 acc cost
-			Expect(allocation.WaitAverage).To(Equal("500.00"))     // 0.5 * 1000 ms
-			Expect(allocation.ITLAverage).To(Equal("50.00"))       // 0.05 * 1000 ms
-			Expect(allocation.Load.ArrivalRate).To(Equal("10.50")) // req per min
-			Expect(allocation.Load.AvgLength).To(Equal("150.00"))  // tokens per req
+			Expect(allocation.VariantCost).To(Equal("80.00"))           // 2 replicas * 40.0 acc cost
+			Expect(allocation.TTFTAverage).To(Equal("500.00"))          // 0.5 * 1000 ms
+			Expect(allocation.ITLAverage).To(Equal("50.00"))            // 0.05 * 1000 ms
+			Expect(allocation.Load.ArrivalRate).To(Equal("10.50"))      // req per min
+			Expect(allocation.Load.AvgOutputTokens).To(Equal("150.00")) // tokens per req
 		})
 
 		It("should handle missing accelerator label", func() {
@@ -353,9 +353,10 @@ var _ = Describe("Collector", func() {
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(allocation.ITLAverage).To(Equal("0.00"))
-			Expect(allocation.WaitAverage).To(Equal("0.00"))
+			Expect(allocation.TTFTAverage).To(Equal("0.00"))
 			Expect(allocation.Load.ArrivalRate).To(Equal("0.00"))
-			Expect(allocation.Load.AvgLength).To(Equal("0.00"))
+			Expect(allocation.Load.AvgInputTokens).To(Equal("0.00"))
+			Expect(allocation.Load.AvgOutputTokens).To(Equal("0.00"))
 		})
 	})
 

@@ -1,6 +1,6 @@
 package controller
 
-import inferno "github.com/llm-inferno/optimizer-light/pkg/core"
+import inferno "github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/core"
 
 // Captures response from ModelAnalyzer(s) per model
 type ModelAnalyzeResponse struct {

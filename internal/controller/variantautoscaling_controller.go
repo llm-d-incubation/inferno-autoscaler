@@ -34,6 +34,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	infernoConfig "github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/config"
+	inferno "github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/core"
+	infernoManager "github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/manager"
+	infernoSolver "github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/solver"
 	actuator "github.com/llm-d-incubation/inferno-autoscaler/internal/actuator"
 	collector "github.com/llm-d-incubation/inferno-autoscaler/internal/collector"
 	interfaces "github.com/llm-d-incubation/inferno-autoscaler/internal/interfaces"
@@ -42,10 +46,6 @@ import (
 	analyzer "github.com/llm-d-incubation/inferno-autoscaler/internal/modelanalyzer"
 	variantAutoscalingOptimizer "github.com/llm-d-incubation/inferno-autoscaler/internal/optimizer"
 	"github.com/llm-d-incubation/inferno-autoscaler/internal/utils"
-	infernoConfig "github.com/llm-inferno/optimizer-light/pkg/config"
-	inferno "github.com/llm-inferno/optimizer-light/pkg/core"
-	infernoManager "github.com/llm-inferno/optimizer-light/pkg/manager"
-	infernoSolver "github.com/llm-inferno/optimizer-light/pkg/solver"
 	"github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -97,6 +97,10 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if requeueDuration, err = time.ParseDuration(interval); err != nil {
 			return ctrl.Result{}, err
 		}
+	}
+
+	if os.Getenv("WVA_SCALE_TO_ZERO") != "false" {
+		logger.Log.Info("Scaling to zero is enabled!")
 	}
 
 	// TODO: decide on whether to keep accelerator properties (device name, cost) in same configMap, provided by administrator

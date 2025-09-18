@@ -5,11 +5,11 @@ import (
 	"fmt"
 
 	llmdOptv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	inferno "github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/core"
+	infernoManager "github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/manager"
 	interfaces "github.com/llm-d-incubation/inferno-autoscaler/internal/interfaces"
 	"github.com/llm-d-incubation/inferno-autoscaler/internal/logger"
 	"github.com/llm-d-incubation/inferno-autoscaler/internal/utils"
-	inferno "github.com/llm-inferno/optimizer-light/pkg/core"
-	infernoManager "github.com/llm-inferno/optimizer-light/pkg/manager"
 )
 
 // Engine holding all necessary data to perform global optimization across all variants

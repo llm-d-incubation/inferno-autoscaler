@@ -459,16 +459,16 @@ func isPortAvailable(port int) (bool, error) {
 	return true, nil // Port is available
 }
 
-// StartPrometheusPortForwarding sets up port forwarding to a Service on the specified port
-func StartPortForwarding(service *corev1.Service, namespace string, port int) *exec.Cmd {
+// StartPortForwarding sets up port forwarding to a Service on the specified port
+func startPortForwarding(service *corev1.Service, namespace string, localPort, servicePort int) *exec.Cmd {
 	// Check if the port is already in use
-	if available, err := isPortAvailable(port); !available {
-		gink.Fail(fmt.Sprintf("Port %d is already in use. Cannot start port forwarding for service: %s. Error: %v", port, service.Name, err))
+	if available, err := isPortAvailable(localPort); !available {
+		gink.Fail(fmt.Sprintf("Port %d is already in use. Cannot start port forwarding for service: %s. Error: %v", localPort, service.Name, err))
 	}
 
 	portForwardCmd := exec.Command("kubectl", "port-forward",
 		fmt.Sprintf("service/%s", service.Name),
-		fmt.Sprintf("%d:80", port), "-n", namespace)
+		fmt.Sprintf("%d:%d", localPort, servicePort), "-n", namespace)
 	err := portForwardCmd.Start()
 	gom.Expect(err).NotTo(gom.HaveOccurred(), fmt.Sprintf("Port-forward command should start successfully for service: %s", service.Name))
 
@@ -478,7 +478,7 @@ func StartPortForwarding(service *corev1.Service, namespace string, port int) *e
 			return fmt.Errorf("port-forward process exited unexpectedly with code: %d", portForwardCmd.ProcessState.ExitCode())
 		}
 		return nil
-	}, 10*time.Second, 1*time.Second).Should(gom.Succeed(), fmt.Sprintf("Port-forward to port %d should keep running for service: %s", port, service.Name))
+	}, 10*time.Second, 1*time.Second).Should(gom.Succeed(), fmt.Sprintf("Port-forward to localPort %d should keep running for service: %s with servicePort %d", localPort, service.Name, servicePort))
 
 	return portForwardCmd
 }
@@ -507,30 +507,6 @@ func StartLoadGenerator(rate, contentLength int, port int, modelName string) *ex
 	}, 10*time.Second, 1*time.Second).Should(gom.Succeed(), fmt.Sprintf("Load generator sending requests to model: %s at \"http://localhost:%d/v1\" should keep running", modelName, port))
 
 	return loadGenCmd
-}
-
-// StartPrometheusPortForwarding sets up port forwarding specifically for Prometheus (9090:9090)
-func StartPrometheusPortForwarding(service *corev1.Service, namespace string, localPort int) *exec.Cmd {
-	// Check if the port is already in use
-	if available, err := isPortAvailable(localPort); !available {
-		gink.Fail(fmt.Sprintf("Port %d is already in use. Cannot start port forwarding for Prometheus service: %s. Error: %v", localPort, service.Name, err))
-	}
-
-	portForwardCmd := exec.Command("kubectl", "port-forward",
-		fmt.Sprintf("service/%s", service.Name),
-		fmt.Sprintf("%d:9090", localPort), "-n", namespace)
-	err := portForwardCmd.Start()
-	gom.Expect(err).NotTo(gom.HaveOccurred(), fmt.Sprintf("Prometheus port-forward command should start successfully for service: %s", service.Name))
-
-	// Check if the port-forward process is still running
-	gom.Eventually(func() error {
-		if portForwardCmd.ProcessState != nil && portForwardCmd.ProcessState.Exited() {
-			return fmt.Errorf("prometheus port-forward process exited unexpectedly with code: %d", portForwardCmd.ProcessState.ExitCode())
-		}
-		return nil
-	}, 10*time.Second, 1*time.Second).Should(gom.Succeed(), fmt.Sprintf("Prometheus port-forward to port %d should keep running for service: %s", localPort, service.Name))
-
-	return portForwardCmd
 }
 
 func StopCmd(cmd *exec.Cmd) error {
@@ -584,6 +560,37 @@ func StopCmd(cmd *exec.Cmd) error {
 		<-done
 		return nil
 	}
+}
+
+func SetUpPortForward(k8sClient *kubernetes.Clientset, ctx context.Context, serviceName, namespace string, localPort, servicePort int) *exec.Cmd {
+	service, err := k8sClient.CoreV1().Services(namespace).Get(ctx, serviceName, metav1.GetOptions{})
+	gom.Expect(err).NotTo(gom.HaveOccurred(), "Should be able to fetch service")
+	portForwardCmd := startPortForwarding(service, namespace, localPort, servicePort)
+	return portForwardCmd
+}
+
+func VerifyPortForwardReadiness(ctx context.Context, localPort int, request string) error {
+	var client *http.Client
+	tr := &http.Transport{}
+	// Prometheus uses a self-signed certificate, so we need to skip verification when accessing its HTTPS endpoint.
+	if request == fmt.Sprintf("https://localhost:%d/api/v1/query?query=up", localPort) {
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	}
+	err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 10*time.Second, true, func(ctx context.Context) (bool, error) {
+		client = &http.Client{Transport: tr, Timeout: 2 * time.Second}
+		resp, err := client.Get(request)
+		if err != nil {
+			return false, nil // Retrying
+		}
+		defer func() {
+			err := resp.Body.Close()
+			gom.Expect(err).NotTo(gom.HaveOccurred(), "Should be able to close response body")
+		}()
+		return resp.StatusCode < 500, nil // Accept any non-server error status
+	})
+	return err
 }
 
 // ValidateAppLabelUniqueness checks if the appLabel is already in use by other resources and fails if it's not unique
@@ -695,6 +702,24 @@ func ValidateVariantAutoscalingUniqueness(namespace, modelId, acc string, crClie
 				modelId, namespace, strings.Join(conflicting, ", ")))
 		}
 	}
+}
+
+func LogVariantAutoscalingStatus(ctx context.Context, vaName, namespace string, crClient client.Client) error {
+	variantAutoscaling := &v1alpha1.VariantAutoscaling{}
+	err := crClient.Get(ctx, client.ObjectKey{Name: vaName, Namespace: namespace}, variantAutoscaling)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Load Profile for VA: %s - Arrival Rate: %s, Avg Input Tokens: %s, Avg Output Tokens: %s\n",
+		variantAutoscaling.Name,
+		variantAutoscaling.Status.CurrentAlloc.Load.ArrivalRate,
+		variantAutoscaling.Status.CurrentAlloc.Load.AvgInputTokens, variantAutoscaling.Status.CurrentAlloc.Load.AvgOutputTokens)
+
+	fmt.Printf("Desired Optimized Allocation for VA: %s - Replicas: %d, Accelerator: %s\n",
+		variantAutoscaling.Name,
+		variantAutoscaling.Status.DesiredOptimizedAlloc.NumReplicas,
+		variantAutoscaling.Status.DesiredOptimizedAlloc.Accelerator)
+	return nil
 }
 
 // creates a vllme deployment with the specified configuration
@@ -814,24 +839,30 @@ func CreateVariantAutoscalingResource(namespace, resourceName, modelId, acc stri
 			ModelProfile: v1alpha1.ModelProfile{
 				Accelerators: []v1alpha1.AcceleratorProfile{
 					{
-						Acc:          "A100",
-						AccCount:     1,
-						Alpha:        "20.58",
-						Beta:         "0.41",
+						Acc:      "A100",
+						AccCount: 1,
+						PerfParms: v1alpha1.PerfParms{
+							DecodeParms:  map[string]string{"alpha": "20.58", "beta": "0.41"},
+							PrefillParms: map[string]string{"gamma": "20.58", "delta": "0.041"},
+						},
 						MaxBatchSize: 4,
 					},
 					{
-						Acc:          "MI300X",
-						AccCount:     1,
-						Alpha:        "7.77",
-						Beta:         "0.15",
+						Acc:      "MI300X",
+						AccCount: 1,
+						PerfParms: v1alpha1.PerfParms{
+							DecodeParms:  map[string]string{"alpha": "0.77", "beta": "0.15"},
+							PrefillParms: map[string]string{"gamma": "0.77", "delta": "0.15"},
+						},
 						MaxBatchSize: 4,
 					},
 					{
-						Acc:          "G2",
-						AccCount:     1,
-						Alpha:        "17.15",
-						Beta:         "0.34",
+						Acc:      "G2",
+						AccCount: 1,
+						PerfParms: v1alpha1.PerfParms{
+							DecodeParms:  map[string]string{"alpha": "17.15", "beta": "0.34"},
+							PrefillParms: map[string]string{"gamma": "17.15", "delta": "0.34"},
+						},
 						MaxBatchSize: 4,
 					},
 				},

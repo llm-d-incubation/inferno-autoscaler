@@ -34,10 +34,12 @@ func makeValidVA() *VariantAutoscaling {
 			ModelProfile: ModelProfile{
 				Accelerators: []AcceleratorProfile{
 					{
-						Acc:          "nvidia.com/mig-1g.5gb",
-						AccCount:     1,
-						Alpha:        "0.8",
-						Beta:         "0.2",
+						Acc:      "nvidia.com/mig-1g.5gb",
+						AccCount: 1,
+						PerfParms: PerfParms{
+							DecodeParms:  map[string]string{"alpha": "0.8", "beta": "0.2"},
+							PrefillParms: map[string]string{"gamma": "0.8", "delta": "0.2"},
+						},
 						MaxBatchSize: 8,
 					},
 				},
@@ -50,10 +52,11 @@ func makeValidVA() *VariantAutoscaling {
 				MaxBatch:    8,
 				VariantCost: "1.23",
 				ITLAverage:  "45.6",
-				WaitAverage: "3.2",
+				TTFTAverage: "3.2",
 				Load: LoadProfile{
-					ArrivalRate: "12 rps",
-					AvgLength:   "2.5 s",
+					ArrivalRate:     "12 rps",
+					AvgOutputTokens: "2.5 s",
+					AvgInputTokens:  "2.5 s",
 				},
 			},
 			DesiredOptimizedAlloc: OptimizedAlloc{
@@ -174,7 +177,7 @@ func TestStatusOmitEmpty(t *testing.T) {
 			},
 			ModelProfile: ModelProfile{
 				Accelerators: []AcceleratorProfile{
-					{Acc: "gpu", AccCount: 1, Alpha: "1", Beta: "1", MaxBatchSize: 1},
+					{Acc: "gpu", AccCount: 1, PerfParms: PerfParms{DecodeParms: map[string]string{"alpha": "1", "beta": "1"}, PrefillParms: map[string]string{"gamma": "1", "delta": "1"}}, MaxBatchSize: 1},
 				},
 			},
 		},

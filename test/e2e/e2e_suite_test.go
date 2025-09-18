@@ -44,6 +44,8 @@ var (
 	// projectImage is the name of the image which will be build and loaded
 	// with the code source changes to be tested.
 	projectImage = "quay.io/infernoautoscaler/inferno-controller:0.0.1-test"
+
+	MinimumReplicas = 1
 )
 
 const (
@@ -127,6 +129,15 @@ var _ = BeforeSuite(func() {
 			g.Expect(*lease.Spec.HolderIdentity).To(ContainSubstring("controller-manager"), "Lease holderIdentity is not correct")
 		}
 	}, 2*time.Minute, 1*time.Second).Should(Succeed())
+
+	// Set MinimumReplicas to 0 if WVA_SCALE_TO_ZERO is true in the ConfigMap
+	cm, err := k8sClient.CoreV1().ConfigMaps(controllerNamespace).Get(context.Background(), "inferno-autoscaler-variantautoscaling-config", metav1.GetOptions{})
+	if err != nil {
+		Fail("Failed to get ConfigMap: " + err.Error())
+	}
+	if cm.Data["WVA_SCALE_TO_ZERO"] == "true" {
+		MinimumReplicas = 0
+	}
 
 	// The tests-e2e are intended to run on a temporary cluster that is created and destroyed for testing.
 	// To prevent errors when tests run in environments with CertManager already installed,

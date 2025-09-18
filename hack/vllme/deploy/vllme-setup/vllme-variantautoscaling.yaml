@@ -25,6 +25,13 @@ spec:
     accelerators:
       - acc: "A100"
         accCount: 1
-        alpha: "20.58"
-        beta: "0.41"
+        perfParms: 
+          decodeParms:
+            # Decode parameters for ITL equation: itl = alpha + beta * maxBatchSize
+            alpha: "20.58"
+            beta: "0.41"
+          # Prefill parameters for TTFT equation: ttft = gamma + delta * tokens * maxBatchSize  
+          prefillParms:
+            gamma: "5.2"
+            delta: "0.1"
         maxBatchSize: 4

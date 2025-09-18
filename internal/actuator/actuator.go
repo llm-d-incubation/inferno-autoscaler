@@ -34,7 +34,7 @@ func (a *Actuator) getCurrentDeploymentReplicas(ctx context.Context, va *llmdOpt
 	}
 
 	// Prefer status replicas (actual current state)
-	if deploy.Status.Replicas > 0 {
+	if deploy.Status.Replicas >= 0 {
 		return deploy.Status.Replicas, nil
 	}
 
@@ -49,7 +49,7 @@ func (a *Actuator) getCurrentDeploymentReplicas(ctx context.Context, va *llmdOpt
 
 func (a *Actuator) EmitMetrics(ctx context.Context, VariantAutoscaling *llmdOptv1alpha1.VariantAutoscaling) error {
 	// Emit replica metrics with real-time data for external autoscalers
-	if VariantAutoscaling.Status.DesiredOptimizedAlloc.NumReplicas > 0 {
+	if VariantAutoscaling.Status.DesiredOptimizedAlloc.NumReplicas >= 0 {
 
 		// Get real current replicas from Deployment (not stale VariantAutoscaling status)
 		currentReplicas, err := a.getCurrentDeploymentReplicas(ctx, VariantAutoscaling)

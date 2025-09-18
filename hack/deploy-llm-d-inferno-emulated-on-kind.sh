@@ -13,7 +13,7 @@ INFRA_RELEASE_NAME="infra-sim"
 EPP_RELEASE_NAME="gaie-sim"
 
 # Default values
-INFERNO_IMAGE="quay.io/infernoautoscaler/inferno-controller:0.0.1-multi-arch"
+WVA_IMAGE="quay.io/infernoautoscaler/inferno-controller:0.0.1-multi-arch"
 CLUSTER_NODES="3"
 CLUSTER_GPUS="4"
 CLUSTER_TYPE="mix"
@@ -23,9 +23,9 @@ print_help() {
 Usage: $(basename "$0") [OPTIONS]
 
 Options:
-  -i, --inferno-image IMAGE    Container image to use for the Inferno-autoscaler (default: quay.io/infernoautoscaler/inferno-controller:0.0.1-multi-arch)
-  -n, --nodes NUM              Number of nodes for KIND cluster (default: 4)
-  -g, --gpus NUM               Number of GPUs per node (default: 5)  
+  -i, --wva-image IMAGE        Container image to use for the WVA (default: quay.io/infernoautoscaler/inferno-controller:0.0.1-multi-arch)
+  -n, --nodes NUM              Number of nodes for KIND cluster (default: 3)
+  -g, --gpus NUM               Number of GPUs per node (default: 4)  
   -t, --type TYPE              GPU type: nvidia, amd, intel, or mix (default: nvidia)
   -h, --help                   Show this help and exit
 
@@ -41,7 +41,7 @@ EOF
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -i|--inferno-image)     INFERNO_IMAGE="$2"; shift 2 ;;
+      -i|--inferno-image)     WVA_IMAGE="$2"; shift 2 ;;
       -n|--nodes)             CLUSTER_NODES="$2"; shift 2 ;;
       -g|--gpus)              CLUSTER_GPUS="$2"; shift 2 ;;
       -t|--type)              CLUSTER_TYPE="$2"; shift 2 ;;
@@ -59,7 +59,7 @@ get-llm-d-latest() {
 
   local owner="llm-d-incubation" 
   local project="llm-d-infra"
-  local release="v1.1.1"
+  local release="v1.3.1"
 
   echo ">>> Cloning the latest release of $project from $owner: $release"
   echo ">>> Cloning into $INFRA_REPO_DIR"
@@ -78,30 +78,130 @@ function apply_fix_for_vllme_comp() {
 
   echo ">>> Deleting other SIM deployments if they exist..."
   kubectl delete deployments.apps ms-sim-llm-d-modelservice-decode ms-sim-llm-d-modelservice-prefill --ignore-not-found -n "$LLMD_NAMESPACE"
+
+  echo ">>> Applying ConfigMap for vLLM emulator integration..."
+  kubectl apply -f - <<EOF
+apiVersion: v1
+data:
+  default-plugins.yaml: |
+    apiVersion: inference.networking.x-k8s.io/v1alpha1
+    kind: EndpointPickerConfig
+    plugins:
+    - type: low-queue-filter
+      parameters:
+        threshold: 128
+    - type: lora-affinity-filter
+      parameters:
+        threshold: 0.999
+    - type: least-queue-filter
+    - type: least-kv-cache-filter
+    - type: decision-tree-filter
+      name: low-latency-filter
+      parameters:
+        current:
+          pluginRef: low-queue-filter
+        nextOnSuccess:
+          decisionTree:
+            current:
+              pluginRef: lora-affinity-filter
+            nextOnSuccessOrFailure:
+              decisionTree:
+                current:
+                  pluginRef: least-queue-filter
+                nextOnSuccessOrFailure:
+                  decisionTree:
+                    current:
+                      pluginRef: least-kv-cache-filter
+        nextOnFailure:
+          decisionTree:
+            current:
+              pluginRef: least-queue-filter
+            nextOnSuccessOrFailure:
+              decisionTree:
+                current:
+                  pluginRef: lora-affinity-filter
+                nextOnSuccessOrFailure:
+                  decisionTree:
+                    current:
+                      pluginRef: least-kv-cache-filter
+    - type: random-picker
+      parameters:
+        maxNumOfEndpoints: 1
+    - type: single-profile-handler
+    schedulingProfiles:
+    - name: default
+      plugins:
+      - pluginRef: low-latency-filter
+      - pluginRef: random-picker
+  plugins-v2.yaml: |
+    apiVersion: inference.networking.x-k8s.io/v1alpha1
+    kind: EndpointPickerConfig
+    plugins:
+    - type: queue-scorer
+    - type: kv-cache-scorer
+    # - type: prefix-cache-scorer
+      parameters:
+        hashBlockSize: 64
+        maxPrefixBlocksToMatch: 256
+        lruCapacityPerServer: 31250
+    - type: max-score-picker
+      parameters:
+        maxNumOfEndpoints: 1
+    - type: single-profile-handler
+    schedulingProfiles:
+    - name: default
+      plugins:
+      - pluginRef: queue-scorer
+        weight: 1
+      - pluginRef: kv-cache-scorer
+        weight: 1
+      # - pluginRef: prefix-cache-scorer
+      #   weight: 1
+      - pluginRef: max-score-picker
+kind: ConfigMap
+metadata:
+  annotations:
+    meta.helm.sh/release-name: gaie-inference-scheduling
+    meta.helm.sh/release-namespace: llm-d-inference-scheduler
+  labels:
+    app.kubernetes.io/managed-by: Helm
+  name: gaie-inference-scheduling-epp
+  namespace: $LLMD_NAMESPACE
+EOF
 }
 
 function deploy_inferno() {
-    echo ">>> Deploying Inferno Autoscaler using image: $INFERNO_IMAGE"
-    make deploy-inferno-emulated-on-kind IMG="${INFERNO_IMAGE}" KIND_ARGS="-n ${CLUSTER_NODES} -g ${CLUSTER_GPUS} -t ${CLUSTER_TYPE}"
+    echo ">>> Deploying Inferno Autoscaler using image: $WVA_IMAGE"
+    make deploy-inferno-emulated-on-kind IMG="${WVA_IMAGE}" KIND_ARGS="-n ${CLUSTER_NODES} -g ${CLUSTER_GPUS} -t ${CLUSTER_TYPE}"
     echo "Inferno Autoscaler deployed successfully."
 }
 
 function deploy-llm-d-infra() {
   local GATEWAY="kgateway"
+  local NAMESPACE="$LLMD_NAMESPACE"
+  local DEPS_DIR="dependencies"
+  local GATEWAY_DIR="gateway-control-plane-providers"
+  local SIM_DIR="$INFRA_REPO_DIR/quickstart/examples/sim"
 
   echo ">>> Running the dependency script"
-  bash install-deps.sh
+  bash "$DEPS_DIR/install-deps.sh"
 
-  echo ">>> Running the llm-d installer script"
+  echo ">>> Installing Gateway API CRDs"
+  bash "$GATEWAY_DIR/install-gateway-provider-dependencies.sh"
+
+  # Changing kgateway version to 2.0.3
+  yq eval '.releases[].version = "v2.0.3"' -i "$GATEWAY_DIR/kgateway.helmfile.yaml"
+
+  echo ">>> Installing Gateway-specific CRDs (kgateway)"
+  helmfile apply -f "$GATEWAY_DIR/kgateway.helmfile.yaml"
+
+  cd "$SIM_DIR"
+
+  echo ">>> Installing the llm-d infrastructure for simulation"
   export HF_TOKEN="dummy-token"
-  ./llmd-infra-installer.sh --namespace "$LLMD_NAMESPACE" -r "$INFRA_RELEASE_NAME" --gateway "$GATEWAY" --disable-metrics-collection
-
-  echo ">>> Use the helmfile to apply the modelservice and GIE charts on top of it."
-  cd "$INFRA_REPO_DIR/quickstart/examples/sim"
-  helmfile --selector managedBy=helmfile apply -f helmfile.yaml --skip-diff-on-install
-
+  helmfile apply -e kgateway
   sleep 30
-  echo ">>> Gateway and EPP Installed."
+  echo ">>> llm-d infrastructure installed."
 }
 
 echo ">>> Getting latest llm-d infrastructure release..."
@@ -111,7 +211,7 @@ main() {
 parse_args "$@"
 
 echo ">>> Using configuration:"
-echo "    Inferno Image: $INFERNO_IMAGE"
+echo "    WVA Image: $WVA_IMAGE"
 echo "    Cluster Nodes: $CLUSTER_NODES"
 echo "    Cluster GPUs: $CLUSTER_GPUS"
 echo "    Cluster Type: $CLUSTER_TYPE"

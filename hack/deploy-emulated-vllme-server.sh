@@ -79,7 +79,7 @@ echo "Configuring Prometheus URL and TLS settings for Kind cluster deployment...
 echo "Using Prometheus URL: ${PROMETHEUS_BASE_URL}"
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
-helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+helm upgrade -i kube-prometheus-stack prometheus-community/kube-prometheus-stack \
   -n ${MONITORING_NAMESPACE} \
   -f hack/vllme/deploy/prometheus-operator/prometheus-tls-values.yaml
 

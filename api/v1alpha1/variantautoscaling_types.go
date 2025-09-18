@@ -38,6 +38,17 @@ type ModelProfile struct {
 	Accelerators []AcceleratorProfile `json:"accelerators"`
 }
 
+type PerfParms struct {
+	// DecodeParms contains parameters for the decode phase (ITL calculation)
+	// Expected keys: "alpha", "beta" for equation: itl = alpha + beta * maxBatchSize
+	// +kubebuilder:validation:MinProperties=1
+	DecodeParms map[string]string `json:"decodeParms"`
+	// PrefillParms contains parameters for the prefill phase (TTFT calculation)
+	// Expected keys: "gamma", "delta" for equation: ttft = gamma + delta * tokens * maxBatchSize
+	// +kubebuilder:validation:MinProperties=1
+	PrefillParms map[string]string `json:"prefillParms"`
+}
+
 // AcceleratorProfile defines the configuration for an accelerator used in autoscaling.
 // It specifies the type and count of accelerator, as well as parameters for scaling behavior.
 type AcceleratorProfile struct {
@@ -49,13 +60,8 @@ type AcceleratorProfile struct {
 	// +kubebuilder:validation:Minimum=1
 	AccCount int `json:"accCount"`
 
-	// Alpha is the alpha parameter for scaling by optimizer, represented as a string matching a decimal pattern.
-	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
-	Alpha string `json:"alpha"`
-
-	// Beta is the beta parameter for scaling by optimizer, represented as a string matching a decimal pattern.
-	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
-	Beta string `json:"beta"`
+	// PerParms specifies the prefill and decode parameters for ttft and itl models
+	PerfParms PerfParms `json:"perfParms"`
 
 	// MaxBatchSize is the maximum batch size supported by the accelerator.
 	// +kubebuilder:validation:Minimum=1
@@ -93,13 +99,13 @@ type Allocation struct {
 	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
 	VariantCost string `json:"variantCost"`
 
-	// ITLAverage is the average inference time latency for the current allocation.
+	// ITLAverage is the average inter token latency for the current allocation.
 	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
 	ITLAverage string `json:"itlAverage"`
 
-	// WaitAverage is the average wait time for requests in the current allocation.
+	// TTFTAverage is the average time to first token for the current allocation
 	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
-	WaitAverage string `json:"waitAverage"`
+	TTFTAverage string `json:"ttftAverage"`
 
 	// Load describes the workload characteristics for the current allocation.
 	Load LoadProfile `json:"load"`
@@ -113,8 +119,11 @@ type LoadProfile struct {
 	// ArrivalRate is the rate of incoming requests in inference server.
 	ArrivalRate string `json:"arrivalRate"`
 
-	// AvgLength is the average length of each request in inference server.
-	AvgLength string `json:"avgLength"`
+	// AvgInputTokens is the average number of input(prefill) tokens per request in inference server.
+	AvgInputTokens string `json:"avgInputTokens"`
+
+	// AvgOutputTokens is the average number of output(decode) tokens per request in inference server.
+	AvgOutputTokens string `json:"avgOutputTokens"`
 }
 
 // OptimizedAlloc describes the target optimized allocation for a model variant.

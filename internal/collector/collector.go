@@ -97,34 +97,39 @@ func AddMetricsToOptStatus(ctx context.Context,
 	}
 	FixValue(&arrivalVal)
 
+	// TODO: add query to get prompt tokens
+	avgInputTokens := 0.0
+
 	// Query 2: Average token length
 	// TODO: split composite query to individual queries
-	tokenQuery := fmt.Sprintf(`sum(rate(vllm:request_generation_tokens_sum{model_name="%s",namespace="%s"}[1m]))/sum(rate(vllm:request_generation_tokens_count{model_name="%s",namespace="%s"}[1m]))`,
+	avgDecToksQuery := fmt.Sprintf(`sum(rate(vllm:request_generation_tokens_sum{model_name="%s",namespace="%s"}[1m]))/sum(rate(vllm:request_generation_tokens_count{model_name="%s",namespace="%s"}[1m]))`,
 		modelName, deployNamespace, modelName, deployNamespace)
-	avgLen := 0.0
-	if val, _, err := promAPI.Query(ctx, tokenQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+	avgOutputTokens := 0.0
+	if val, _, err := promAPI.Query(ctx, avgDecToksQuery, time.Now()); err == nil && val.Type() == model.ValVector {
 		vec := val.(model.Vector)
 		if len(vec) > 0 {
-			avgLen = float64(vec[0].Value)
+			avgOutputTokens = float64(vec[0].Value)
 		}
 	} else {
 		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
 	}
-	FixValue(&avgLen)
+	FixValue(&avgOutputTokens)
+
+	// TODO: change waiting time to TTFT
 
 	// Query 3: Average waiting time
-	waitQuery := fmt.Sprintf(`sum(rate(vllm:request_queue_time_seconds_sum{model_name="%s",namespace="%s"}[1m]))/sum(rate(vllm:request_queue_time_seconds_count{model_name="%s",namespace="%s"}[1m]))`,
+	ttftQuery := fmt.Sprintf(`sum(rate(vllm:request_queue_time_seconds_sum{model_name="%s",namespace="%s"}[1m]))/sum(rate(vllm:request_queue_time_seconds_count{model_name="%s",namespace="%s"}[1m]))`,
 		modelName, deployNamespace, modelName, deployNamespace)
-	waitAverageTime := 0.0
-	if val, _, err := promAPI.Query(ctx, waitQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+	ttftAverageTime := 0.0
+	if val, _, err := promAPI.Query(ctx, ttftQuery, time.Now()); err == nil && val.Type() == model.ValVector {
 		vec := val.(model.Vector)
 		if len(vec) > 0 {
-			waitAverageTime = float64(vec[0].Value) * 1000 //msec
+			ttftAverageTime = float64(vec[0].Value) * 1000 //msec
 		}
 	} else {
 		logger.Log.Warn("failed to get avg wait time, using 0: ", "model: ", modelName)
 	}
-	FixValue(&waitAverageTime)
+	FixValue(&ttftAverageTime)
 
 	// Query 4: Average ITL
 	itlQuery := fmt.Sprintf(`sum(rate(vllm:time_per_output_token_seconds_sum{model_name="%s",namespace="%s"}[1m]))/sum(rate(vllm:time_per_output_token_seconds_count{model_name="%s",namespace="%s"}[1m]))`,
@@ -163,11 +168,12 @@ func AddMetricsToOptStatus(ctx context.Context,
 		NumReplicas: numReplicas,
 		MaxBatch:    maxBatch,
 		VariantCost: strconv.FormatFloat(float64(discoveredCost), 'f', 2, 32),
-		WaitAverage: strconv.FormatFloat(float64(waitAverageTime), 'f', 2, 32),
+		TTFTAverage: strconv.FormatFloat(float64(ttftAverageTime), 'f', 2, 32),
 		ITLAverage:  strconv.FormatFloat(float64(itlAverage), 'f', 2, 32),
 		Load: llmdVariantAutoscalingV1alpha1.LoadProfile{
-			ArrivalRate: strconv.FormatFloat(float64(arrivalVal), 'f', 2, 32),
-			AvgLength:   strconv.FormatFloat(float64(avgLen), 'f', 2, 32),
+			ArrivalRate:     strconv.FormatFloat(float64(arrivalVal), 'f', 2, 32),
+			AvgInputTokens:  strconv.FormatFloat(float64(avgInputTokens), 'f', 2, 32),
+			AvgOutputTokens: strconv.FormatFloat(float64(avgOutputTokens), 'f', 2, 32),
 		},
 	}
 	return currentAlloc, nil

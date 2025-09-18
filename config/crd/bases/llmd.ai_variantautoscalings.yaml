@@ -87,28 +87,40 @@ spec:
                             units to be used.
                           minimum: 1
                           type: integer
-                        alpha:
-                          description: Alpha is the alpha parameter for scaling by
-                            optimizer, represented as a string matching a decimal
-                            pattern.
-                          pattern: ^\d+(\.\d+)?$
-                          type: string
-                        beta:
-                          description: Beta is the beta parameter for scaling by optimizer,
-                            represented as a string matching a decimal pattern.
-                          pattern: ^\d+(\.\d+)?$
-                          type: string
                         maxBatchSize:
                           description: MaxBatchSize is the maximum batch size supported
                             by the accelerator.
                           minimum: 1
                           type: integer
+                        perfParms:
+                          description: PerParms specifies the prefill and decode parameters
+                            for ttft and itl models
+                          properties:
+                            decodeParms:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                DecodeParms contains parameters for the decode phase (ITL calculation)
+                                Expected keys: "alpha", "beta" for equation: itl = alpha + beta * maxBatchSize
+                              minProperties: 1
+                              type: object
+                            prefillParms:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                PrefillParms contains parameters for the prefill phase (TTFT calculation)
+                                Expected keys: "gamma", "delta" for equation: ttft = gamma + delta * tokens * maxBatchSize
+                              minProperties: 1
+                              type: object
+                          required:
+                          - decodeParms
+                          - prefillParms
+                          type: object
                       required:
                       - acc
                       - accCount
-                      - alpha
-                      - beta
                       - maxBatchSize
+                      - perfParms
                       type: object
                     minItems: 1
                     type: array
@@ -161,8 +173,8 @@ spec:
                     minLength: 1
                     type: string
                   itlAverage:
-                    description: ITLAverage is the average inference time latency
-                      for the current allocation.
+                    description: ITLAverage is the average inter token latency for
+                      the current allocation.
                     pattern: ^\d+(\.\d+)?$
                     type: string
                   load:
@@ -173,13 +185,18 @@ spec:
                         description: ArrivalRate is the rate of incoming requests
                           in inference server.
                         type: string
-                      avgLength:
-                        description: AvgLength is the average length of each request
-                          in inference server.
+                      avgInputTokens:
+                        description: AvgInputTokens is the average number of input(prefill)
+                          tokens per request in inference server.
+                        type: string
+                      avgOutputTokens:
+                        description: AvgOutputTokens is the average number of output(decode)
+                          tokens per request in inference server.
                         type: string
                     required:
                     - arrivalRate
-                    - avgLength
+                    - avgInputTokens
+                    - avgOutputTokens
                     type: object
                   maxBatch:
                     description: MaxBatch is the maximum batch size currently allocated.
@@ -189,14 +206,14 @@ spec:
                     description: NumReplicas is the number of replicas currently allocated.
                     minimum: 0
                     type: integer
+                  ttftAverage:
+                    description: TTFTAverage is the average time to first token for
+                      the current allocation
+                    pattern: ^\d+(\.\d+)?$
+                    type: string
                   variantCost:
                     description: VariantCost is the cost associated with the current
                       variant allocation.
-                    pattern: ^\d+(\.\d+)?$
-                    type: string
-                  waitAverage:
-                    description: WaitAverage is the average wait time for requests
-                      in the current allocation.
                     pattern: ^\d+(\.\d+)?$
                     type: string
                 required:
@@ -205,8 +222,8 @@ spec:
                 - load
                 - maxBatch
                 - numReplicas
+                - ttftAverage
                 - variantCost
-                - waitAverage
                 type: object
               desiredOptimizedAlloc:
                 description: DesiredOptimizedAlloc indicates the target optimized

@@ -12,10 +12,10 @@ import (
 	"time"
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	infernoConfig "github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/config"
 	collector "github.com/llm-d-incubation/inferno-autoscaler/internal/collector"
 	interfaces "github.com/llm-d-incubation/inferno-autoscaler/internal/interfaces"
 	"github.com/llm-d-incubation/inferno-autoscaler/internal/logger"
-	infernoConfig "github.com/llm-inferno/optimizer-light/pkg/config"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/yaml.v3"
 	appsv1 "k8s.io/api/apps/v1"
@@ -176,11 +176,9 @@ func CreateSystemData(
 		}
 		for i, entry := range sc.Data {
 			serviceClassSpec.ModelTargets[i] = infernoConfig.ModelTarget{
-				Model: entry.Model,
-				//TODO: change inferno config to use SLOTPOT and SLOTTFT
-				// SLO_ITL and SLO_TTW are deprecated
-				SLO_ITL: float32(entry.SLOTPOT),
-				SLO_TTW: float32(entry.SLOTTFT),
+				Model:    entry.Model,
+				SLO_ITL:  float32(entry.SLOTPOT),
+				SLO_TTFT: float32(entry.SLOTTFT),
 			}
 		}
 		serviceClassData = append(serviceClassData, serviceClassSpec)
@@ -209,11 +207,31 @@ func AddModelAcceleratorProfileToSystemData(
 	modelName string,
 	modelAcceleratorProfile *llmdVariantAutoscalingV1alpha1.AcceleratorProfile) (err error) {
 
+	// extract decode model (itl) parameters
+	decodeParms := modelAcceleratorProfile.PerfParms.DecodeParms
+	if len(decodeParms) < 2 {
+		return fmt.Errorf("length of decodeParms should be 2")
+	}
+
 	var alpha, beta float64
-	if alpha, err = strconv.ParseFloat(modelAcceleratorProfile.Alpha, 32); err != nil {
+	if alpha, err = strconv.ParseFloat(decodeParms["alpha"], 32); err != nil {
 		return err
 	}
-	if beta, err = strconv.ParseFloat(modelAcceleratorProfile.Beta, 32); err != nil {
+	if beta, err = strconv.ParseFloat(decodeParms["beta"], 32); err != nil {
+		return err
+	}
+
+	// extract prefill model (ttft) parameters
+	prefillParms := modelAcceleratorProfile.PerfParms.PrefillParms
+	if len(prefillParms) < 2 {
+		return fmt.Errorf("length of prefillParms should be 2")
+	}
+
+	var gamma, delta float64
+	if gamma, err = strconv.ParseFloat(prefillParms["gamma"], 32); err != nil {
+		return err
+	}
+	if delta, err = strconv.ParseFloat(prefillParms["delta"], 32); err != nil {
 		return err
 	}
 
@@ -222,9 +240,15 @@ func AddModelAcceleratorProfileToSystemData(
 			Name:         modelName,
 			Acc:          modelAcceleratorProfile.Acc,
 			AccCount:     modelAcceleratorProfile.AccCount,
-			Alpha:        float32(alpha),
-			Beta:         float32(beta),
 			MaxBatchSize: modelAcceleratorProfile.MaxBatchSize,
+			DecodeParms: infernoConfig.DecodeParms{
+				Alpha: float32(alpha),
+				Beta:  float32(beta),
+			},
+			PrefillParms: infernoConfig.PrefillParms{
+				Gamma: float32(gamma),
+				Delta: float32(delta),
+			},
 		})
 	return nil
 }
@@ -236,17 +260,21 @@ func AddServerInfoToSystemData(
 	className string) (err error) {
 
 	// server load statistics
-	var arrivalRate, avgLength, cost, itlAverage, waitAverage float64
+	var arrivalRate, avgOutputTokens, avgInputTokens, cost, itlAverage, ttftAverage float64
 	if arrivalRate, err = strconv.ParseFloat(va.Status.CurrentAlloc.Load.ArrivalRate, 32); err != nil || !CheckValue(arrivalRate) {
 		arrivalRate = 0
 	}
-	if avgLength, err = strconv.ParseFloat(va.Status.CurrentAlloc.Load.AvgLength, 32); err != nil || !CheckValue(avgLength) {
-		avgLength = 0
+	if avgOutputTokens, err = strconv.ParseFloat(va.Status.CurrentAlloc.Load.AvgOutputTokens, 32); err != nil || !CheckValue(avgOutputTokens) {
+		avgOutputTokens = 0
+	}
+	if avgInputTokens, err = strconv.ParseFloat(va.Status.CurrentAlloc.Load.AvgInputTokens, 32); err != nil || !CheckValue(avgInputTokens) {
+		avgInputTokens = 0
 	}
 
 	serverLoadSpec := &infernoConfig.ServerLoadSpec{
-		ArrivalRate: float32(arrivalRate),
-		AvgLength:   int(avgLength),
+		ArrivalRate:  float32(arrivalRate),
+		AvgInTokens:  int(avgInputTokens),
+		AvgOutTokens: int(avgOutputTokens),
 	}
 
 	// server allocation
@@ -256,26 +284,31 @@ func AddServerInfoToSystemData(
 	if itlAverage, err = strconv.ParseFloat(va.Status.CurrentAlloc.ITLAverage, 32); err != nil || !CheckValue(itlAverage) {
 		itlAverage = 0
 	}
-	if waitAverage, err = strconv.ParseFloat(va.Status.CurrentAlloc.WaitAverage, 32); err != nil || !CheckValue(waitAverage) {
-		waitAverage = 0
+	if ttftAverage, err = strconv.ParseFloat(va.Status.CurrentAlloc.TTFTAverage, 32); err != nil || !CheckValue(ttftAverage) {
+		ttftAverage = 0
 	}
+
 	AllocationData := &infernoConfig.AllocationData{
 		Accelerator: va.Status.CurrentAlloc.Accelerator,
 		NumReplicas: va.Status.CurrentAlloc.NumReplicas,
 		MaxBatch:    va.Status.CurrentAlloc.MaxBatch,
 		Cost:        float32(cost),
 		ITLAverage:  float32(itlAverage),
-		WaitAverage: float32(waitAverage),
+		TTFTAverage: float32(ttftAverage),
 		Load:        *serverLoadSpec,
 	}
 
 	// all server data
+	minNumReplicas := 0 // default is to scale to zero
+	if os.Getenv("WVA_SCALE_TO_ZERO") == "false" {
+		minNumReplicas = 1
+	}
 	serverSpec := &infernoConfig.ServerSpec{
 		Name:            FullName(va.Name, va.Namespace),
 		Class:           className,
 		Model:           va.Spec.ModelID,
 		KeepAccelerator: true,
-		MinNumReplicas:  1,
+		MinNumReplicas:  minNumReplicas,
 		CurrentAlloc:    *AllocationData,
 		DesiredAlloc:    infernoConfig.AllocationData{},
 	}
@@ -308,6 +341,7 @@ func CreateOptimizedAlloc(name string,
 	if allocationData, exists = allocationSolution.Spec[serverName]; !exists {
 		return nil, fmt.Errorf("server %s not found", serverName)
 	}
+	logger.Log.Debug("Setting accelerator name ", "Name ", allocationData.Accelerator, "allocationData ", allocationData)
 	optimizedAlloc := &llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 		LastRunTime: metav1.NewTime(time.Now()),
 		Accelerator: allocationData.Accelerator,

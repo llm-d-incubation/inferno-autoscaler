@@ -2,8 +2,10 @@
 
 
 Notes: 
-1. The following describes setting up vllm deployment and a guidellm job on OpenShift cluster.
-2. We use  `vllm-test` namespace for vllm deployment components and the load generator jobs. If the namespace doesn't already exists, create one by running `oc create ns vllm-test`.
+1. The following describes setting up vllm deployment on OpenShift cluster.
+2. These instructions are for standalone vllm deployments. To setup vllm with llm-d infra, refer to [Well-lit Path: Intelligent Inference Scheduling](https://github.com/llm-d/llm-d/blob/dev/guides/inference-scheduling/README.md).
+3. All vLLM components will run in the `vllm-test` namespace. If the namespace doesn't already exists, create one by running `oc create ns vllm-test`.
+
 
 ## Setting up a vllm deployment and service
 The following is largely based on existing reference material with a few tweaks. 
@@ -12,7 +14,7 @@ Refs:
 2. https://github.com/rh-aiservices-bu/llm-on-openshift/tree/main/llm-servers/vllm/gpu
 
 ### Step 1: Create a PVC
-Create PVC (`oc apply -f vllm-deploy/pvc.yaml`) named `vllm-models-cache` with enough space to hold all the models you want to try.
+Create PVC (`oc apply -f pvc.yaml`) named `vllm-models-cache` with enough space to hold all the models you want to try.
 ```yaml
 # pvc.ymal
 apiVersion: v1
@@ -22,7 +24,7 @@ metadata:
   namespace: vllm-test
 spec:
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   volumeMode: Filesystem
   resources:
     requests:
@@ -35,7 +37,7 @@ Before proceeding to next steps, make sure that the `STATUS` of pvc is `BOUND`.
 ### Step 2: Create a secret
 Secret is optional and only required for accessing gated models, you can skip this step if you are not using gated models.
 
-Run `oc apply -f vllm-deploy/secret.yaml`
+Run `oc apply -f secret.yaml`
 ```yaml
 # secret.yaml
 apiVersion: v1
@@ -51,7 +53,7 @@ stringData:
 ### Step 3: Create deployment
 The following example deploys the `unsloth/Meta-Llama-3.1-8B` model with 1 replica. We use H100 GPUs for our deployments.
 
-Run `oc apply -f vllm-deploy/deployment.yaml`.
+Run `oc apply -f deployment.yaml`.
 ```yaml
 # deployment.yaml
 kind: Deployment
@@ -151,8 +153,7 @@ spec:
           command: ["/bin/sh","-c"]
       volumes:
         - name: models-cache
-          persistentVolumeClaim:
-            claimName: vllm-models-cache
+          emptyDir: {}
         - name: shm
           emptyDir:
             medium: Memory
@@ -171,7 +172,7 @@ spec:
 Wait until the pod is in the `READY` state before proceeding to next steps.
 
 ### Create a service
-Create a service to expose the vllm deployment: `oc apply -f vllm-deploy/service.yaml`
+Create a service to expose the vllm deployment: `oc apply -f service.yaml`
 ```yaml
 # service.yaml
 kind: Service
@@ -195,7 +196,7 @@ spec:
 Run `oc get service` to make sure that the service indeed has `CLUSTER-IP` set.
 
 ### Create a ServiceMonitor
-We need service monitor to let Prometheus scrape vllm metrics: `oc apply -f vllm-deploy/service-monitor.yaml `
+We need service monitor to let Prometheus scrape vllm metrics: `oc apply -f service-monitor.yaml `
 ```yaml
 # service-monitor.yaml
 apiVersion: monitoring.coreos.com/v1

@@ -7,7 +7,6 @@ godebug default=go1.23
 toolchain go1.23.10
 
 require (
-	github.com/llm-inferno/optimizer-light v0.5.0
 	github.com/onsi/ginkgo/v2 v2.22.0
 	github.com/onsi/gomega v1.36.1
 	github.com/stretchr/testify v1.10.0
@@ -16,10 +15,7 @@ require (
 	sigs.k8s.io/controller-runtime v0.20.4
 )
 
-require (
-	github.com/llm-inferno/queue-analysis v0.1.0 // indirect
-	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-)
+require github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 
 require (
 	cel.dev/expr v0.18.0 // indirect
