@@ -39,7 +39,7 @@ Before running the Make target to deploy Inferno-Autoscaler, the `PROMETHEUS_BAS
 After that, you can deploy the Inferno-Autoscaler using the basic Make target:
 
 ```sh
-make deploy IMG=quay.io/infernoautoscaler/inferno-controller:0.0.2-multi-arch
+make deploy IMG=quay.io/infernoautoscaler/inferno-controller:0.0.1-multi-arch
 ```
 
 Then, you need to deploy the required ConfigMaps for the accelerator costs and the service classes. An example of this configuration can be found [at the end of this README](#accelerator-costs-and-serviceclasses-configsamplesacc-servclass-configmapyaml).
@@ -69,8 +69,9 @@ Finally, deploy the Service and ServiceMonitor, needed by Prometheus to scrape m
 
 ```sh
 export BASE_NAME="inference-scheduler"
+export DIR="inference-scheduling"
 export NAMESPACE="llm-d-$BASE_NAME"
-export EXAMPLES_DIR="examples/$BASE_NAME"
+export EXAMPLES_DIR="examples/$DIR"
 ```
 
 1. First, create a secret containing your HuggingFace token:
@@ -112,8 +113,11 @@ helmfile apply -f "gateway-control-plane-providers/kgateway.helmfile.yaml"
 
 5. Install the llm-d core components:
 
+*Note*: we want to run experiments using the `unsloth/Meta-Llama-3.1-8B` model. Therefore, we will change the model deployed by `llm-d` into it.
+
 ```sh
 cd $EXAMPLES_DIR
+yq eval '(.. | select(. == "Qwen/Qwen3-0.6B")) = "unsloth/Meta-Llama-3.1-8B"' -i ms-$DIR-values.yaml
 helmfile apply -e kgateway
 ```
 
@@ -227,13 +231,13 @@ vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-deco
 
 ```sh
 kubectl get variantautoscaling -n $NAMESPACE
-NAME                                                MODEL             ACCELERATOR   CURRENTREPLICAS   OPTIMIZED   AGE
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           3h41m
+NAME                                                MODEL                       ACCELERATOR   CURRENTREPLICAS   OPTIMIZED   AGE
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          1                 1           3h41m
 ```
 
 ### Adding probe definition to vLLM deployment for clean startup
 
-As of today, the `llm-d-infra` deployed example (`inference scheduling`) uses a ModelService that does **not** include probe definition for the vLLM deployment. This could cause newly spawned Pods to be prematurely marked as `Ready` by Kubernetes, and consequently to be scored and picked by the Inference Scheduler to serve incoming requests, although the vLLM server still has not finished its startup configuration.
+As of today, the `llm-d-infra` deployed example (`inference scheduling`) uses a ModelService that does **not** include probe definition for the vLLM deployment. This could cause newly spawned Pods to be prematurely marked as `Ready` by Kubernetes, and consequently be scored and picked by the Inference Scheduler to serve incoming requests, although the vLLM server still has not finished its startup configuration.
 
 The side effects of this behavior are:
 
@@ -241,13 +245,19 @@ The side effects of this behavior are:
 
 - A consequent decrease in the incoming request rate is observed by the Workload Variant Autoscaler.
 
-The latter could even bring the WVA to wrongly decrease the desired number of replicas, causing effective SLO violation. Because of that, there is the need to have a clean startup configuration using readiness and startup probes: a `yaml` example snippet for the patch can be found [at the bottom of this README](#hpa-configuration-example-configsampleshpa-integrationyaml).
+The latter could even bring the WVA to wrongly decrease the desired number of replicas, causing effective SLO violation. Because of that, there is the need to have a clean startup configuration using readiness and startup probes: a `yaml` example snippet for the patch can be found [at the end of this README](#hpa-configuration-example-configsampleshpa-integrationyaml).
 
 ```bash
 # After creating the file `config/samples/probes-patch.yaml`
 # Apply probe patch for the existing vLLM deployment
 kubectl patch deployment ms-inference-scheduling-llm-d-modelservice-decode -n $NAMESPACE$ --patch-file config/samples/probes-patch.yaml
 ```
+
+## Running benchmarks
+
+We use **GuideLLM** as a load generator for the vLLM servers deployed by the `llm-d` infrastructure, and scaled by the Inferno-Autoscaler.
+
+We can generate traffic by using Kubernetes `Job`s, which will launch GuideLLM to generate traffic for the servers. A sample `yaml` snippet for a Job launching GuideLLM against the Inference Gateway deployed by `llm-d` can be found [at the end of this README](#guidellm-job-configuration-example-configsamplesguidellm-jobyaml).
 
 ## Example: scale-up scenario
 
@@ -257,11 +267,10 @@ kubectl patch deployment ms-inference-scheduling-llm-d-modelservice-decode -n $N
 kubectl port-forward -n $NAMESPACE svc/infra-$BASE_NAME-inference-gateway 8000:80
 ```
 
-2. Launch GuideLLM to send load to the vLLM servers via the following command (*Note*: this will generate traffic for 5 minutes):
+2. Launch the GuideLLM `Job` to send load to the vLLM servers via the following command:
 
 ```bash
-pip install guidellm # if not present
-guidellm benchmark --target "http://localhost:8000" --rate-type "constant" --rate 1  --max-seconds 300 --model "Qwen/Qwen3-0.6B" --data "prompt_tokens=128,output_tokens=128"
+kubectl apply config/samples/guidellm-job.yaml
 ```
 
 3. After a while, you will see a scale out happening:
@@ -274,15 +283,15 @@ vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-deco
 vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1/1 (avg)   1         10        2          54m
 
 kubectl get va -n $NAMESPACE -w
-NAME                                                MODEL             ACCELERATOR   CURRENTREPLICAS   OPTIMIZED   AGE
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           54m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 2           55m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 2           55m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 2           55m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           56m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           56m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           56m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           57m
+NAME                                                MODEL                       ACCELERATOR   CURRENTREPLICAS   OPTIMIZED   AGE
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          1                 1           54m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          1                 2           55m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          1                 2           55m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          1                 2           55m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          2                 2           56m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          2                 2           56m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          2                 2           56m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          2                 2           57m
 
 kubectl get deployment -n $NAMESPACE  -w
 NAME                                                READY   UP-TO-DATE   AVAILABLE   AGE
@@ -306,29 +315,29 @@ vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-deco
 vllm-deployment-hpa   Deployment/ms-inference-scheduling-llm-d-modelservice-decode   1/1 (avg)      1         10        1          58m
 
 kubectl get va -n $NAMESPACE -w
-NAME                                                MODEL             ACCELERATOR   CURRENTREPLICAS   OPTIMIZED   AGE
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           53m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           54m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           54m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           54m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 2           55m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 2           55m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 2           55m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           56m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           56m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           56m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           57m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           57m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           57m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           58m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           58m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 2           58m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 1           59m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 1           59m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          2                 1           59m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           60m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           60m
-ms-inference-scheduling-llm-d-modelservice-decode   Qwen/Qwen3-0.6B   H100          1                 1           60m
+NAME                                                MODEL                       ACCELERATOR   CURRENTREPLICAS   OPTIMIZED   AGE
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          1                 1           53m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          1                 1           54m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          1                 1           54m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          1                 1           54m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          1                 2           55m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          1                 2           55m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          1                 2           55m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          2                 2           56m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          2                 2           56m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          2                 2           56m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          2                 2           57m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          2                 2           57m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          2                 2           57m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          2                 2           58m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          2                 2           58m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          2                 2           58m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          2                 1           59m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          2                 1           59m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          2                 1           59m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          1                 1           60m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          1                 1           60m
+ms-inference-scheduling-llm-d-modelservice-decode   unsloth/Meta-Llama-3.1-8B   H100          1                 1           60m
 
 kubectl get deployment -n $NAMESPACE -w
 NAME                                                READY   UP-TO-DATE   AVAILABLE   AGE
@@ -393,7 +402,7 @@ data:
     name: Premium
     priority: 1
     data:
-      - model: Qwen/Qwen3-0.6B
+      - model: unsloth/Meta-Llama-3.1-8B
         slo-tpot: 24
         slo-ttft: 500
       - model: llama0-70b
@@ -648,7 +657,7 @@ metadata:
 # This is essentially static input to the optimizer
 spec:
   # OpenAI API compatible name of the model
-  modelID: "Qwen/Qwen3-0.6B"
+  modelID: "unsloth/Meta-Llama-3.1-8B"
   # Add SLOs in configmap, add reference to this per model data
   # to avoid duplication and Move to ISOs when available
   sloClassRef:
@@ -662,23 +671,15 @@ spec:
     accelerators:
       - acc: "A100"
         accCount: 1
-        alpha: "20.58"
-        beta: "0.41"
-        maxBatchSize: 4
-      - acc: "H100"
-        accCount: 1
-        alpha: "20.58"
-        beta: "0.41"
-        maxBatchSize: 4
-      - acc: "MI300X"
-        accCount: 1
-        alpha: "7.77"
-        beta: "0.15"
-        maxBatchSize: 4
-      - acc: "G2"
-        accCount: 1
-        alpha: "17.15"
-        beta: "0.34"
+        perfParms: 
+          decodeParms:
+            # Decode parameters for ITL equation: itl = alpha + beta * maxBatchSize
+            alpha: "6.958"
+            beta: "0.042"
+          # Prefill parameters for TTFT equation: ttft = gamma + delta * tokens * maxBatchSize  
+          prefillParms:
+            gamma: "60.958"
+            delta: "0.0042"
         maxBatchSize: 4
 ```
 
@@ -721,6 +722,45 @@ spec:
       target:
         type: AverageValue
         averageValue: "1"
+```
+
+### GuideLLM Job Configuration Example (`config/samples/guidellm-job.yaml`)
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: guidellm-job-1
+  namespace: llm-d-inference-scheduler
+spec:
+  template:
+    spec:
+      containers:
+      - name: guidellm-benchmark-container
+        image: quay.io/vishakharamani/guidellm:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: HF_HOME
+          value: "/tmp"
+        command: ["/usr/local/bin/guidellm"]
+        args:
+        - "benchmark"
+        - "--target"
+        - "http://infra-inference-scheduling-inference-gateway:80"
+        - "--rate-type"
+        - "constant"
+        - "--rate"
+        - "8" # req/sec
+        - "--max-seconds"
+        - "1800"
+        - "--model"
+        - "unsloth/Meta-Llama-3.1-8B"
+        - "--data"
+        - "prompt_tokens=128,output_tokens=512"
+        - "--output-path"
+        - "/tmp/benchmarks.json" 
+      restartPolicy: Never
+  backoffLimit: 4
 ```
 
 **Note**: the HPA `StabilizationWindow` is a configuration parameter that aims to smooth *flapping* behaviors, where the desired number of replicas is continuously changing, causing the startup and termination of vLLM servers that may take a while to be ready, and would waste resources too.
