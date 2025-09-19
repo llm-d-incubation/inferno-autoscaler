@@ -16,15 +16,15 @@ WVA uses modeling, benchmarking, and optimization to find the best possible solu
 
 - A **model-arrangement performance profile** captures performance characteristics when serving a given model on a given accelerator arrangement. The profile includes:
 
-  1. functional description of the token generation time (TPOT) as a function of batch size, and
+  1. functional description of the token generation time (ITL) as a function of batch size, and
   2. characterization of conditions under which the server is saturated.
 
     The performance profile may be generated through offline benchmarking and/or dynamically updated based on online observations.
 
 - The **model SLOs** define target values for two metrics:
 
-  1. *TTFT*: The TTFT component includes request queueing time as well as waiting and performing prefill processing. Since the latter is a function of the number of input tokens in the request, we use the total request queueing time as a surrogate, request-independent measure to TTFT.
-  2. *TPOT*: This is simply the decode time to generate an output token. It is subject to elongation due to congestion, resulting from batching requests, injection of prefill processing during a long decode cycle, and factors related to KV caching and potential memory swapping.
+  1. *TTFT*: The TTFT component includes request queueing time as well as waiting and performing prefill processing.
+  2. *ITL*: This is simply the decode time to generate an output token. It is subject to elongation due to congestion, resulting from batching requests, injection of prefill processing during a long decode cycle, and factors related to KV caching and potential memory swapping.
 
 - **Workload priority** (aka **criticality**) is an indicator of the importance of requests of a particular application (workload). It may serve different functions depending on the component that is handling the workload. For an admission controller, it may be used to decide on which stream of requests is more likely to be dropped. For a request scheduler, it may influence the position of a request in the queue and/or when dispatching a request. And, for WVA, it is used to decide on the assignment of accelerators to variants serving particular workloads when the total resources are tight, i.e. cannot accommodate the SLOs for all models.
 
@@ -34,7 +34,7 @@ The model analyzer maintains an analytical performance model for each variant in
 
 The purpose of using a performance model is twofold.
 
-1. Performance evaluation: Estimate performance metrics such as waiting time, TTFT, ITL, and TPOT, as a function of a given load and server characteristics.
+1. Performance evaluation: Estimate performance metrics such as waiting time, TTFT, and ITL, as a function of a given load and server characteristics.
 
 2. Target sizing: Determine load and/or server characteristics in order to attain target values of performance metrics.
 The former is used to estimate performance given the current and/or predicted/anticipated environment. Whereas, the latter is mainly used by the Optimizer to assess maximum request rate to guarantee given SLOs, as well as the impact of a choice of a particular GPU type.
