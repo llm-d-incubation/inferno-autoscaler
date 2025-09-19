@@ -36,10 +36,16 @@ Before running the Make target to deploy Inferno-Autoscaler, the `PROMETHEUS_BAS
   PROMETHEUS_BASE_URL: "https://thanos-querier.openshift-monitoring.svc.cluster.local:9091"
 ```
 
-After that, you can deploy the Inferno-Autoscaler using the basic Make target:
+After that, you can deploy the Inferno-Autoscaler using the basic `Make` target:
 
 ```sh
 make deploy IMG=quay.io/infernoautoscaler/inferno-controller:0.0.1-multi-arch
+```
+
+*Note*: this target deploys the `inferno-autoscaler-monitoring` namespace, which will not be used for this example, since Prometheus is already deployed on OCP. Therefore, it can be deleted using the following:
+
+```bash
+kubectl delete namespace inferno-autoscaler-monitoring
 ```
 
 Then, you need to deploy the required ConfigMaps for the accelerator costs and the service classes. An example of this configuration can be found [at the end of this README](#accelerator-costs-and-serviceclasses-configsamplesacc-servclass-configmapyaml).
@@ -245,7 +251,7 @@ The side effects of this behavior are:
 
 - A consequent decrease in the incoming request rate is observed by the Workload Variant Autoscaler.
 
-The latter could even bring the WVA to wrongly decrease the desired number of replicas, causing effective SLO violation. Because of that, there is the need to have a clean startup configuration using readiness and startup probes: a `yaml` example snippet for the patch can be found [at the end of this README](#hpa-configuration-example-configsampleshpa-integrationyaml).
+The latter could even bring the Autoscaler to wrongly decrease the desired number of replicas, causing effective SLO violation. Because of that, there is the need to have a clean startup configuration using readiness and startup probes: a `yaml` example snippet for the patch can be found [at the end of this README](#hpa-configuration-example-configsampleshpa-integrationyaml).
 
 ```bash
 # After creating the file `config/samples/probes-patch.yaml`
@@ -350,6 +356,29 @@ ms-inference-scheduling-llm-d-modelservice-decode   2/2     2            2      
 ms-inference-scheduling-llm-d-modelservice-decode   2/1     2            2           61m
 ms-inference-scheduling-llm-d-modelservice-decode   2/1     2            2           61m
 ms-inference-scheduling-llm-d-modelservice-decode   1/1     1            1           61m
+```
+
+## Undeploy the infrastructure
+
+### Undeploying the `llm-d` infrastructure components
+
+To undeploy the `llm-d` components, uninstall the Helm Charts deployed previously:
+
+```bash
+helmfile destroy -n ${NAMESPACE}
+
+# Or uninstall manually
+helm uninstall infra-$DIR -n ${NAMESPACE}
+helm uninstall gaie-$DIR -n ${NAMESPACE}
+helm uninstall ms-$DIR -n ${NAMESPACE}
+```
+
+### Undeploying the Inferno-Autoscaler
+
+To undeploy the Inferno-Autoscaler, use the following `Make` target:
+
+```bash
+make undeploy
 ```
 
 ## Configuration Files
