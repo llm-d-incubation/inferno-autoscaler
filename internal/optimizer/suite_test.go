@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package optimizer
 
 import (
 	"context"
@@ -24,6 +24,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -33,6 +34,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	llmdv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	"github.com/llm-d-incubation/inferno-autoscaler/internal/logger"
+	"github.com/llm-d-incubation/inferno-autoscaler/internal/metrics"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -45,12 +48,13 @@ var (
 	testEnv   *envtest.Environment
 	cfg       *rest.Config
 	k8sClient client.Client
+	registry  *prometheus.Registry
 )
 
-func TestControllers(t *testing.T) {
+func TestOptimizer(t *testing.T) {
 	RegisterFailHandler(Fail)
 
-	RunSpecs(t, "Controller Suite")
+	RunSpecs(t, "Optimizer Suite")
 }
 
 var _ = BeforeSuite(func() {
@@ -58,11 +62,9 @@ var _ = BeforeSuite(func() {
 
 	ctx, cancel = context.WithCancel(context.TODO())
 
-	var err error
-	err = llmdv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	// +kubebuilder:scaffold:scheme
+	// Initialize logger for actuator
+	_, loggerErr := logger.InitLogger()
+	Expect(loggerErr).NotTo(HaveOccurred())
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
@@ -75,14 +77,25 @@ var _ = BeforeSuite(func() {
 		testEnv.BinaryAssetsDirectory = getFirstFoundEnvTestBinaryDir()
 	}
 
+	var err error
 	// cfg is defined in this file globally.
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
+	err = llmdv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	// +kubebuilder:scaffold:scheme
+
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	// Initialize global metrics registry for tests
+	registry = prometheus.NewRegistry()
+	err = metrics.InitMetrics(registry)
+	Expect(err).NotTo(HaveOccurred())
 })
 
 var _ = AfterSuite(func() {

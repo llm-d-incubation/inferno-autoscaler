@@ -36,7 +36,8 @@ import (
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
 	collector "github.com/llm-d-incubation/inferno-autoscaler/internal/collector"
 	logger "github.com/llm-d-incubation/inferno-autoscaler/internal/logger"
-	ctrlutils "github.com/llm-d-incubation/inferno-autoscaler/internal/utils"
+	utils "github.com/llm-d-incubation/inferno-autoscaler/internal/utils"
+	testutils "github.com/llm-d-incubation/inferno-autoscaler/test/utils"
 )
 
 var _ = Describe("VariantAutoscalings Controller", func() {
@@ -61,13 +62,13 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 			Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, ns))).NotTo(HaveOccurred())
 
 			By("creating the required configmap for optimization")
-			configMap := ctrlutils.CreateServiceClassConfigMap(ns.Name)
+			configMap := testutils.CreateServiceClassConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
 
-			configMap = ctrlutils.CreateAcceleratorUnitCostConfigMap(ns.Name)
+			configMap = testutils.CreateAcceleratorUnitCostConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
 
-			configMap = ctrlutils.CreateVariantAutoscalingConfigMap(ns.Name)
+			configMap = testutils.CreateVariantAutoscalingConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
 
 			By("creating the custom resource for the Kind VariantAutoscalings")
@@ -88,7 +89,7 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 									Acc:      "A100",
 									AccCount: 1,
 									PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
-										DecodeParms:  map[string]string{"alpha": "0.28", "beta": "0.72"},
+										DecodeParms:  map[string]string{"alpha": "20.28", "beta": "0.72"},
 										PrefillParms: map[string]string{"gamma": "0", "delta": "0"},
 									},
 									MaxBatchSize: 4,
@@ -209,13 +210,13 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 			Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, ns))).NotTo(HaveOccurred())
 
 			By("creating the required configmaps")
-			configMap := ctrlutils.CreateServiceClassConfigMap(ns.Name)
+			configMap := testutils.CreateServiceClassConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).NotTo(HaveOccurred())
 
-			configMap = ctrlutils.CreateAcceleratorUnitCostConfigMap(ns.Name)
+			configMap = testutils.CreateAcceleratorUnitCostConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).NotTo(HaveOccurred())
 
-			configMap = ctrlutils.CreateVariantAutoscalingConfigMap(ns.Name)
+			configMap = testutils.CreateVariantAutoscalingConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).NotTo(HaveOccurred())
 		})
 
@@ -584,10 +585,10 @@ data:
 			configMap := CreateServiceClassConfigMap(ns.Name, modelNames...)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
 
-			configMap = ctrlutils.CreateAcceleratorUnitCostConfigMap(ns.Name)
+			configMap = testutils.CreateAcceleratorUnitCostConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
 
-			configMap = ctrlutils.CreateVariantAutoscalingConfigMap(ns.Name)
+			configMap = testutils.CreateVariantAutoscalingConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
 
 			By("Creating dummy inventory")
@@ -627,7 +628,7 @@ data:
 						Namespace: "default",
 					},
 					Spec: appsv1.DeploymentSpec{
-						Replicas: ctrlutils.Ptr(int32(1)),
+						Replicas: utils.Ptr(int32(1)),
 						Selector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{"app": name},
 						},
@@ -757,7 +758,7 @@ data:
 			controllerReconciler := &VariantAutoscalingReconciler{
 				Client:  k8sClient,
 				Scheme:  k8sClient.Scheme(),
-				PromAPI: &mockPromAPI{}, // Add mock PromAPI
+				PromAPI: &testutils.MockPromAPI{},
 			}
 
 			By("Reading the required configmaps")
@@ -777,7 +778,7 @@ data:
 
 			// Prepare system data for VAs
 			By("Preparing the system data for optimization")
-			systemData := ctrlutils.CreateSystemData(accMap, serviceClassMap, dummyInventory)
+			systemData := utils.CreateSystemData(accMap, serviceClassMap, dummyInventory)
 			Expect(systemData).NotTo(BeNil(), "System data should not be nil")
 
 			updateList, vaMap, allAnalyzerResponses, err := controllerReconciler.prepareVariantAutoscalings(ctx, activeVAs, accMap, serviceClassMap, systemData)
