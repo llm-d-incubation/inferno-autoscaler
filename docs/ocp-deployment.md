@@ -28,6 +28,7 @@ After deploying the Inferno-autoscaler following the provided guides, this guide
 First, export the following environment variables:
 
 ```sh
+export WVA_PROJECT=$PWD
 export BASE_NAME="inference-scheduling"
 export NAMESPACE="llm-d-$BASE_NAME"
 export EXAMPLES_DIR="examples/$BASE_NAME"
@@ -205,7 +206,7 @@ EOF
 
 - If you want to deploy other examples using **llm-d**, please refer to the [llm-d infrastructure repo](https://github.com/llm-d-incubation/llm-d-infra/tree/main/quickstart/examples).
 
-1. First, create a secret containing your HuggingFace token:
+1. First, create a secret containing your HuggingFace token. **Make sure to insert a *valid* HF token** in the environment variable.
 
 ```sh
 export HF_TOKEN="<your-hf-token>"
@@ -248,7 +249,7 @@ helmfile apply -f "gateway-control-plane-providers/kgateway.helmfile.yaml"
 
 ```sh
 cd $EXAMPLES_DIR
-sed -i '' 's/llm-d-inference-scheduler/llm-d-inference-scheduling/g' helmfile.yaml.gotmpl
+sed -i '' "s/llm-d-inference-scheduler/$NAMESPACE/g" helmfile.yaml.gotmpl
 yq eval '(.. | select(. == "Qwen/Qwen3-0.6B")) = "unsloth/Meta-Llama-3.1-8B" | (.. | select(. == "hf://Qwen/Qwen3-0.6B")) = "hf://unsloth/Meta-Llama-3.1-8B"' -i ms-$BASE_NAME/values.yaml
 helmfile apply -e kgateway
 ```
@@ -358,7 +359,7 @@ We will use a CA configmap for TLS Certificate Verification:
 
 ```sh
 # Extract the TLS certificate from the thanos-querier-tls secret
-kubectl get secret thanos-queries-tls -n openshift-monitoring -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/prometheus-ca.crt
+kubectl get secret thanos-querier-tls -n openshift-monitoring -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/prometheus-ca.crt
 
 # Create ConfigMap with the certificate
 kubectl create configmap prometheus-ca --from-file=ca.crt=/tmp/prometheus-ca.crt -n $MONITORING_NAMESPACE
@@ -370,18 +371,19 @@ Note: a `yaml` example snippet for the Prometheus Adapter configuration with TLS
 
 ```sh
 # Add Prometheus community helm repo - already there if you deployed Inferno-autoscaler using the scripts
+cd $WVA_PROJECT
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
 
 # Deploy Prometheus Adapter with Inferno-autoscaler metrics configuration
-helm update -i prometheus-adapter prometheus-community/prometheus-adapter \
+helm upgrade -i prometheus-adapter prometheus-community/prometheus-adapter \
   -n $MONITORING_NAMESPACE \
   -f config/samples/prometheus-adapter-values.yaml
 ```
 
 ### 3. Create the VariantAutoscaling resource
 
-An example of VariantAutoscaling resource can be found [at the end of this README](#variantautoscaling-configuration-example-configsamplesvllm-vayaml).
+An example of VariantAutoscaling resource can be found in the following command.
 
 ```sh
 cat <<EOF | kubectl apply -f -
@@ -410,7 +412,7 @@ spec:
   # Static profiled benchmarked data for a variant running on different accelerators
   modelProfile:
     accelerators:
-      - acc: "A100"
+      - acc: "H100"
         accCount: 1
         perfParms: 
           decodeParms:
@@ -419,15 +421,15 @@ spec:
             beta: "0.042"
           # Prefill parameters for TTFT equation: ttft = gamma + delta * tokens * maxBatchSize  
           prefillParms:
-            gamma: "60.958"
-            delta: "0.0042"
-        maxBatchSize: 4
+            gamma: "5.2"
+            delta: "0.1"
+        maxBatchSize: 512
 EOF
 ```
 
 ### 4. Wait for Prometheus to fetch metrics from the Inferno-Autoscaler
 
-You can verify that metrics are being emitted and fetched by querying for the following:
+You can verify that metrics are being emitted and fetched by querying for the following (*Note*: it may take 1-2mins for the metrics to be available):
 
 ```bash
 kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/$NAMESPACE/inferno_desired_replicas" | jq
@@ -502,7 +504,7 @@ spec:
       target:
         type: AverageValue
         averageValue: "1"
-EOF        
+EOF
 ```
 
 ### 6. Verify the integration
@@ -691,7 +693,6 @@ export NAMESPACE="llm-d-$BASE_NAME"
 export EXAMPLES_DIR="examples/$BASE_NAME"
 export PROJECT="llm-d-infra"
 export MONITORING_NAMESPACE="openshift-user-workload-monitoring"
-
 ```
 
 ```bash
@@ -712,16 +713,16 @@ make undeploy
 and then remove all other deployed additional resources:
 
 ```bash
-kubectl delete -n $NAMESPACE secret llm-d-hf-token
+kubectl delete -n $NAMESPACE secret llm-d-hf-token --ignore-not-found
 
-kubectl delete -n $NAMESPACE svc vllm-service
-kubectl delete -n $MONITORING_NAMESPACE servicemonitor inferno-autoscaler-controller-manager-metrics-monitor
-kubectl delete -n $MONITORING_NAMESPACE servicemonitor vllm-service
-kubectl delete -n $MONITORING_NAMESPACE configmap prometheus-ca
+kubectl delete -n $NAMESPACE svc vllm-service --ignore-not-found
+kubectl delete -n $MONITORING_NAMESPACE servicemonitor inferno-autoscaler-controller-manager-metrics-monitor --ignore-not-found
+kubectl delete -n $MONITORING_NAMESPACE servicemonitor vllm-service --ignore-not-found
+kubectl delete -n $MONITORING_NAMESPACE configmap prometheus-ca --ignore-not-found
 
-kubectl delete -n $NAMESPACE hpa vllm-deployment-hpa
+kubectl delete -n $NAMESPACE hpa vllm-deployment-hpa --ignore-not-found
 
-helm uninstall prometheus-adapter -n ${MONITORING_NAMESPACE}
+helm uninstall prometheus-adapter -n ${MONITORING_NAMESPACE} --ignore-not-found
 ```
 
 ## Configuration Files
