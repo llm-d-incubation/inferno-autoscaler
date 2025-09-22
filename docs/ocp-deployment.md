@@ -42,12 +42,6 @@ After that, you can deploy the Inferno-Autoscaler using the basic `Make` target:
 make deploy IMG=quay.io/infernoautoscaler/inferno-controller:0.0.1-multi-arch
 ```
 
-*Note*: this target deploys the `inferno-autoscaler-monitoring` namespace, which will not be used for this example, since Prometheus is already deployed on OCP. Therefore, it can be deleted using the following:
-
-```bash
-kubectl delete namespace inferno-autoscaler-monitoring
-```
-
 Then, you need to deploy the required ConfigMaps for the accelerator costs and the service classes. An example of this configuration can be found [at the end of this README](#accelerator-costs-and-serviceclasses-configsamplesacc-servclass-configmapyaml).
 
 ```sh
