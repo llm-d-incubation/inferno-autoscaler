@@ -692,12 +692,7 @@ export MONITORING_NAMESPACE="openshift-user-workload-monitoring"
 ```
 
 ```bash
-cd $PROJECT/quickstart/$EXAMPLES_DIR
-
-# Uninstall everything
-helmfile destroy -n ${NAMESPACE}
-
-# Or uninstall each chart manually
+# Uninstall the deployed Helm Charts
 helm uninstall infra-$BASE_NAME -n ${NAMESPACE}
 helm uninstall gaie-$BASE_NAME -n ${NAMESPACE}
 helm uninstall ms-$BASE_NAME -n ${NAMESPACE}
