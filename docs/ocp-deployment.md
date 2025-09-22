@@ -603,11 +603,11 @@ kind: ConfigMap
 metadata:
   annotations:
     meta.helm.sh/release-name: gaie-inference-scheduling
-    meta.helm.sh/release-namespace: llm-d-inference-scheduler
+    meta.helm.sh/release-namespace: llm-d-inference-scheduling
   labels:
     app.kubernetes.io/managed-by: Helm
   name: gaie-inference-scheduling-epp
-  namespace: llm-d-sim
+  namespace: llm-d-inference-scheduling
 
 ```
 
@@ -679,7 +679,7 @@ kind: VariantAutoscaling
 metadata:
   # Unique name of the variant
   name: ms-inference-scheduling-llm-d-modelservice-decode 
-  namespace: llm-d-inference-scheduler
+  namespace: llm-d-inference-scheduling
   labels:
     inference.optimization/acceleratorName: H100
 # This is essentially static input to the optimizer
@@ -718,7 +718,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: vllm-deployment-hpa
-  namespace: llm-d-inference-scheduler
+  namespace: llm-d-inference-scheduling
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -759,7 +759,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: guidellm-job-1
-  namespace: llm-d-inference-scheduler
+  namespace: llm-d-inference-scheduling
 spec:
   template:
     spec:
