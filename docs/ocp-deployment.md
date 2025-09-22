@@ -548,6 +548,8 @@ We use **GuideLLM** as a load generator for the vLLM servers deployed by the `ll
 
 We can generate traffic by using Kubernetes `Job`s, which will launch GuideLLM to generate traffic for the servers. A sample `yaml` snippet for a Job launching GuideLLM against the Inference Gateway deployed by `llm-d` can be found in the following commands.
 
+*Note*: depending on the deployed model, there may be the need to deploy multiple GuideLLM `Job`s to see a scale-up recommendation from the Inferno-Autoscaler.
+
 ## Example: scale-up scenario
 
 1. Expose and port-forward the Gateway service:
