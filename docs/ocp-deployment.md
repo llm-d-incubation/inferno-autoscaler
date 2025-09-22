@@ -25,6 +25,14 @@ After deploying the Inferno-autoscaler following the provided guides, this guide
 
 ### 0. Deploy the Inferno-Autoscaler and llm-d
 
+First, export the following environment variables:
+
+```sh
+export BASE_NAME="inference-scheduling"
+export NAMESPACE="llm-d-$BASE_NAME"
+export EXAMPLES_DIR="examples/$BASE_NAME"
+```
+
 #### Deploying the Inferno-Autoscaler
 
 Before running the Make target to deploy Inferno-Autoscaler, the `PROMETHEUS_BASE_URL` in the `config/manager/configmap.yaml` must be changed into a valid URL, to be able to connect to Thanos:
@@ -42,22 +50,149 @@ After that, you can deploy the Inferno-Autoscaler using the basic `Make` target:
 make deploy IMG=quay.io/infernoautoscaler/inferno-controller:0.0.1-multi-arch
 ```
 
-Then, you need to deploy the required ConfigMaps for the accelerator costs and the service classes. An example of this configuration can be found [at the end of this README](#accelerator-costs-and-serviceclasses-configsamplesacc-servclass-configmapyaml).
+Then, you need to deploy the required ConfigMaps for the accelerator costs and the service classes. An example of this configuration can be found in the following command.
 
 ```sh
-## After creating the file `config/samples/acc-servclass-configmap.yaml`
-kubectl apply -f config/samples/acc-servclass-configmap.yaml
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+# This configMap defines the set of accelerators available
+# to the autoscaler to assign to variants
+#
+# For each accelerator, need to specify a (unique) name and some properties:
+# - device is the name of the device (card) corresponding to this accelerator,
+#   it should be the same as the device specified in the node object
+# - cost is the cents/hour cost of this accelerator
+#
+metadata:
+  name: accelerator-unit-costs
+  namespace: inferno-autoscaler-system
+data:
+  A100: |
+    {
+    "device": "NVIDIA-A100-PCIE-80GB",
+    "cost": "40.00"
+    }
+  H100: | ##
+    {
+    "device": "NVIDIA-H100-80GB-HBM3",
+    "cost": "50.00"
+    }
+  MI300X: |
+    {
+    "device": "AMD-MI300X-192GB",
+    "cost": "65.00"
+    }
+  G2: |
+    {
+    "device": "Intel-Gaudi-2-96GB",
+    "cost": "23.00"
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service-classes-config
+  namespace: inferno-autoscaler-system
+data:
+  premium.yaml: |
+    name: Premium
+    priority: 1
+    data:
+      - model: unsloth/Meta-Llama-3.1-8B
+        slo-tpot: 24
+        slo-ttft: 500
+      - model: llama0-70b
+        slo-tpot: 80
+        slo-ttft: 500
+  freemium.yaml: |
+    name: Freemium
+    priority: 10
+    data:
+      - model: granite-13b
+        slo-tpot: 200
+        slo-ttft: 2000
+      - model: llama0-7b
+        slo-tpot: 150
+        slo-ttft: 1500
+EOF
+
 ```
 
 And then, create the required ServiceMonitor for the Inferno-Autoscaler, to be deployed in the `openshift-user-workload-monitoring` namespace.
-An example of this configuration can be found [at the end of this README](#servicemonitor-for-the-inferno-autoscaler-configsamplesinferno-servicemon-ocpyaml).
+An example of this configuration can be found in the following command.
 
 ```sh
-## After creating the file `config/samples/inferno-servicemon-ocp.yaml`
-kubectl apply -f config/samples/inferno-servicemon-ocp.yaml
+cat <<EOF | kubectl apply -f -
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: inferno-autoscaler
+    control-plane: controller-manager
+  name: inferno-autoscaler-controller-manager-metrics-monitor
+  namespace: openshift-user-workload-monitoring
+spec:
+  endpoints:
+  - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    interval: 10s
+    path: /metrics
+    port: https
+    scheme: https
+    tlsConfig:
+      insecureSkipVerify: true
+  namespaceSelector:
+    matchNames:
+    - inferno-autoscaler-system
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: inferno-autoscaler
+      control-plane: controller-manager
+EOF
 ```
 
-Finally, deploy the Service and ServiceMonitor, needed by Prometheus to scrape metrics from the vLLM Deployment that will be installed by **llm-d**. An example of this configuration can be found [at the end of this README](#service-and-servicemonitor-for-vllm-configuration-example-configsamplesvllm-deployment-service-servicemonyaml).
+Finally, deploy the Service and ServiceMonitor, needed by Prometheus to scrape metrics from the vLLM Deployment that will be installed by **llm-d**. An example of this configuration can be found in the following command (*Note*: you may need to switch the `nodePort` if it is already being used).
+
+```bash
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-service
+  namespace: $NAMESPACE
+  labels:
+    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
+spec:
+  selector:
+    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
+  ports:
+    - name: vllm
+      port: 8200
+      protocol: TCP
+      targetPort: 8200
+      nodePort: 30000
+  type: NodePort
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vllm-servicemonitor
+  namespace: openshift-user-workload-monitoring
+  labels:
+    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
+spec:
+  selector:
+    matchLabels:
+      llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
+  endpoints:
+  - port: vllm
+    path: /metrics
+    interval: 15s
+  namespaceSelector:
+    any: true
+EOF
+```
 
 #### Deploying the llm-d infrastructure
 
@@ -66,12 +201,6 @@ Finally, deploy the Service and ServiceMonitor, needed by Prometheus to scrape m
 - This guide will follow the steps for the recommended out of the box scheduling configuration for most vLLM deployments using **llm-d**, [available here](https://github.com/llm-d-incubation/llm-d-infra/tree/main/quickstart/examples/inference-scheduling).
 
 - If you want to deploy other examples using **llm-d**, please refer to the [llm-d infrastructure repo](https://github.com/llm-d-incubation/llm-d-infra/tree/main/quickstart/examples).
-
-```sh
-export BASE_NAME="inference-scheduling"
-export NAMESPACE="llm-d-$BASE_NAME"
-export EXAMPLES_DIR="examples/$BASE_NAME"
-```
 
 1. First, create a secret containing your HuggingFace token:
 
@@ -122,11 +251,97 @@ helmfile apply -e kgateway
 
 6. **Note** this step is required **only** up to `llm-d-infra v1.3.1`, as later versions will provide a fix for this bug.
 
-Because of a known bug on the `prefix-cache-scorer` used by the `inference-scheduler`, we are disabling it for this example, by applying an edited version of the EPP ConfigMap. A `yaml` example snippet for the `cm` can be found [at the end of this README](#epp-configmap-configuration-example-configsamplesepp-cmyaml).
+Because of a known bug on the `prefix-cache-scorer` used by the `inference-scheduler`, we are disabling it for this example, by applying an edited version of the EPP ConfigMap. An example configuration for the `ConfigMap` can be found in the following command.
 
 ```bash
-## After creating the file `config/samples/epp-cm.yaml`
-kubectl apply -f config/samples/epp-cm.yaml
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+data:
+  default-plugins.yaml: |
+    apiVersion: inference.networking.x-k8s.io/v1alpha1
+    kind: EndpointPickerConfig
+    plugins:
+    - type: low-queue-filter
+      parameters:
+        threshold: 128
+    - type: lora-affinity-filter
+      parameters:
+        threshold: 0.999
+    - type: least-queue-filter
+    - type: least-kv-cache-filter
+    - type: decision-tree-filter
+      name: low-latency-filter
+      parameters:
+        current:
+          pluginRef: low-queue-filter
+        nextOnSuccess:
+          decisionTree:
+            current:
+              pluginRef: lora-affinity-filter
+            nextOnSuccessOrFailure:
+              decisionTree:
+                current:
+                  pluginRef: least-queue-filter
+                nextOnSuccessOrFailure:
+                  decisionTree:
+                    current:
+                      pluginRef: least-kv-cache-filter
+        nextOnFailure:
+          decisionTree:
+            current:
+              pluginRef: least-queue-filter
+            nextOnSuccessOrFailure:
+              decisionTree:
+                current:
+                  pluginRef: lora-affinity-filter
+                nextOnSuccessOrFailure:
+                  decisionTree:
+                    current:
+                      pluginRef: least-kv-cache-filter
+    - type: random-picker
+      parameters:
+        maxNumOfEndpoints: 1
+    - type: single-profile-handler
+    schedulingProfiles:
+    - name: default
+      plugins:
+      - pluginRef: low-latency-filter
+      - pluginRef: random-picker
+  plugins-v2.yaml: |
+    apiVersion: inference.networking.x-k8s.io/v1alpha1
+    kind: EndpointPickerConfig
+    plugins:
+    - type: queue-scorer
+    - type: kv-cache-scorer
+    # - type: prefix-cache-scorer
+      parameters:
+        hashBlockSize: 64
+        maxPrefixBlocksToMatch: 256
+        lruCapacityPerServer: 31250
+    - type: max-score-picker
+      parameters:
+        maxNumOfEndpoints: 1
+    - type: single-profile-handler
+    schedulingProfiles:
+    - name: default
+      plugins:
+      - pluginRef: queue-scorer
+        weight: 1
+      - pluginRef: kv-cache-scorer
+        weight: 1
+      # - pluginRef: prefix-cache-scorer
+      #   weight: 1
+      - pluginRef: max-score-picker
+kind: ConfigMap
+metadata:
+  annotations:
+    meta.helm.sh/release-name: gaie-inference-scheduling
+    meta.helm.sh/release-namespace: $NAMESPACE
+  labels:
+    app.kubernetes.io/managed-by: Helm
+  name: gaie-inference-scheduling-epp
+  namespace: $NAMESPACE
+EOF
 ```
 
 ### 1. Prometheus: create Thanos CA ConfigMap
@@ -165,8 +380,45 @@ helm install prometheus-adapter prometheus-community/prometheus-adapter \
 An example of VariantAutoscaling resource can be found [at the end of this README](#variantautoscaling-configuration-example-configsamplesvllm-vayaml).
 
 ```sh
-## After creating the file `config/samples/vllm-va.yaml`
-kubectl apply -f config/samples/vllm-va.yaml
+cat <<EOF | kubectl apply -f -
+apiVersion: llmd.ai/v1alpha1
+# Optimizing a variant, create only when the model is deployed and serving traffic
+# this is for the collector the collect existing (previous) running metrics of the variant.
+kind: VariantAutoscaling
+metadata:
+  # Unique name of the variant
+  name: ms-inference-scheduling-llm-d-modelservice-decode 
+  namespace: $NAMESPACE
+  labels:
+    inference.optimization/acceleratorName: H100
+# This is essentially static input to the optimizer
+spec:
+  # OpenAI API compatible name of the model
+  modelID: "unsloth/Meta-Llama-3.1-8B"
+  # Add SLOs in configmap, add reference to this per model data
+  # to avoid duplication and Move to ISOs when available
+  sloClassRef:
+    # Configmap name to load in the same namespace as optimizer object
+    # we start with static (non-changing) ConfigMaps (for ease of implementation only)
+    name: premium-slo
+    # Key (modelID) present inside configmap
+    key: opt-125m
+  # Static profiled benchmarked data for a variant running on different accelerators
+  modelProfile:
+    accelerators:
+      - acc: "A100"
+        accCount: 1
+        perfParms: 
+          decodeParms:
+            # Decode parameters for ITL equation: itl = alpha + beta * maxBatchSize
+            alpha: "6.958"
+            beta: "0.042"
+          # Prefill parameters for TTFT equation: ttft = gamma + delta * tokens * maxBatchSize  
+          prefillParms:
+            gamma: "60.958"
+            delta: "0.0042"
+        maxBatchSize: 4
+EOF
 ```
 
 ### 4. Wait for Prometheus to fetch metrics from the Inferno-Autoscaler
@@ -187,7 +439,7 @@ kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/$NAMESPACE/i
         "__name__": "inferno_desired_replicas",
         "accelerator_type": "H100",
         "endpoint": "https",
-        "exported_namespace": "llm-d-inference-scheduler",
+        "exported_namespace": "llm-d-inference-scheduling",
         "instance": "10.130.3.58:8443",
         "job": "inferno-autoscaler-controller-manager-metrics-service",
         "managed_cluster": "dc670625-c0d1-48d6-bcc3-b932aaceecb4",
@@ -206,12 +458,47 @@ kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/$NAMESPACE/i
 
 ### 5. Deploy the HPA resource
 
-Note: a `yaml` example snippet for HPA can be found [at the bottom of this README](#hpa-configuration-example-configsampleshpa-integrationyaml).
+Note: a `yaml` example snippet for HPA can be found in the following command:
 
 ```sh
-# After creating the file `config/samples/hpa-integration.yaml`
-# Deploy HPA for your deployments
-kubectl apply -f config/samples/hpa-integration.yaml
+cat <<EOF | kubectl apply -f -
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vllm-deployment-hpa
+  namespace: $NAMESPACE
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ms-inference-scheduling-llm-d-modelservice-decode
+  # minReplicas: 0  # scale to zero - alpha feature
+  maxReplicas: 10
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0 # tune this value 
+      policies:
+      - type: Pods
+        value: 10
+        periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 0 # tune this value
+      policies:
+      - type: Pods
+        value: 10
+        periodSeconds: 15
+  metrics:
+  - type: External
+    external:
+      metric:
+        name: inferno_desired_replicas
+        selector:
+          matchLabels:
+            variant_name: ms-inference-scheduling-llm-d-modelservice-decode
+      target:
+        type: AverageValue
+        averageValue: "1"
+EOF        
 ```
 
 ### 6. Verify the integration
@@ -244,7 +531,7 @@ The side effects of this behavior are:
 
 - A consequent decrease in the incoming request rate is observed by the Workload Variant Autoscaler.
 
-The latter could even bring the Autoscaler to wrongly decrease the desired number of replicas, causing effective SLO violation. Because of that, there is the need to have a clean startup configuration using readiness and startup probes: a `yaml` example snippet for the patch can be found [at the end of this README](#hpa-configuration-example-configsampleshpa-integrationyaml).
+The latter could even bring the Autoscaler to wrongly decrease the desired number of replicas, causing effective SLO violation. Because of that, there is the need to have a clean startup configuration using readiness and startup probes: a `yaml` example snippet for the patch can be found [at the end of this README](#vllm-deployment-probes-patch-example-configsamplesprobes-patchyaml).
 
 ```bash
 # After creating the file `config/samples/probes-patch.yaml`
@@ -256,7 +543,7 @@ kubectl patch deployment ms-inference-scheduling-llm-d-modelservice-decode -n $N
 
 We use **GuideLLM** as a load generator for the vLLM servers deployed by the `llm-d` infrastructure, and scaled by the Inferno-Autoscaler.
 
-We can generate traffic by using Kubernetes `Job`s, which will launch GuideLLM to generate traffic for the servers. A sample `yaml` snippet for a Job launching GuideLLM against the Inference Gateway deployed by `llm-d` can be found [at the end of this README](#guidellm-job-configuration-example-configsamplesguidellm-jobyaml).
+We can generate traffic by using Kubernetes `Job`s, which will launch GuideLLM to generate traffic for the servers. A sample `yaml` snippet for a Job launching GuideLLM against the Inference Gateway deployed by `llm-d` can be found in the following commands.
 
 ## Example: scale-up scenario
 
@@ -269,7 +556,42 @@ kubectl port-forward -n $NAMESPACE svc/infra-$BASE_NAME-inference-gateway 8000:8
 2. Launch the GuideLLM `Job` to send load to the vLLM servers via the following command:
 
 ```bash
-kubectl apply config/samples/guidellm-job.yaml
+cat <<EOF | kubectl apply -f -
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: guidellm-job-1
+  namespace: $NAMESPACE
+spec:
+  template:
+    spec:
+      containers:
+      - name: guidellm-benchmark-container
+        image: quay.io/vishakharamani/guidellm:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: HF_HOME
+          value: "/tmp"
+        command: ["/usr/local/bin/guidellm"]
+        args:
+        - "benchmark"
+        - "--target"
+        - "http://infra-inference-scheduling-inference-gateway:80"
+        - "--rate-type"
+        - "constant"
+        - "--rate"
+        - "8" # req/sec
+        - "--max-seconds"
+        - "1800"
+        - "--model"
+        - "unsloth/Meta-Llama-3.1-8B"
+        - "--data"
+        - "prompt_tokens=128,output_tokens=512"
+        - "--output-path"
+        - "/tmp/benchmarks.json" 
+      restartPolicy: Never
+  backoffLimit: 4
+EOF
 ```
 
 3. After a while, you will see a scale out happening:
@@ -384,235 +706,6 @@ make undeploy
 
 ## Configuration Files
 
-### Accelerator costs and ServiceClasses (`config/samples/acc-servclass-configmap.yaml`)
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-# This configMap defines the set of accelerators available
-# to the autoscaler to assign to variants
-#
-# For each accelerator, need to specify a (unique) name and some properties:
-# - device is the name of the device (card) corresponding to this accelerator,
-#   it should be the same as the device specified in the node object
-# - cost is the cents/hour cost of this accelerator
-#
-metadata:
-  name: accelerator-unit-costs
-  namespace: inferno-autoscaler-system
-data:
-  A100: |
-    {
-    "device": "NVIDIA-A100-PCIE-80GB",
-    "cost": "40.00"
-    }
-  H100: | ##
-    {
-    "device": "NVIDIA-H100-80GB-HBM3",
-    "cost": "50.00"
-    }
-  MI300X: |
-    {
-    "device": "AMD-MI300X-192GB",
-    "cost": "65.00"
-    }
-  G2: |
-    {
-    "device": "Intel-Gaudi-2-96GB",
-    "cost": "23.00"
-    }
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: service-classes-config
-  namespace: inferno-autoscaler-system
-data:
-  premium.yaml: |
-    name: Premium
-    priority: 1
-    data:
-      - model: unsloth/Meta-Llama-3.1-8B
-        slo-tpot: 24
-        slo-ttft: 500
-      - model: llama0-70b
-        slo-tpot: 80
-        slo-ttft: 500
-  freemium.yaml: |
-    name: Freemium
-    priority: 10
-    data:
-      - model: granite-13b
-        slo-tpot: 200
-        slo-ttft: 2000
-      - model: llama0-7b
-        slo-tpot: 150
-        slo-ttft: 1500
-```
-
-### ServiceMonitor for the Inferno-Autoscaler (`config/samples/inferno-servicemon-ocp.yaml`)
-
-```yaml
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  labels:
-    app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: inferno-autoscaler
-    control-plane: controller-manager
-  name: inferno-autoscaler-controller-manager-metrics-monitor
-  namespace: openshift-user-workload-monitoring
-spec:
-  endpoints:
-  - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
-    interval: 10s
-    path: /metrics
-    port: https
-    scheme: https
-    tlsConfig:
-      insecureSkipVerify: true
-  namespaceSelector:
-    matchNames:
-    - inferno-autoscaler-system
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: inferno-autoscaler
-      control-plane: controller-manager
-```
-
-### Service and ServiceMonitor for vLLM configuration Example (`config/samples/vllm-deployment-service-servicemon.yaml`)
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: vllm-service
-  namespace: llm-d-inference-scheduling
-  labels:
-    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
-spec:
-  selector:
-    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
-  ports:
-    - name: vllm
-      port: 8200
-      protocol: TCP
-      targetPort: 8200
-      nodePort: 30000
-  type: NodePort
----
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: vllm-servicemonitor
-  namespace: openshift-user-workload-monitoring
-  labels:
-    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
-spec:
-  selector:
-    matchLabels:
-      llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
-  endpoints:
-  - port: vllm
-    path: /metrics
-    interval: 15s
-  namespaceSelector:
-    any: true
----
-```
-
-### EPP ConfigMap Configuration Example (`config/samples/epp-cm.yaml`)
-
-```yaml
-apiVersion: v1
-data:
-  default-plugins.yaml: |
-    apiVersion: inference.networking.x-k8s.io/v1alpha1
-    kind: EndpointPickerConfig
-    plugins:
-    - type: low-queue-filter
-      parameters:
-        threshold: 128
-    - type: lora-affinity-filter
-      parameters:
-        threshold: 0.999
-    - type: least-queue-filter
-    - type: least-kv-cache-filter
-    - type: decision-tree-filter
-      name: low-latency-filter
-      parameters:
-        current:
-          pluginRef: low-queue-filter
-        nextOnSuccess:
-          decisionTree:
-            current:
-              pluginRef: lora-affinity-filter
-            nextOnSuccessOrFailure:
-              decisionTree:
-                current:
-                  pluginRef: least-queue-filter
-                nextOnSuccessOrFailure:
-                  decisionTree:
-                    current:
-                      pluginRef: least-kv-cache-filter
-        nextOnFailure:
-          decisionTree:
-            current:
-              pluginRef: least-queue-filter
-            nextOnSuccessOrFailure:
-              decisionTree:
-                current:
-                  pluginRef: lora-affinity-filter
-                nextOnSuccessOrFailure:
-                  decisionTree:
-                    current:
-                      pluginRef: least-kv-cache-filter
-    - type: random-picker
-      parameters:
-        maxNumOfEndpoints: 1
-    - type: single-profile-handler
-    schedulingProfiles:
-    - name: default
-      plugins:
-      - pluginRef: low-latency-filter
-      - pluginRef: random-picker
-  plugins-v2.yaml: |
-    apiVersion: inference.networking.x-k8s.io/v1alpha1
-    kind: EndpointPickerConfig
-    plugins:
-    - type: queue-scorer
-    - type: kv-cache-scorer
-    # - type: prefix-cache-scorer
-      parameters:
-        hashBlockSize: 64
-        maxPrefixBlocksToMatch: 256
-        lruCapacityPerServer: 31250
-    - type: max-score-picker
-      parameters:
-        maxNumOfEndpoints: 1
-    - type: single-profile-handler
-    schedulingProfiles:
-    - name: default
-      plugins:
-      - pluginRef: queue-scorer
-        weight: 1
-      - pluginRef: kv-cache-scorer
-        weight: 1
-      # - pluginRef: prefix-cache-scorer
-      #   weight: 1
-      - pluginRef: max-score-picker
-kind: ConfigMap
-metadata:
-  annotations:
-    meta.helm.sh/release-name: gaie-inference-scheduling
-    meta.helm.sh/release-namespace: llm-d-inference-scheduling
-  labels:
-    app.kubernetes.io/managed-by: Helm
-  name: gaie-inference-scheduling-epp
-  namespace: llm-d-inference-scheduling
-
-```
-
 ### Prometheus Adapter Values (`config/samples/prometheus-adapter-values.yaml`)
 
 ```yaml
@@ -671,143 +764,6 @@ securityContext:
     type: RuntimeDefault
 ```
 
-### VariantAutoscaling Configuration Example (`config/samples/vllm-va.yaml`)
-
-```yaml
-apiVersion: llmd.ai/v1alpha1
-# Optimizing a variant, create only when the model is deployed and serving traffic
-# this is for the collector the collect existing (previous) running metrics of the variant.
-kind: VariantAutoscaling
-metadata:
-  # Unique name of the variant
-  name: ms-inference-scheduling-llm-d-modelservice-decode 
-  namespace: llm-d-inference-scheduling
-  labels:
-    inference.optimization/acceleratorName: H100
-# This is essentially static input to the optimizer
-spec:
-  # OpenAI API compatible name of the model
-  modelID: "unsloth/Meta-Llama-3.1-8B"
-  # Add SLOs in configmap, add reference to this per model data
-  # to avoid duplication and Move to ISOs when available
-  sloClassRef:
-    # Configmap name to load in the same namespace as optimizer object
-    # we start with static (non-changing) ConfigMaps (for ease of implementation only)
-    name: premium-slo
-    # Key (modelID) present inside configmap
-    key: opt-125m
-  # Static profiled benchmarked data for a variant running on different accelerators
-  modelProfile:
-    accelerators:
-      - acc: "A100"
-        accCount: 1
-        perfParms: 
-          decodeParms:
-            # Decode parameters for ITL equation: itl = alpha + beta * maxBatchSize
-            alpha: "6.958"
-            beta: "0.042"
-          # Prefill parameters for TTFT equation: ttft = gamma + delta * tokens * maxBatchSize  
-          prefillParms:
-            gamma: "60.958"
-            delta: "0.0042"
-        maxBatchSize: 4
-```
-
-### HPA Configuration Example (`config/samples/hpa-integration.yaml`)
-
-```yaml
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: vllm-deployment-hpa
-  namespace: llm-d-inference-scheduling
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: ms-inference-scheduling-llm-d-modelservice-decode
-  # minReplicas: 0  # scale to zero - alpha feature
-  maxReplicas: 10
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 0 # tune this value 
-      policies:
-      - type: Pods
-        value: 10
-        periodSeconds: 15
-    scaleDown:
-      stabilizationWindowSeconds: 0 # tune this value
-      policies:
-      - type: Pods
-        value: 10
-        periodSeconds: 15
-  metrics:
-  - type: External
-    external:
-      metric:
-        name: inferno_desired_replicas
-        selector:
-          matchLabels:
-            variant_name: ms-inference-scheduling-llm-d-modelservice-decode
-      target:
-        type: AverageValue
-        averageValue: "1"
-```
-
-### GuideLLM Job Configuration Example (`config/samples/guidellm-job.yaml`)
-
-```yaml
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: guidellm-job-1
-  namespace: llm-d-inference-scheduling
-spec:
-  template:
-    spec:
-      containers:
-      - name: guidellm-benchmark-container
-        image: quay.io/vishakharamani/guidellm:latest
-        imagePullPolicy: IfNotPresent
-        env:
-        - name: HF_HOME
-          value: "/tmp"
-        command: ["/usr/local/bin/guidellm"]
-        args:
-        - "benchmark"
-        - "--target"
-        - "http://infra-inference-scheduling-inference-gateway:80"
-        - "--rate-type"
-        - "constant"
-        - "--rate"
-        - "8" # req/sec
-        - "--max-seconds"
-        - "1800"
-        - "--model"
-        - "unsloth/Meta-Llama-3.1-8B"
-        - "--data"
-        - "prompt_tokens=128,output_tokens=512"
-        - "--output-path"
-        - "/tmp/benchmarks.json" 
-      restartPolicy: Never
-  backoffLimit: 4
-```
-
-**Note**: the HPA `StabilizationWindow` is a configuration parameter that aims to smooth *flapping* behaviors, where the desired number of replicas is continuously changing, causing the startup and termination of vLLM servers that may take a while to be ready, and would waste resources too.
-This behavior could happen in rapid load rate changes, and therefore this parameter should be tuned accordingly.
-
-For instance, if you aim to test your setup sending load for 1 minute, then expect no load for the following minute before resuming it, to optimize resources you should use:
-
-```yaml
-scaleUp:
-      stabilizationWindowSeconds: 0
-# ...
- scaleDown:
-      stabilizationWindowSeconds: 120
-```
-
-This way, HPA does not scale out the number of replicas just to bring it up again when load resumes, avoiding waste of resources and preventing a second vLLM instance to be started up.
-
 ### vLLM Deployment Probes Patch Example (`config/samples/probes-patch.yaml`)
 
 ```yaml
@@ -856,3 +812,18 @@ spec:
               port: 8200
               scheme: HTTP
 ```
+
+**Note**: the HPA `StabilizationWindow` is a configuration parameter that aims to smooth *flapping* behaviors, where the desired number of replicas is continuously changing, causing the startup and termination of vLLM servers that may take a while to be ready, and would waste resources too.
+This behavior could happen in rapid load rate changes, and therefore this parameter should be tuned accordingly.
+
+For instance, if you aim to test your setup sending load for 1 minute, then expect no load for the following minute before resuming it, to optimize resources you should use:
+
+```yaml
+scaleUp:
+      stabilizationWindowSeconds: 0
+# ...
+ scaleDown:
+      stabilizationWindowSeconds: 120
+```
+
+This way, HPA does not scale out the number of replicas just to bring it up again when load resumes, avoiding waste of resources and preventing a second vLLM instance to be started up.
