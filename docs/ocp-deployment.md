@@ -555,13 +555,7 @@ We can generate traffic by using Kubernetes `Job`s, which will launch GuideLLM t
 
 ## Example: scale-up scenario
 
-1. Expose and port-forward the Gateway service:
-
-```bash
-kubectl port-forward -n $NAMESPACE svc/infra-$BASE_NAME-inference-gateway 8000:80
-```
-
-2. Launch the GuideLLM `Job` to send load to the vLLM servers via the following command:
+1. Launch the GuideLLM `Job` to send load to the vLLM servers via the following command:
 
 ```bash
 cat <<EOF | kubectl apply -f -
@@ -602,7 +596,7 @@ spec:
 EOF
 ```
 
-3. After a while, you will see a scale out happening:
+2. After a while, you will see a scale out happening:
 
 ```sh
 kubectl get hpa -n $NAMESPACE -w                                                             
@@ -632,7 +626,7 @@ ms-inference-scheduling-llm-d-modelservice-decode   1/2     2            1      
 ms-inference-scheduling-llm-d-modelservice-decode   2/2     2            2           57m
 ```
 
-4. Once the load has stopped, the vLLM deployment will be scaled in to 1 replica:
+3. Once the load has stopped, the vLLM deployment will be scaled in to 1 replica:
 
 ```bash
 kubectl get hpa -n $NAMESPACE -w
