@@ -248,6 +248,7 @@ helmfile apply -f "gateway-control-plane-providers/kgateway.helmfile.yaml"
 
 ```sh
 cd $EXAMPLES_DIR
+sed -i '' 's/llm-d-inference-scheduler/llm-d-inference-scheduling/g' helmfile.yaml.gotmpl
 yq eval '(.. | select(. == "Qwen/Qwen3-0.6B")) = "unsloth/Meta-Llama-3.1-8B" | (.. | select(. == "hf://Qwen/Qwen3-0.6B")) = "hf://unsloth/Meta-Llama-3.1-8B"' -i ms-$BASE_NAME/values.yaml
 helmfile apply -e kgateway
 ```
