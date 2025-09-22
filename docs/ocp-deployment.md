@@ -122,8 +122,8 @@ helmfile apply -f "gateway-control-plane-providers/kgateway.helmfile.yaml"
 
 ```sh
 cd $EXAMPLES_DIR
-yq eval '(.. | select(. == "Qwen/Qwen3-0.6B")) = "unsloth/Meta-Llama-3.1-8B"' -i ms-$BASE_NAME/values.yaml
-helmfile apply -e kgateway
+ yq eval '(.. | select(. == "Qwen/Qwen3-0.6B")) = "unsloth/Meta-Llama-3.1-8B" | (.. | select(. == "hf://Qwen/Qwen3-0.6B")) = "hf://unsloth/Meta-Llama-3.1-8B"' -i ms-$BASE_NAME/values.yaml
+ helmfile apply -e kgateway
 ```
 
 6. **Note** this step is required **only** up to `llm-d-infra v1.3.1`, as later versions will provide a fix for this bug.
