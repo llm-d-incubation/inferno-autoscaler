@@ -31,7 +31,10 @@ First, export the following environment variables:
 export BASE_NAME="inference-scheduling"
 export NAMESPACE="llm-d-$BASE_NAME"
 export EXAMPLES_DIR="examples/$BASE_NAME"
+export MONITORING_NAMESPACE="openshift-user-workload-monitoring" 
 ```
+
+*Note*: the `MONITORING_NAMESPACE` environment variable may need to change depending on your OCP setup.
 
 #### Deploying the Inferno-Autoscaler
 
@@ -119,7 +122,7 @@ EOF
 
 ```
 
-And then, create the required ServiceMonitor for the Inferno-Autoscaler, to be deployed in the `openshift-user-workload-monitoring` namespace.
+And then, create the required ServiceMonitor for the Inferno-Autoscaler, to be deployed in the `MONITORING_NAMESPACE` namespace.
 An example of this configuration can be found in the following command.
 
 ```sh
@@ -132,7 +135,7 @@ metadata:
     app.kubernetes.io/name: inferno-autoscaler
     control-plane: controller-manager
   name: inferno-autoscaler-controller-manager-metrics-monitor
-  namespace: openshift-user-workload-monitoring
+  namespace: $MONITORING_NAMESPACE
 spec:
   endpoints:
   - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
@@ -178,7 +181,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: vllm-servicemonitor
-  namespace: openshift-user-workload-monitoring
+  namespace: $MONITORING_NAMESPACE
   labels:
     llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
 spec:
@@ -357,7 +360,7 @@ We will use a CA configmap for TLS Certificate Verification:
 kubectl get secret thanos-queries-tls -n openshift-monitoring -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/prometheus-ca.crt
 
 # Create ConfigMap with the certificate
-kubectl create configmap prometheus-ca --from-file=ca.crt=/tmp/prometheus-ca.crt -n openshift-user-workload-monitoring
+kubectl create configmap prometheus-ca --from-file=ca.crt=/tmp/prometheus-ca.crt -n $MONITORING_NAMESPACE
 ```
 
 ### 2. Deploy the Prometheus Adapter
@@ -370,8 +373,8 @@ helm repo add prometheus-community https://prometheus-community.github.io/helm-c
 helm repo update
 
 # Deploy Prometheus Adapter with Inferno-autoscaler metrics configuration
-helm install prometheus-adapter prometheus-community/prometheus-adapter \
-  -n openshift-user-workload-monitoring \
+helm update -i prometheus-adapter prometheus-community/prometheus-adapter \
+  -n $MONITORING_NAMESPACE \
   -f config/samples/prometheus-adapter-values.yaml
 ```
 
@@ -458,7 +461,7 @@ kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/$NAMESPACE/i
 
 ### 5. Deploy the HPA resource
 
-Note: a `yaml` example snippet for HPA can be found in the following command:
+Note: an example configuration for HPA can be found in the following command:
 
 ```sh
 cat <<EOF | kubectl apply -f -
@@ -684,7 +687,11 @@ export BASE_NAME="inference-scheduling"
 export NAMESPACE="llm-d-$BASE_NAME"
 export EXAMPLES_DIR="examples/$BASE_NAME"
 export PROJECT="llm-d-infra"
+export MONITORING_NAMESPACE="openshift-user-workload-monitoring"
 
+```
+
+```bash
 cd $PROJECT/quickstart/$EXAMPLES_DIR
 
 # Uninstall everything
@@ -702,6 +709,21 @@ To undeploy the Inferno-Autoscaler, use the following `Make` target:
 
 ```bash
 make undeploy
+```
+
+and then remove all other deployed additional resources:
+
+```bash
+kubectl delete -n $NAMESPACE secret llm-d-hf-token
+
+kubectl delete -n $NAMESPACE svc vllm-service
+kubectl delete -n $MONITORING_NAMESPACE servicemonitor inferno-autoscaler-controller-manager-metrics-monitor
+kubectl delete -n $MONITORING_NAMESPACE servicemonitor vllm-service
+kubectl delete -n $MONITORING_NAMESPACE configmap prometheus-ca
+
+kubectl delete -n $NAMESPACE hpa vllm-deployment-hpa
+
+helm uninstall prometheus-adapter -n ${MONITORING_NAMESPACE}
 ```
 
 ## Configuration Files
