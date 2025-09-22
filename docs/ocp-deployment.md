@@ -74,10 +74,9 @@ Finally, deploy the Service and ServiceMonitor, needed by Prometheus to scrape m
 - If you want to deploy other examples using **llm-d**, please refer to the [llm-d infrastructure repo](https://github.com/llm-d-incubation/llm-d-infra/tree/main/quickstart/examples).
 
 ```sh
-export BASE_NAME="inference-scheduler"
-export DIR="inference-scheduling"
+export BASE_NAME="inference-scheduling"
 export NAMESPACE="llm-d-$BASE_NAME"
-export EXAMPLES_DIR="examples/$DIR"
+export EXAMPLES_DIR="examples/$BASE_NAME"
 ```
 
 1. First, create a secret containing your HuggingFace token:
@@ -123,7 +122,7 @@ helmfile apply -f "gateway-control-plane-providers/kgateway.helmfile.yaml"
 
 ```sh
 cd $EXAMPLES_DIR
-yq eval '(.. | select(. == "Qwen/Qwen3-0.6B")) = "unsloth/Meta-Llama-3.1-8B"' -i ms-$DIR-values.yaml
+yq eval '(.. | select(. == "Qwen/Qwen3-0.6B")) = "unsloth/Meta-Llama-3.1-8B"' -i ms-$BASE_NAME/values.yaml
 helmfile apply -e kgateway
 ```
 
@@ -256,7 +255,7 @@ The latter could even bring the Autoscaler to wrongly decrease the desired numbe
 ```bash
 # After creating the file `config/samples/probes-patch.yaml`
 # Apply probe patch for the existing vLLM deployment
-kubectl patch deployment ms-inference-scheduling-llm-d-modelservice-decode -n $NAMESPACE$ --patch-file config/samples/probes-patch.yaml
+kubectl patch deployment ms-inference-scheduling-llm-d-modelservice-decode -n $NAMESPACE --patch-file config/samples/probes-patch.yaml
 ```
 
 ## Running benchmarks
@@ -368,9 +367,9 @@ To undeploy the `llm-d` components, uninstall the Helm Charts deployed previousl
 helmfile destroy -n ${NAMESPACE}
 
 # Or uninstall manually
-helm uninstall infra-$DIR -n ${NAMESPACE}
-helm uninstall gaie-$DIR -n ${NAMESPACE}
-helm uninstall ms-$DIR -n ${NAMESPACE}
+helm uninstall infra-$BASE_NAME -n ${NAMESPACE}
+helm uninstall gaie-$BASE_NAME -n ${NAMESPACE}
+helm uninstall ms-$BASE_NAME -n ${NAMESPACE}
 ```
 
 ### Undeploying the Inferno-Autoscaler
@@ -486,7 +485,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: vllm-service
-  namespace: llm-d-inference-scheduler
+  namespace: llm-d-inference-scheduling
   labels:
     llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
 spec:
