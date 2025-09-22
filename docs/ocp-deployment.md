@@ -358,9 +358,17 @@ ms-inference-scheduling-llm-d-modelservice-decode   1/1     1            1      
 To undeploy the `llm-d` components, uninstall the Helm Charts deployed previously:
 
 ```bash
+export BASE_NAME="inference-scheduling"
+export NAMESPACE="llm-d-$BASE_NAME"
+export EXAMPLES_DIR="examples/$BASE_NAME"
+export PROJECT="llm-d-infra"
+
+cd $PROJECT/quickstart/$EXAMPLES_DIR
+
+# Uninstall everything
 helmfile destroy -n ${NAMESPACE}
 
-# Or uninstall manually
+# Or uninstall each chart manually
 helm uninstall infra-$BASE_NAME -n ${NAMESPACE}
 helm uninstall gaie-$BASE_NAME -n ${NAMESPACE}
 helm uninstall ms-$BASE_NAME -n ${NAMESPACE}
