@@ -41,12 +41,20 @@ export MONITORING_NAMESPACE="openshift-user-workload-monitoring"
 
 Before running the Make target to deploy Workload-Variant-Autoscaler, the `PROMETHEUS_BASE_URL` in the `config/manager/configmap.yaml` must be changed into a valid URL, to be able to connect to Thanos:
 
-**Note**: the Prometheus/Thanos URL may change depending on your OCP setup.
-
 ```yaml
 # ...
   PROMETHEUS_BASE_URL: "https://thanos-querier.openshift-monitoring.svc.cluster.local:9091"
 ```
+
+**Note**: the Prometheus/Thanos URL may change depending on your OCP setup. You may want to run the following command to find the appropriate Service:
+
+```bash
+kubectl get svc -n openshift-monitoring
+
+kubectl get svc -n openshift-user-workload-monitoring
+```
+
+And then use the appropriate URL associated with the `thanos-querier` Service.
 
 After that, you can deploy the Workload-Variant-Autoscaler using the basic `Make` target:
 
