@@ -37,6 +37,12 @@ export MONITORING_NAMESPACE="openshift-user-workload-monitoring"
 
 *Note*: the `MONITORING_NAMESPACE` environment variable may need to change depending on your OCP setup.
 
+Then, create the namespace in which the `llm-d` infrastructure will be deployed:
+
+```bash
+kubectl create namespace $NAMESPACE
+```
+
 #### Deploying the Workload-Variant-Autoscaler
 
 Before running the Make target to deploy Workload-Variant-Autoscaler, the `PROMETHEUS_BASE_URL` in the `config/manager/configmap.yaml` must be changed into a valid URL, to be able to connect to Thanos:
