@@ -1,16 +1,16 @@
-# Deploying the Inferno-Autoscaler and llm-d on OpenShift
+# Deploying the Workload-Variant-Autoscaler and llm-d on OpenShift
 
-This guide shows how to deploy the Inferno-Autoscaler (integrated with the HorizontalPodAutoscaler) on OpenShift (OCP), allowing vLLM servers to scale accordingly to the observed load.
+This guide shows how to deploy the Workload-Variant-Autoscaler (integrated with the HorizontalPodAutoscaler) on OpenShift (OCP), allowing vLLM servers to scale accordingly to the observed load.
 
 **Note**: the deployment was tested on an OCP cluster with *admin* privileges.
 
 ## Overview
 
-After deploying the Inferno-autoscaler following the provided guides, this guide allows the integration of the following components:
+After deploying the Workload-Variant-Autoscaler following the provided guides, this guide allows the integration of the following components:
 
 1. **Inferno Controller** processes VariantAutoscaling objects and emits the `inferno_desired_replicas` metrics
 
-2. **Prometheus and Thanos** scrape these metrics from the Inferno-autoscaler `/metrics` endpoint using TLS, using the existing monitoring infrastructure present on OCP
+2. **Prometheus and Thanos** scrape these metrics from the Workload-Variant-Autoscaler `/metrics` endpoint using TLS, using the existing monitoring infrastructure present on OCP
 
 3. **Prometheus Adapter** exposes the metrics to Kubernetes external metrics API
 
@@ -23,7 +23,7 @@ After deploying the Inferno-autoscaler following the provided guides, this guide
 - Prometheus stack already present on the OCP cluster
 - All components must be fully ready before proceeding: 2-3 minutes may be needed after the deployment
 
-### 0. Deploy the Inferno-Autoscaler and llm-d
+### 0. Deploy the Workload-Variant-Autoscaler and llm-d
 
 First, export the following environment variables:
 
@@ -37,9 +37,9 @@ export MONITORING_NAMESPACE="openshift-user-workload-monitoring"
 
 *Note*: the `MONITORING_NAMESPACE` environment variable may need to change depending on your OCP setup.
 
-#### Deploying the Inferno-Autoscaler
+#### Deploying the Workload-Variant-Autoscaler
 
-Before running the Make target to deploy Inferno-Autoscaler, the `PROMETHEUS_BASE_URL` in the `config/manager/configmap.yaml` must be changed into a valid URL, to be able to connect to Thanos:
+Before running the Make target to deploy Workload-Variant-Autoscaler, the `PROMETHEUS_BASE_URL` in the `config/manager/configmap.yaml` must be changed into a valid URL, to be able to connect to Thanos:
 
 **Note**: the Prometheus/Thanos URL may change depending on your OCP setup.
 
@@ -48,7 +48,7 @@ Before running the Make target to deploy Inferno-Autoscaler, the `PROMETHEUS_BAS
   PROMETHEUS_BASE_URL: "https://thanos-querier.openshift-monitoring.svc.cluster.local:9091"
 ```
 
-After that, you can deploy the Inferno-Autoscaler using the basic `Make` target:
+After that, you can deploy the Workload-Variant-Autoscaler using the basic `Make` target:
 
 ```sh
 make deploy IMG=quay.io/infernoautoscaler/inferno-controller:0.0.1-multi-arch
@@ -70,7 +70,7 @@ kind: ConfigMap
 #
 metadata:
   name: accelerator-unit-costs
-  namespace: inferno-autoscaler-system
+  namespace: workload-variant-autoscaler-system
 data:
   A100: |
     {
@@ -97,7 +97,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: service-classes-config
-  namespace: inferno-autoscaler-system
+  namespace: workload-variant-autoscaler-system
 data:
   premium.yaml: |
     name: Premium
@@ -123,7 +123,7 @@ EOF
 
 ```
 
-And then, create the required ServiceMonitor for the Inferno-Autoscaler, to be deployed in the `MONITORING_NAMESPACE` namespace.
+And then, create the required ServiceMonitor for the Workload-Variant-Autoscaler, to be deployed in the `MONITORING_NAMESPACE` namespace.
 An example of this configuration can be found in the following command.
 
 ```sh
@@ -133,9 +133,9 @@ kind: ServiceMonitor
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: inferno-autoscaler
+    app.kubernetes.io/name: workload-variant-autoscaler
     control-plane: controller-manager
-  name: inferno-autoscaler-controller-manager-metrics-monitor
+  name: workload-variant-autoscaler-controller-manager-metrics-monitor
   namespace: $MONITORING_NAMESPACE
 spec:
   endpoints:
@@ -148,10 +148,10 @@ spec:
       insecureSkipVerify: true
   namespaceSelector:
     matchNames:
-    - inferno-autoscaler-system
+    - workload-variant-autoscaler-system
   selector:
     matchLabels:
-      app.kubernetes.io/name: inferno-autoscaler
+      app.kubernetes.io/name: workload-variant-autoscaler
       control-plane: controller-manager
 EOF
 ```
@@ -370,12 +370,12 @@ kubectl create configmap prometheus-ca --from-file=ca.crt=/tmp/prometheus-ca.crt
 Note: a `yaml` example snippet for the Prometheus Adapter configuration with TLS for OCP can be found [at the end of this README](#prometheus-adapter-values-configsamplesprometheus-adapter-valuesyaml).
 
 ```sh
-# Add Prometheus community helm repo - already there if you deployed Inferno-autoscaler using the scripts
+# Add Prometheus community helm repo - already there if you deployed Workload-Variant-Autoscaler using the scripts
 cd $WVA_PROJECT
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
 
-# Deploy Prometheus Adapter with Inferno-autoscaler metrics configuration
+# Deploy Prometheus Adapter with Workload-Variant-Autoscaler metrics configuration
 helm upgrade -i prometheus-adapter prometheus-community/prometheus-adapter \
   -n $MONITORING_NAMESPACE \
   -f config/samples/prometheus-adapter-values.yaml
@@ -427,7 +427,7 @@ spec:
 EOF
 ```
 
-### 4. Wait for Prometheus to fetch metrics from the Inferno-Autoscaler
+### 4. Wait for Prometheus to fetch metrics from the Workload-Variant-Autoscaler
 
 You can verify that metrics are being emitted and fetched by querying for the following (*Note*: it may take 1-2mins for the metrics to be available):
 
@@ -447,12 +447,12 @@ kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/$NAMESPACE/i
         "endpoint": "https",
         "exported_namespace": "llm-d-inference-scheduling",
         "instance": "10.130.3.58:8443",
-        "job": "inferno-autoscaler-controller-manager-metrics-service",
+        "job": "workload-variant-autoscaler-controller-manager-metrics-service",
         "managed_cluster": "dc670625-c0d1-48d6-bcc3-b932aaceecb4",
-        "namespace": "inferno-autoscaler-system",
-        "pod": "inferno-autoscaler-controller-manager-685966979-8lnnr",
+        "namespace": "workload-variant-autoscaler-system",
+        "pod": "workload-variant-autoscaler-controller-manager-685966979-8lnnr",
         "prometheus": "openshift-monitoring/k8s",
-        "service": "inferno-autoscaler-controller-manager-metrics-service",
+        "service": "workload-variant-autoscaler-controller-manager-metrics-service",
         "variant_name": "ms-inference-scheduling-llm-d-modelservice-decode"
       },
       "timestamp": "2025-09-04T18:30:31Z",
@@ -547,11 +547,11 @@ kubectl patch deployment ms-inference-scheduling-llm-d-modelservice-decode -n $N
 
 ## Running benchmarks
 
-We use **GuideLLM** as a load generator for the vLLM servers deployed by the `llm-d` infrastructure, and scaled by the Inferno-Autoscaler.
+We use **GuideLLM** as a load generator for the vLLM servers deployed by the `llm-d` infrastructure, and scaled by the Workload-Variant-Autoscaler.
 
 We can generate traffic by using Kubernetes `Job`s, which will launch GuideLLM to generate traffic for the servers. A sample `yaml` snippet for a Job launching GuideLLM against the Inference Gateway deployed by `llm-d` can be found in the following commands.
 
-*Note*: depending on the deployed model, there may be the need to deploy multiple GuideLLM `Job`s to see a scale-up recommendation from the Inferno-Autoscaler.
+*Note*: depending on the deployed model, there may be the need to deploy multiple GuideLLM `Job`s to see a scale-up recommendation from the Workload-Variant-Autoscaler.
 
 ## Example: scale-up scenario
 
@@ -696,9 +696,9 @@ helm uninstall gaie-$BASE_NAME -n ${NAMESPACE}
 helm uninstall ms-$BASE_NAME -n ${NAMESPACE}
 ```
 
-### Undeploying the Inferno-Autoscaler
+### Undeploying the Workload-Variant-Autoscaler
 
-To undeploy the Inferno-Autoscaler, use the following `Make` target:
+To undeploy the Workload-Variant-Autoscaler, use the following `Make` target:
 
 ```bash
 make undeploy
@@ -710,7 +710,7 @@ and then remove all other deployed additional resources:
 kubectl delete -n $NAMESPACE secret llm-d-hf-token --ignore-not-found
 
 kubectl delete -n $NAMESPACE svc vllm-service --ignore-not-found
-kubectl delete -n $MONITORING_NAMESPACE servicemonitor inferno-autoscaler-controller-manager-metrics-monitor --ignore-not-found
+kubectl delete -n $MONITORING_NAMESPACE servicemonitor workload-variant-autoscaler-controller-manager-metrics-monitor --ignore-not-found
 kubectl delete -n $MONITORING_NAMESPACE servicemonitor vllm-service --ignore-not-found
 kubectl delete -n $MONITORING_NAMESPACE configmap prometheus-ca --ignore-not-found
 
