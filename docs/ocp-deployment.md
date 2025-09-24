@@ -174,7 +174,7 @@ EOF
 
 *Note*:
 
-- This guide will follow the steps for the recommended out of the box scheduling configuration for most vLLM deployments using **llm-d**, [available here](https://github.com/llm-d-incubation/llm-d-infra/tree/main/quickstart/examples/inference-scheduling).
+- This guide will follow the **Well-Lit Path** steps for the recommended out of the box scheduling configuration for most vLLM deployments using **llm-d**, [available here](https://github.com/llm-d-incubation/llm-d-infra/tree/main/quickstart/examples/inference-scheduling).
 
 - If you want to deploy other examples using **llm-d**, please refer to the [llm-d infrastructure repo](https://github.com/llm-d-incubation/llm-d-infra/tree/main/quickstart/examples).
 
