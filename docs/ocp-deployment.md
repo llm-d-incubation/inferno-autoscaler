@@ -156,48 +156,6 @@ spec:
 EOF
 ```
 
-Finally, deploy the Service and ServiceMonitor, needed by Prometheus to scrape metrics from the vLLM Deployment that will be installed by **llm-d**. An example of this configuration can be found in the following command (*Note*: you may need to switch the `nodePort` if it is already being used).
-
-```bash
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Service
-metadata:
-  name: vllm-service
-  namespace: $NAMESPACE
-  labels:
-    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
-spec:
-  selector:
-    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
-  ports:
-    - name: vllm
-      port: 8200
-      protocol: TCP
-      targetPort: 8200
-      nodePort: 30000
-  type: NodePort
----
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: vllm-servicemonitor
-  namespace: $MONITORING_NAMESPACE
-  labels:
-    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
-spec:
-  selector:
-    matchLabels:
-      llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
-  endpoints:
-  - port: vllm
-    path: /metrics
-    interval: 15s
-  namespaceSelector:
-    any: true
-EOF
-```
-
 #### Deploying the llm-d infrastructure
 
 *Note*:
@@ -254,7 +212,49 @@ yq eval '(.. | select(. == "Qwen/Qwen3-0.6B")) = "unsloth/Meta-Llama-3.1-8B" | (
 helmfile apply -e kgateway
 ```
 
-6. **Note** this step is required **only** up to `llm-d-infra v1.3.1`, as later versions will provide a fix for this bug.
+6. Finally, deploy the Service and ServiceMonitor, needed by Prometheus to scrape metrics from the vLLM Deployment that will be installed by **llm-d**. An example of this configuration can be found in the following command (*Note*: you may need to switch the `nodePort` if it is already being used).
+
+```bash
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-service
+  namespace: $NAMESPACE
+  labels:
+    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
+spec:
+  selector:
+    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
+  ports:
+    - name: vllm
+      port: 8200
+      protocol: TCP
+      targetPort: 8200
+      nodePort: 30000
+  type: NodePort
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vllm-servicemonitor
+  namespace: $MONITORING_NAMESPACE
+  labels:
+    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
+spec:
+  selector:
+    matchLabels:
+      llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
+  endpoints:
+  - port: vllm
+    path: /metrics
+    interval: 15s
+  namespaceSelector:
+    any: true
+EOF
+```
+
+7. **Note** this step is required **only** up to `llm-d-infra v1.3.1`, as later versions will provide a fix for this bug.
 
 Because of a known bug on the `prefix-cache-scorer` used by the `inference-scheduler`, we are disabling it for this example, by applying an edited version of the EPP ConfigMap. An example configuration for the `ConfigMap` can be found in the following command.
 
