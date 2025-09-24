@@ -51,7 +51,7 @@ Before running the Make target to deploy Workload-Variant-Autoscaler, the `PROME
 After that, you can deploy the Workload-Variant-Autoscaler using the basic `Make` target:
 
 ```sh
-make deploy IMG=quay.io/infernoautoscaler/inferno-controller:0.0.1-multi-arch
+make deploy IMG=ghcr.io/llm-d/workload-variant-autoscaler:latest
 ```
 
 Then, you need to deploy the required ConfigMaps for the accelerator costs and the service classes. An example of this configuration can be found in the following command.
