@@ -6,4 +6,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: quay.io/infernoautoscaler/inferno-controller
-  newTag: latest
+  newTag: 0.0.1-test

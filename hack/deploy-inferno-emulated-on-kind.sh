@@ -6,8 +6,8 @@ KIND=${KIND:-kind}
 KUBECTL=${KUBECTL:-kubectl}
 KIND_NAME=${KIND_NAME:-"kind-inferno-gpu-cluster"}
 KIND_CONTEXT=kind-${KIND_NAME}
-NAMESPACE=${NAMESPACE:-"inferno-autoscaler-system"}
-MONITORING_NAMESPACE=${MONITORING_NAMESPACE:-"inferno-autoscaler-monitoring"}
+NAMESPACE=${NAMESPACE:-"workload-variant-autoscaler-system"}
+MONITORING_NAMESPACE=${MONITORING_NAMESPACE:-"workload-variant-autoscaler-monitoring"}
 KIND_NODE_NAME=${KIND_NODE_NAME:-"kind-inferno-gpu-cluster-control-plane"}
 WEBHOOK_TIMEOUT=${WEBHOOK_TIMEOUT:-2m}
 

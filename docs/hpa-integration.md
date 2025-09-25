@@ -1,14 +1,14 @@
-# HPA Integration with the Inferno-Autoscaler
+# HPA Integration with the workload-variant-autoscaler
 
 This guide shows how to integrate Kubernetes HorizontalPodAutoscaler (HPA) with the Inferno Autoscaler using the existing deployment environment.
 
 ## Overview
 
-After deploying the Inferno-autoscaler following the provided guides, this guide allows the integration of the following components:
+After deploying the workload-variant-autoscaler following the provided guides, this guide allows the integration of the following components:
 
 1. **Inferno Controller**: processes VariantAutoscaling objects and emits the `inferno_current_replicas`, the `inferno_desired_replicas` and the `inferno_desired_ratio` metrics
 
-2. **Prometheus**: scrapes these metrics from the Inferno-autoscaler `/metrics` endpoint using TLS
+2. **Prometheus**: scrapes these metrics from the workload-variant-autoscaler `/metrics` endpoint using TLS
 
 3. **Prometheus Adapter**: exposes the metrics to Kubernetes external metrics API
 
@@ -16,8 +16,8 @@ After deploying the Inferno-autoscaler following the provided guides, this guide
 
 ## Prerequisites
 
-- Inferno-Autoscaler deployed (follow [the README guide](../README.md) for the steps to deploy it)
-- Prometheus stack already running in `inferno-autoscaler-monitoring` namespace
+- workload-variant-autoscaler deployed (follow [the README guide](../README.md) for the steps to deploy it)
+- Prometheus stack already running in `workload-variant-autoscaler-monitoring` namespace
 - All components must be fully ready before proceeding: 2-3 minutes may be needed after the deployment
 
 ## Quick Setup
@@ -26,15 +26,15 @@ After deploying the Inferno-autoscaler following the provided guides, this guide
 
 ### 1. Create Prometheus CA ConfigMap
 
-Prometheus is deployed with TLS (HTTPS) for security. The Prometheus Adapter needs to connect to Prometheus at https://kube-prometheus-stack-prometheus.inferno-autoscaler-monitoring.svc.cluster.local.
+Prometheus is deployed with TLS (HTTPS) for security. The Prometheus Adapter needs to connect to Prometheus at https://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local.
 But Prometheus uses self-signed certificates (not trusted by default). We will use a CA configmap for TLS Certificate Verification:
 
 ```sh
 # Extract the TLS certificate from the prometheus-tls secret
-kubectl get secret prometheus-tls -n inferno-autoscaler-monitoring -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/prometheus-ca.crt
+kubectl get secret prometheus-tls -n workload-variant-autoscaler-monitoring -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/prometheus-ca.crt
 
 # Create ConfigMap with the certificate
-kubectl create configmap prometheus-ca --from-file=ca.crt=/tmp/prometheus-ca.crt -n inferno-autoscaler-monitoring
+kubectl create configmap prometheus-ca --from-file=ca.crt=/tmp/prometheus-ca.crt -n workload-variant-autoscaler-monitoring
 ```
 
 ### 2. Deploy the Prometheus Adapter
@@ -42,17 +42,17 @@ kubectl create configmap prometheus-ca --from-file=ca.crt=/tmp/prometheus-ca.crt
 Note: a `yaml` example snippet for the Prometheus Adapter configuration with TLS can be found [at the end of this doc](#prometheus-adapter-values-configsamplesprometheus-adapter-valuesyaml).
 
 ```sh
-# Add Prometheus community helm repo - already there if you deployed Inferno-autoscaler using the scripts
+# Add Prometheus community helm repo - already there if you deployed workload-variant-autoscaler using the scripts
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
 
-# Deploy Prometheus Adapter with Inferno-autoscaler metrics configuration
+# Deploy Prometheus Adapter with workload-variant-autoscaler metrics configuration
 helm install prometheus-adapter prometheus-community/prometheus-adapter \
-  -n inferno-autoscaler-monitoring \
+  -n workload-variant-autoscaler-monitoring \
   -f config/samples/prometheus-adapter-values.yaml
 ```
 
-### 3. Wait for Prometheus to discover and fetch metrics emitted by the Inferno-autoscaler (30-60 seconds)
+### 3. Wait for Prometheus to discover and fetch metrics emitted by the workload-variant-autoscaler (30-60 seconds)
 
 ### 4. Create the VariantAutoscaling resource
 
@@ -130,10 +130,10 @@ kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-sim/in
         "endpoint": "https",
         "exported_namespace": "llm-d-sim",
         "instance": "10.244.2.6:8443",
-        "job": "inferno-autoscaler-controller-manager-metrics-service",
-        "namespace": "inferno-autoscaler-system",
-        "pod": "inferno-autoscaler-controller-manager-99c9d77cb-ppjm8",
-        "service": "inferno-autoscaler-controller-manager-metrics-service",
+        "job": "workload-variant-autoscaler-controller-manager-metrics-service",
+        "namespace": "workload-variant-autoscaler-system",
+        "pod": "workload-variant-autoscaler-controller-manager-99c9d77cb-ppjm8",
+        "service": "workload-variant-autoscaler-controller-manager-metrics-service",
         "variant_name": "vllme-deployment"
       },
       "timestamp": "2025-08-22T19:08:26Z",
@@ -145,13 +145,13 @@ kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-sim/in
 
 ## Example: scale-up scenario
 
-1. Port-forward the Service/Gateway (depending on whether you deployed the Inferno-autoscaler with `llm-d` or not):
+1. Port-forward the Service/Gateway (depending on whether you deployed the workload-variant-autoscaler with `llm-d` or not):
 
 ```sh
-# If you deployed Inferno-autoscaler with llm-d:
+# If you deployed workload-variant-autoscaler with llm-d:
 kubectl port-forward -n llm-d-sim svc/infra-sim-inference-gateway 8000:80 
 
-# If you deployed Inferno-autoscaler without llm-d:
+# If you deployed workload-variant-autoscaler without llm-d:
 kubectl port-forward -n llm-d-sim svc/vllme-service 8000:80
 ```
 
@@ -179,10 +179,10 @@ NAME               READY   UP-TO-DATE   AVAILABLE   AGE
 vllme-deployment   2/2     2            2           21m
 ```
 
-It can be verified that the Inferno-autoscaler is optimizing and emitting metrics:
+It can be verified that the workload-variant-autoscaler is optimizing and emitting metrics:
 
 ```sh
-kubectl logs -n inferno-autoscaler-system deploy/inferno-autoscaler-controller-manager
+kubectl logs -n workload-variant-autoscaler-system deploy/workload-variant-autoscaler-controller-manager
 
 ###
 2025-08-22T18:47:50.131850600Z {"level":"DEBUG","ts":"2025-08-22T18:47:50.131Z","msg":"System data prepared for optimization: - { accelerators: [  {   name: G2,   type: Intel-Gaudi-2-96GB,   multiplicity: 1,   memSize: 0,   memBW: 0,   power: {    idle: 0,    full: 0,    midPower: 0,    midUtil: 0   },   cost: 23  },  {   name: MI300X,   type: AMD-MI300X-192GB,   multiplicity: 1,   memSize: 0,   memBW: 0,   power: {    idle: 0,    full: 0,    midPower: 0,    midUtil: 0   },   cost: 65  },  {   name: A100,   type: NVIDIA-A100-PCIE-80GB,   multiplicity: 1,   memSize: 0,   memBW: 0,   power: {    idle: 0,    full: 0,    midPower: 0,    midUtil: 0   },   cost: 40  } ]}"}
@@ -275,7 +275,7 @@ For this discussion, please refer to the [community doc](https://docs.google.com
 
 ```yaml
 prometheus:
-  url: https://kube-prometheus-stack-prometheus.inferno-autoscaler-monitoring.svc.cluster.local
+  url: https://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local
   port: 9090
 
 rules:

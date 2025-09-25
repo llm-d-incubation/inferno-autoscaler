@@ -33,10 +33,11 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
-	collector "github.com/llm-d-incubation/inferno-autoscaler/internal/collector"
-	logger "github.com/llm-d-incubation/inferno-autoscaler/internal/logger"
-	ctrlutils "github.com/llm-d-incubation/inferno-autoscaler/internal/utils"
+	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
+	collector "github.com/llm-d-incubation/workload-variant-autoscaler/internal/collector"
+	logger "github.com/llm-d-incubation/workload-variant-autoscaler/internal/logger"
+	utils "github.com/llm-d-incubation/workload-variant-autoscaler/internal/utils"
+	testutils "github.com/llm-d-incubation/workload-variant-autoscaler/test/utils"
 )
 
 var _ = Describe("VariantAutoscalings Controller", func() {
@@ -55,19 +56,19 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 			logger.Log = zap.NewNop().Sugar()
 			ns := &v1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "inferno-autoscaler-system",
+					Name: "workload-variant-autoscaler-system",
 				},
 			}
 			Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, ns))).NotTo(HaveOccurred())
 
 			By("creating the required configmap for optimization")
-			configMap := ctrlutils.CreateServiceClassConfigMap(ns.Name)
+			configMap := testutils.CreateServiceClassConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
 
-			configMap = ctrlutils.CreateAcceleratorUnitCostConfigMap(ns.Name)
+			configMap = testutils.CreateAcceleratorUnitCostConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
 
-			configMap = ctrlutils.CreateVariantAutoscalingConfigMap(ns.Name)
+			configMap = testutils.CreateVariantAutoscalingConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
 
 			By("creating the custom resource for the Kind VariantAutoscalings")
@@ -88,7 +89,7 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 									Acc:      "A100",
 									AccCount: 1,
 									PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
-										DecodeParms:  map[string]string{"alpha": "0.28", "beta": "0.72"},
+										DecodeParms:  map[string]string{"alpha": "20.28", "beta": "0.72"},
 										PrefillParms: map[string]string{"gamma": "0", "delta": "0"},
 									},
 									MaxBatchSize: 4,
@@ -118,7 +119,7 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 			configMap := &v1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "service-classes-config",
-					Namespace: "inferno-autoscaler-system",
+					Namespace: "workload-variant-autoscaler-system",
 				},
 			}
 			err = k8sClient.Delete(ctx, configMap)
@@ -127,7 +128,7 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 			configMap = &v1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "accelerator-unit-costs",
-					Namespace: "inferno-autoscaler-system",
+					Namespace: "workload-variant-autoscaler-system",
 				},
 			}
 			err = k8sClient.Delete(ctx, configMap)
@@ -203,19 +204,19 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 			logger.Log = zap.NewNop().Sugar()
 			ns := &v1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "inferno-autoscaler-system",
+					Name: "workload-variant-autoscaler-system",
 				},
 			}
 			Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, ns))).NotTo(HaveOccurred())
 
 			By("creating the required configmaps")
-			configMap := ctrlutils.CreateServiceClassConfigMap(ns.Name)
+			configMap := testutils.CreateServiceClassConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).NotTo(HaveOccurred())
 
-			configMap = ctrlutils.CreateAcceleratorUnitCostConfigMap(ns.Name)
+			configMap = testutils.CreateAcceleratorUnitCostConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).NotTo(HaveOccurred())
 
-			configMap = ctrlutils.CreateVariantAutoscalingConfigMap(ns.Name)
+			configMap = testutils.CreateVariantAutoscalingConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).NotTo(HaveOccurred())
 		})
 
@@ -224,7 +225,7 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 			configMap := &v1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "service-classes-config",
-					Namespace: "inferno-autoscaler-system",
+					Namespace: "workload-variant-autoscaler-system",
 				},
 			}
 			err := k8sClient.Delete(ctx, configMap)
@@ -233,7 +234,7 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 			configMap = &v1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "accelerator-unit-costs",
-					Namespace: "inferno-autoscaler-system",
+					Namespace: "workload-variant-autoscaler-system",
 				},
 			}
 			err = k8sClient.Delete(ctx, configMap)
@@ -270,11 +271,11 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 					Name:      configMapName,
 					Namespace: configMapNamespace,
 					Labels: map[string]string{
-						"app.kubernetes.io/name": "inferno-autoscaler",
+						"app.kubernetes.io/name": "workload-variant-autoscaler",
 					},
 				},
 				Data: map[string]string{
-					"PROMETHEUS_BASE_URL": "https://kube-prometheus-stack-prometheus.inferno-autoscaler-monitoring.svc.cluster.local:9090",
+					"PROMETHEUS_BASE_URL": "https://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local:9090",
 					"GLOBAL_OPT_INTERVAL": "",
 					"GLOBAL_OPT_TRIGGER":  "false",
 				},
@@ -307,7 +308,7 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 					Name:      configMapName,
 					Namespace: configMapNamespace,
 					Labels: map[string]string{
-						"app.kubernetes.io/name": "inferno-autoscaler",
+						"app.kubernetes.io/name": "workload-variant-autoscaler",
 					},
 				},
 				Data: map[string]string{
@@ -344,7 +345,7 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 					Name:      configMapName,
 					Namespace: configMapNamespace,
 					Labels: map[string]string{
-						"app.kubernetes.io/name": "inferno-autoscaler",
+						"app.kubernetes.io/name": "workload-variant-autoscaler",
 					},
 				},
 				Data: map[string]string{
@@ -380,11 +381,11 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 					Name:      configMapName,
 					Namespace: configMapNamespace,
 					Labels: map[string]string{
-						"app.kubernetes.io/name": "inferno-autoscaler",
+						"app.kubernetes.io/name": "workload-variant-autoscaler",
 					},
 				},
 				Data: map[string]string{
-					"PROMETHEUS_BASE_URL":                 "https://kube-prometheus-stack-prometheus.inferno-autoscaler-monitoring.svc.cluster.local:9090",
+					"PROMETHEUS_BASE_URL":                 "https://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local:9090",
 					"GLOBAL_OPT_INTERVAL":                 "60s",
 					"GLOBAL_OPT_TRIGGER":                  "false",
 					"PROMETHEUS_TLS_INSECURE_SKIP_VERIFY": "true",
@@ -396,7 +397,7 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 			prometheusConfig, err := controllerReconciler.getPrometheusConfigFromConfigMap(ctx)
 			Expect(err).NotTo(HaveOccurred(), "It should not fail when neither env variable nor Prometheus URL are found")
 
-			Expect(prometheusConfig.BaseURL).To(Equal("https://kube-prometheus-stack-prometheus.inferno-autoscaler-monitoring.svc.cluster.local:9090"), "Expected Base URL to be set")
+			Expect(prometheusConfig.BaseURL).To(Equal("https://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local:9090"), "Expected Base URL to be set")
 			Expect(prometheusConfig.InsecureSkipVerify).To(BeTrue(), "Expected Insecure Skip Verify to be true")
 
 			Expect(prometheusConfig.CACertPath).To(Equal(""), "Expected CA Cert Path to be empty")
@@ -570,7 +571,7 @@ data:
 			logger.Log = zap.NewNop().Sugar()
 			ns := &v1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "inferno-autoscaler-system",
+					Name: "workload-variant-autoscaler-system",
 				},
 			}
 			Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, ns))).NotTo(HaveOccurred())
@@ -584,10 +585,10 @@ data:
 			configMap := CreateServiceClassConfigMap(ns.Name, modelNames...)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
 
-			configMap = ctrlutils.CreateAcceleratorUnitCostConfigMap(ns.Name)
+			configMap = testutils.CreateAcceleratorUnitCostConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
 
-			configMap = ctrlutils.CreateVariantAutoscalingConfigMap(ns.Name)
+			configMap = testutils.CreateVariantAutoscalingConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
 
 			By("Creating dummy inventory")
@@ -627,7 +628,7 @@ data:
 						Namespace: "default",
 					},
 					Spec: appsv1.DeploymentSpec{
-						Replicas: ctrlutils.Ptr(int32(1)),
+						Replicas: utils.Ptr(int32(1)),
 						Selector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{"app": name},
 						},
@@ -687,7 +688,7 @@ data:
 			configMap := &v1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "service-classes-config",
-					Namespace: "inferno-autoscaler-system",
+					Namespace: "workload-variant-autoscaler-system",
 				},
 			}
 			err := k8sClient.Delete(ctx, configMap)
@@ -696,7 +697,7 @@ data:
 			configMap = &v1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "accelerator-unit-costs",
-					Namespace: "inferno-autoscaler-system",
+					Namespace: "workload-variant-autoscaler-system",
 				},
 			}
 			err = k8sClient.Delete(ctx, configMap)
@@ -757,7 +758,7 @@ data:
 			controllerReconciler := &VariantAutoscalingReconciler{
 				Client:  k8sClient,
 				Scheme:  k8sClient.Scheme(),
-				PromAPI: &mockPromAPI{}, // Add mock PromAPI
+				PromAPI: &testutils.MockPromAPI{},
 			}
 
 			By("Reading the required configmaps")
@@ -777,7 +778,7 @@ data:
 
 			// Prepare system data for VAs
 			By("Preparing the system data for optimization")
-			systemData := ctrlutils.CreateSystemData(accMap, serviceClassMap, dummyInventory)
+			systemData := utils.CreateSystemData(accMap, serviceClassMap, dummyInventory)
 			Expect(systemData).NotTo(BeNil(), "System data should not be nil")
 
 			updateList, vaMap, allAnalyzerResponses, err := controllerReconciler.prepareVariantAutoscalings(ctx, activeVAs, accMap, serviceClassMap, systemData)

@@ -1,15 +1,15 @@
-<p style="font-size: 25px" align="center"><b>Inferno-Autoscaler</b></p>
+<p style="font-size: 25px" align="center"><b>workload-variant-autoscaler</b></p>
 
-The inferno-autoscaler assigns GPU types to inference model servers and decides on the number of replicas for each model for a given request traffic load and classes of service, as well as the batch size.
+The workload-variant-autoscaler assigns GPU types to inference model servers and decides on the number of replicas for each model for a given request traffic load and classes of service, as well as the batch size.
 
 **Table of contents**
 
 - [Description](#description)
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
-- [Quickstart Guide: Installation of Inferno-autoscaler along with llm-d infrastructure emulated deployment on a Kind cluster](#quickstart-guide-installation-of-inferno-autoscaler-along-with-llm-d-infrastructure-emulated-deployment-on-a-kind-cluster)
-  - [Showing Inferno-autoscaler scaling replicas up and down](#showing-inferno-autoscaler-scaling-replicas-up-and-down)
-  - [Uninstalling llm-d and Inferno-autoscaler](#uninstalling-llm-d-and-inferno-autoscaler)
+- [Quickstart Guide: Installation of workload-variant-autoscaler along with llm-d infrastructure emulated deployment on a Kind cluster](#quickstart-guide-installation-of-workload-variant-autoscaler-along-with-llm-d-infrastructure-emulated-deployment-on-a-kind-cluster)
+  - [Showing workload-variant-autoscaler scaling replicas up and down](#showing-workload-variant-autoscaler-scaling-replicas-up-and-down)
+  - [Uninstalling llm-d and workload-variant-autoscaler](#uninstalling-llm-d-and-workload-variant-autoscaler)
 - [Running E2E tests](#running-e2e-tests)
 - [Details on emulated mode deployment on Kind](#details-on-emulated-mode-deployment-on-kind)
   - [Deployment](#deployment)
@@ -22,7 +22,7 @@ The inferno-autoscaler assigns GPU types to inference model servers and decides 
 
 ## Description
 
-The inferno-autoscaler is a Kubernetes controller that performs optimizated autoscaling using the below components:
+The workload-variant-autoscaler is a Kubernetes controller that performs optimizated autoscaling using the below components:
 
 ![Diagram](docs/diagrams/inferno-WVA-design.png)
 
@@ -47,7 +47,7 @@ These include the new [API proposal](https://docs.google.com/document/d/1j2KRAT6
 
 For more details please refer to the community proposal [here](https://docs.google.com/document/d/1n6SAhloQaoSyF2k3EveIOerT-f97HuWXTLFm07xcvqk/edit?tab=t.0).
 
-Modeling and optimization techniques used in the inferno-autoscaler are described in this [document](./docs/modeling-optimization.md).
+Modeling and optimization techniques used in the workload-variant-autoscaler are described in this [document](./docs/modeling-optimization.md).
 
 ## Getting Started
 
@@ -57,9 +57,9 @@ Modeling and optimization techniques used in the inferno-autoscaler are describe
 - kubectl version v1.32.0+.
 - Access to a Kubernetes v1.32.0+ cluster.
 
-**Note**: To verify autoscaling when the Inferno-autoscaler is deployed, install the **HorizontalPodAutoscaler** following this [quick setup guide](docs/hpa-integration.md)
+**Note**: To verify autoscaling when the workload-variant-autoscaler is deployed, install the **HorizontalPodAutoscaler** following this [quick setup guide](docs/hpa-integration.md)
 
-## Quickstart Guide: Installation of Inferno-autoscaler along with llm-d infrastructure emulated deployment on a Kind cluster
+## Quickstart Guide: Installation of workload-variant-autoscaler along with llm-d infrastructure emulated deployment on a Kind cluster
 
 Use this target to spin up a local test environment integrated with llm-d core components:
 
@@ -67,10 +67,10 @@ Use this target to spin up a local test environment integrated with llm-d core c
 make deploy-llm-d-inferno-emulated-on-kind
 
 # prebuilt image
-# IMG=quay.io/infernoautoscaler/inferno-controller:latest
+# IMG=ghcr.io/llm-d/workload-variant-autoscaler:latest
 ```
 
-This target deploys an environment ready for testing, integrating the llm-d infrastructure and the Inferno-autoscaler.
+This target deploys an environment ready for testing, integrating the llm-d infrastructure and the workload-variant-autoscaler.
 
 The default set up:
 - Deploys a Kind cluster with nodes, 2 GPUs per node, mixed vendors with fake GPU resources
@@ -92,7 +92,7 @@ for documentation on building mutli-platform images with Docker. You can change 
 PLATFORMS=linux/arm64,linux/amd64 make docker-buildx
 
 # prebuilt image
-# IMG=quay.io/infernoautoscaler/inferno-controller:0.0.1-multi-arch
+# IMG=ghcr.io/llm-d/workload-variant-autoscaler:latest
 # Built for: linux/arm64, linux/amd64, linux/s390x, linux/ppc64le
 ```
 
@@ -115,13 +115,13 @@ kubectl port-forward -n llm-d-sim service/infra-sim-inference-gateway 8000:80
 
 **Note**: Since the environment uses vllm-emulator, the **Criticality** parameter is set to `critical` for emulation purposes.
 
-### Showing Inferno-autoscaler scaling replicas up and down
+### Showing workload-variant-autoscaler scaling replicas up and down
 1. Target the deployed vLLM-emulator servers by deploying the VariantAutoscaling (Va) object:
 ```sh
 kubectl apply -f hack/vllme/deploy/vllme-setup/vllme-variantautoscaling.yaml
 ``` 
 
-2. Before starting the load generator, we can see that the Inferno-autoscaler is not scaling up existing deployments:
+2. Before starting the load generator, we can see that the workload-variant-autoscaler is not scaling up existing deployments:
 
 ```sh
 kubectl get deployments -n llm-d-sim
@@ -161,10 +161,10 @@ python loadgen.py --model default/default  --rate '[[120, 60], [120, 80]]' --url
 - To request the port-forwarded gateway, use **--url http://localhost:8000/v1**
 - To request the deployed vLLM emulator servers, insert: "**--model default/default**"
 
-5. **Scaling out**: after launching the load generator script `loadgen.py` with related RPM and content length (such as **RPM=40** and **content length** equal to **50**), we can see the logs from the Inferno-autoscaler controller effectively computing the optimal resource allocation and emitting metrics to Prometheus.
+5. **Scaling out**: after launching the load generator script `loadgen.py` with related RPM and content length (such as **RPM=40** and **content length** equal to **50**), we can see the logs from the workload-variant-autoscaler controller effectively computing the optimal resource allocation and emitting metrics to Prometheus.
 
 ```sh
-kubectl logs -n inferno-autoscaler-system deployments/inferno-autoscaler-controller-manager
+kubectl logs -n workload-variant-autoscaler-system deployments/workload-variant-autoscaler-controller-manager
 #...
 {"level":"DEBUG","ts":"2025-08-25T19:06:55.378Z","msg":"Found inventory: nodeName - kind-inferno-gpu-cluster-control-plane , model - NVIDIA-A100-PCIE-80GB , count - 2 , mem - 81920"}
 {"level":"DEBUG","ts":"2025-08-25T19:06:55.378Z","msg":"Found inventory: nodeName - kind-inferno-gpu-cluster-worker , model - AMD-MI300X-192G , count - 2 , mem - 196608"}
@@ -202,9 +202,9 @@ NAME               MODEL             ACCELERATOR   CURRENTREPLICAS   OPTIMIZED  
 vllme-deployment   default/default   A100          1                 2           6m31s
 ```
 
-6. **Scaling in**: by stopping the load generator script with a keyboard interrupt, we can see that the Inferno-autoscaler effectively scales replicas in:
+6. **Scaling in**: by stopping the load generator script with a keyboard interrupt, we can see that the workload-variant-autoscaler effectively scales replicas in:
 ```sh
-kubectl logs -n inferno-autoscaler-system deployments/inferno-autoscaler-controller-manager
+kubectl logs -n workload-variant-autoscaler-system deployments/workload-variant-autoscaler-controller-manager
 # ...
 {"level":"DEBUG","ts":"2025-08-26T13:13:25.708Z","msg":"Found inventory: nodeName - kind-inferno-gpu-cluster-control-plane , model - NVIDIA-A100-PCIE-80GB , count - 2 , mem - 81920"}
 {"level":"DEBUG","ts":"2025-08-26T13:13:25.708Z","msg":"Found inventory: nodeName - kind-inferno-gpu-cluster-worker , model - AMD-MI300X-192G , count - 2 , mem - 196608"}
@@ -261,7 +261,7 @@ NAME               MODEL             ACCELERATOR   CURRENTREPLICAS   OPTIMIZED  
 vllme-deployment   default/default   A100          2                 1           16m
 ```
 
-### Uninstalling llm-d and Inferno-autoscaler 
+### Uninstalling llm-d and workload-variant-autoscaler 
 Use this target to undeploy the integrated test environment and related resources:
 
 ```sh
@@ -325,14 +325,14 @@ kind-inferno-gpu-cluster-worker2         intel.com/gpu        2          2      
 **Check the inferno controller is up:**
 
 ```sh
-kubectl get pods -n inferno-autoscaler-system
+kubectl get pods -n workload-variant-autoscaler-system
 ```
 
 
 **Check the configmap is installed:**
 
 ```sh
-kubectl get cm -n inferno-autoscaler-system
+kubectl get cm -n workload-variant-autoscaler-system
 ```
 
 
@@ -374,7 +374,7 @@ bash hack/deploy-emulated-vllme-server.sh
 sleep 30 && kubectl get pods -A | grep -E "(inferno|vllme|prometheus)"
 
 # Port forward Prometheus
-kubectl port-forward svc/prometheus-operated 9090:9090 -n inferno-autoscaler-monitoring
+kubectl port-forward svc/prometheus-operated 9090:9090 -n workload-variant-autoscaler-monitoring
 # server can be accessed at location: https://localhost:9090
 ```
 
@@ -426,7 +426,7 @@ The Inferno Autoscaler exposes custom metrics that can be accessed through Prome
 kubectl apply -f config/prometheus/servicemonitor.yaml
 
 # Verify ServiceMonitor is correctly configured
-kubectl get servicemonitor inferno-autoscaler -n inferno-autoscaler-monitoring -o yaml | grep -A 10 namespaceSelector
+kubectl get servicemonitor workload-variant-autoscaler -n workload-variant-autoscaler-monitoring -o yaml | grep -A 10 namespaceSelector
 
 # Note: ServiceMonitor discovery takes 1-2 minutes to complete
 ```
@@ -438,7 +438,7 @@ For detailed information about the custom metrics, see [Custom Metrics Documenta
 ```sh
 # username:admin
 # password: prom-operator
-kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n inferno-autoscaler-monitoring
+kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n workload-variant-autoscaler-monitoring
 ```
 
 ## Contributing

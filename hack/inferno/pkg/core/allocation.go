@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/analyzer"
-	"github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/config"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/hack/inferno/pkg/analyzer"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/hack/inferno/pkg/config"
 )
 
 // Allocation details of an accelerator to a server

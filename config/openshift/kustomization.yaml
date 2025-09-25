@@ -8,10 +8,10 @@ patches:
 - path: configmap-patch.yaml
   target:
     kind: ConfigMap
-    name: inferno-autoscaler-variantautoscaling-config
+    name: workload-variant-autoscaler-variantautoscaling-config
 - path: prometheus-patch.yaml
   target:
     kind: Deployment
     name: controller-manager
 
-namespace: inferno-autoscaler-system
+namespace: workload-variant-autoscaler-system

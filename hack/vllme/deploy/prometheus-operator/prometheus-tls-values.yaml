@@ -9,7 +9,7 @@ prometheus:
           secret:
             name: prometheus-tls
             key: tls.crt
-    externalUrl: "https://kube-prometheus-stack-prometheus.inferno-autoscaler-monitoring.svc.cluster.local:9090"
+    externalUrl: "https://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local:9090"
     enableFeatures:
       - remote-write-receiver
     resources:

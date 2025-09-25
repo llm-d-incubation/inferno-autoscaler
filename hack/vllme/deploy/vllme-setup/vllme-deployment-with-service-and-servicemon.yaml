@@ -80,7 +80,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: vllme-servicemonitor
-  namespace: inferno-autoscaler-monitoring
+  namespace: workload-variant-autoscaler-monitoring
   labels:
     app: vllme
     release: kube-prometheus-stack

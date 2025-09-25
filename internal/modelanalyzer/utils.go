@@ -1,8 +1,8 @@
 package controller
 
 import (
-	inferno "github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/core"
-	interfaces "github.com/llm-d-incubation/inferno-autoscaler/internal/interfaces"
+	inferno "github.com/llm-d-incubation/workload-variant-autoscaler/hack/inferno/pkg/core"
+	interfaces "github.com/llm-d-incubation/workload-variant-autoscaler/internal/interfaces"
 )
 
 // Adapter from inferno allocations to a model analyzer response

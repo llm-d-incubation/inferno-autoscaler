@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/config"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/hack/inferno/pkg/config"
 )
 
 var (

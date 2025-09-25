@@ -84,7 +84,7 @@ destroy-kind-cluster:
 # This target assumes that the Kind cluster has been created and is running.
 .PHONY: deploy-inferno-emulated-on-kind
 deploy-inferno-emulated-on-kind:
-	@echo ">>> Deploying Inferno-autoscaler (cluster args: $(KIND_ARGS), image: $(IMG))"
+	@echo ">>> Deploying workload-variant-autoscaler (cluster args: $(KIND_ARGS), image: $(IMG))"
 	export KIND=$(KIND) KUBECTL=$(KUBECTL) IMG=$(IMG) && \
 		hack/deploy-inferno-emulated-on-kind.sh $(KIND_ARGS)
 
@@ -95,15 +95,15 @@ deploy-emulated: deploy
 .PHONY: undeploy-inferno-on-kind
 undeploy-inferno-on-kind:
 	make undeploy
-	kubectl delete ns/inferno-autoscaler-system --ignore-not-found
-	kubectl delete ns/inferno-autoscaler-monitoring --ignore-not-found
+	kubectl delete ns/workload-variant-autoscaler-system --ignore-not-found
+	kubectl delete ns/workload-variant-autoscaler-monitoring --ignore-not-found
 
 # Creates Kind cluster with emulated GPU support (if needed)
 # Deploys the Inferno Autoscaler on a Kind cluster
 # Deploys the llm-d components in the same Kind cluster
 .PHONY: deploy-llm-d-inferno-emulated-on-kind
 deploy-llm-d-inferno-emulated-on-kind:
-	@echo ">>> Deploying integrated llm-d and Inferno-autoscaler (cluster args: $(KIND_ARGS), image: $(IMG))"
+	@echo ">>> Deploying integrated llm-d and workload-variant-autoscaler (cluster args: $(KIND_ARGS), image: $(IMG))"
 	export KIND=$(KIND) KUBECTL=$(KUBECTL) && \
 		hack/deploy-llm-d-inferno-emulated-on-kind.sh $(KIND_ARGS) -i $(IMG)
 
@@ -111,12 +111,12 @@ deploy-llm-d-inferno-emulated-on-kind:
 .PHONY: deploy-inferno-on-openshift
 deploy-inferno-on-openshift: manifests kustomize ## Deploy Inferno Autoscaler to OpenShift cluster with specified image.
 	@echo "Deploying Inferno Autoscaler to OpenShift with image: $(IMG)"
-	@echo "Target namespace: $(or $(NAMESPACE),inferno-autoscaler-system)"
-	NAMESPACE=$(or $(NAMESPACE),inferno-autoscaler-system) IMG=$(IMG) ./hack/deploy-inferno-openshift.sh
+	@echo "Target namespace: $(or $(NAMESPACE),workload-variant-autoscaler-system)"
+	NAMESPACE=$(or $(NAMESPACE),workload-variant-autoscaler-system) IMG=$(IMG) ./hack/deploy-inferno-openshift.sh
 
 .PHONY: undeploy-llm-d-inferno-emulated-on-kind
 undeploy-llm-d-inferno-emulated-on-kind:
-	@echo ">>> Undeploying llm-d and Inferno-autoscaler"
+	@echo ">>> Undeploying llm-d and workload-variant-autoscaler"
 	hack/undeploy-llm-d-inferno-emulated-on-kind.sh
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
@@ -173,16 +173,16 @@ docker-push: ## Push docker image with the manager.
 # - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
 # To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
-BUILDER_NAME ?= inferno-autoscaler-builder
+BUILDER_NAME ?= workload-variant-autoscaler-builder
 
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
-	- $(CONTAINER_TOOL) buildx create --name inferno-autoscaler-builder
-	$(CONTAINER_TOOL) buildx use inferno-autoscaler-builder
+	- $(CONTAINER_TOOL) buildx create --name workload-variant-autoscaler-builder
+	$(CONTAINER_TOOL) buildx use workload-variant-autoscaler-builder
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
-	- $(CONTAINER_TOOL) buildx rm inferno-autoscaler-builder
+	- $(CONTAINER_TOOL) buildx rm workload-variant-autoscaler-builder
 	rm Dockerfile.cross
 
 .PHONY: build-installer

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/config"
-	"github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/core"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/hack/inferno/pkg/config"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/hack/inferno/pkg/core"
 )
 
 // Solver of allocation assignment problem

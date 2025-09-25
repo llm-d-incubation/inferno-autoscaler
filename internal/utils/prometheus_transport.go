@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	interfaces "github.com/llm-d-incubation/inferno-autoscaler/internal/interfaces"
-	"github.com/llm-d-incubation/inferno-autoscaler/internal/logger"
+	interfaces "github.com/llm-d-incubation/workload-variant-autoscaler/internal/interfaces"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/logger"
 	"github.com/prometheus/client_golang/api"
 )
 

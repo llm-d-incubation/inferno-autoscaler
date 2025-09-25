@@ -3,7 +3,7 @@ package core
 import (
 	"fmt"
 
-	"github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/config"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/hack/inferno/pkg/config"
 )
 
 // An accelerator used in an inference server

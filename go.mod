@@ -1,4 +1,4 @@
-module github.com/llm-d-incubation/inferno-autoscaler
+module github.com/llm-d-incubation/workload-variant-autoscaler
 
 go 1.23.0
 

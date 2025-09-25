@@ -20,8 +20,8 @@ After deploying the Workload-Variant-Autoscaler following the provided guides, t
 
 ## Prerequisites
 
-- Inferno-Autoscaler deployed (follow [the README guide](../README.md) for the steps to deploy it)
-- Prometheus stack already running in `inferno-autoscaler-monitoring` namespace
+- workload-variant-autoscaler deployed (follow [the README guide](../README.md) for the steps to deploy it)
+- Prometheus stack already running in `workload-variant-autoscaler-monitoring` namespace
 - All components must be fully ready before proceeding: 2-3 minutes may be needed after the deployment
 
 ## Quick Setup
@@ -69,7 +69,7 @@ kubectl get events -n llm-d-sim --field-selector type=Normal
 
 **Note**: using the sample configuration, KEDA will scale down the Deployment to 0, until it fetches metrics that go beyond the threshold value.
 
-4. Apply the VariantAutoscaling resource for the Deployment, so that the Inferno-Autoscaler starts emitting metrics:
+4. Apply the VariantAutoscaling resource for the Deployment, so that the workload-variant-autoscaler starts emitting metrics:
 
 ```bash
 # For the default vllme-deployment
@@ -173,7 +173,7 @@ kubectl get events -n llm-d-sim | grep -i keda
 1. Port-forward the Gateway:
 
 ```sh
-# If you deployed Inferno-autoscaler with llm-d:
+# If you deployed workload-variant-autoscaler with llm-d:
 kubectl port-forward -n llm-d-sim svc/infra-sim-inference-gateway 8000:80 
 ```
 
@@ -204,10 +204,10 @@ NAME               READY   UP-TO-DATE   AVAILABLE   AGE
 vllme-deployment   2/2     2            2           12m
 ```
 
-It can be verified that the Inferno-autoscaler is optimizing and emitting metrics:
+It can be verified that the workload-variant-autoscaler is optimizing and emitting metrics:
 
 ```sh
-kubectl logs -n inferno-autoscaler-system deploy/inferno-autoscaler-controller-manager
+kubectl logs -n workload-variant-autoscaler-system deploy/workload-variant-autoscaler-controller-manager
 
 ###
 2025-09-12T17:03:42.153155510Z {"level":"DEBUG","ts":"2025-09-12T17:03:42.152Z","msg":"Found inventory: nodeName - kind-inferno-gpu-cluster-control-plane , model - NVIDIA-A100-PCIE-80GB , count - 2 , mem - 81920"}
@@ -242,7 +242,7 @@ metadata:
   namespace: llm-d-sim
   labels:
     app: vllme-deployment
-    scaler: keda-inferno-autoscaler
+    scaler: keda-workload-variant-autoscaler
 spec:
   # Target deployment to scale
   scaleTargetRef:
@@ -295,7 +295,7 @@ spec:
     name: inferno-desired-replicas
     metadata:
       # Prometheus server address
-      serverAddress: https://kube-prometheus-stack-prometheus.inferno-autoscaler-monitoring.svc.cluster.local:9090
+      serverAddress: https://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local:9090
       
       # Use inferno_desired_replicas as the scaling metric
       query: |

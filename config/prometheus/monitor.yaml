@@ -3,10 +3,10 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: controller-manager-metrics-monitor
-  namespace: inferno-autoscaler-system
+  namespace: workload-variant-autoscaler-system
   labels:
     control-plane: controller-manager
-    app.kubernetes.io/name: inferno-autoscaler
+    app.kubernetes.io/name: workload-variant-autoscaler
     app.kubernetes.io/managed-by: kustomize
     release: kube-prometheus-stack
 spec:
@@ -21,7 +21,7 @@ spec:
   selector:
     matchLabels:
       control-plane: controller-manager
-      app.kubernetes.io/name: inferno-autoscaler
+      app.kubernetes.io/name: workload-variant-autoscaler
   namespaceSelector:
     matchNames:
-    - inferno-autoscaler-system
+    - workload-variant-autoscaler-system

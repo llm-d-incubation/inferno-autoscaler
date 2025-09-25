@@ -5,7 +5,7 @@ Notes:
 1. Experiments on OpenShift Cluster with H100 GPUs.
 2. To setup `vLLM` on `Openshift`, refer to [vllm-samples.md](vllm-samples.md).
 3. We use `guidellm` as the load generator. Refer to [guidellm-sample.md](guidellm-sample.md) for a quick tutorial to create your guidellm image that will be used in a `Job` resource. 
-3. The WVA autoscaler is assumed to be deployed in `inferno-autoscaler-system` namespace.
+3. The WVA autoscaler is assumed to be deployed in `workload-variant-autoscaler-system` namespace.
 
 
 
@@ -18,7 +18,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: accelerator-unit-costs
-  namespace: inferno-autoscaler-system
+  namespace: workload-variant-autoscaler-system
 data:
   A100: |
     {
@@ -48,7 +48,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: service-classes-config
-  namespace: inferno-autoscaler-system
+  namespace: workload-variant-autoscaler-system
 data:
   premium.yaml: |
     name: Premium

@@ -59,8 +59,8 @@ The metrics are exposed at the `/metrics` endpoint on port 8080 (HTTP).
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: inferno-autoscaler
-  namespace: inferno-autoscaler-system
+  name: workload-variant-autoscaler
+  namespace: workload-variant-autoscaler-system
   labels:
     release: kube-prometheus-stack
 spec:

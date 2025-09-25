@@ -8,5 +8,5 @@ roleRef:
   name: metrics-auth-role
 subjects:
 - kind: ServiceAccount
-  name: inferno-autoscaler-controller-manager
-  namespace: inferno-autoscaler-system
+  name: workload-variant-autoscaler-controller-manager
+  namespace: workload-variant-autoscaler-system

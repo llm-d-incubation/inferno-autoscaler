@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	llmdOptv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	llmdOptv1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

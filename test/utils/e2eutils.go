@@ -30,7 +30,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
 	gink "github.com/onsi/ginkgo/v2"
 	gom "github.com/onsi/gomega"
 	promAPI "github.com/prometheus/client_golang/api"
@@ -52,7 +52,7 @@ import (
 const (
 	clusterName         = "kind-inferno-gpu-cluster"
 	prometheusHelmChart = "https://prometheus-community.github.io/helm-charts"
-	monitoringNamespace = "inferno-autoscaler-monitoring"
+	monitoringNamespace = "workload-variant-autoscaler-monitoring"
 
 	certmanagerVersion = "v1.16.3"
 	certmanagerURLTmpl = "https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml"
@@ -192,7 +192,7 @@ func generateTLSCertificates() error {
 		"-days", "3650",
 		"-nodes",
 		"-subj", "/CN=prometheus",
-		"-addext", "subjectAltName=DNS:kube-prometheus-stack-prometheus.inferno-autoscaler-monitoring.svc.cluster.local,DNS:kube-prometheus-stack-prometheus.inferno-autoscaler-monitoring.svc,DNS:prometheus,DNS:localhost,IP:127.0.0.1")
+		"-addext", "subjectAltName=DNS:kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local,DNS:kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc,DNS:prometheus,DNS:localhost,IP:127.0.0.1")
 
 	if _, err := Run(cmd); err != nil {
 		return fmt.Errorf("failed to generate TLS certificate: %w", err)

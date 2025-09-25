@@ -22,7 +22,7 @@ func makeValidVA() *VariantAutoscaling {
 			Name:      "va-sample",
 			Namespace: "default",
 			Labels: map[string]string{
-				"app.kubernetes.io/name": "inferno-autoscaler",
+				"app.kubernetes.io/name": "workload-variant-autoscaler",
 			},
 		},
 		Spec: VariantAutoscalingSpec{

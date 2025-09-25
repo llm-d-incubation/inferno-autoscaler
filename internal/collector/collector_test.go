@@ -16,8 +16,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
-	"github.com/llm-d-incubation/inferno-autoscaler/internal/logger"
+	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/logger"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/test/utils"
 )
 
 var _ = Describe("Collector", func() {
@@ -230,7 +231,7 @@ var _ = Describe("Collector", func() {
 
 	Context("When adding metrics to optimization status", func() {
 		var (
-			mockProm      *mockPromAPI
+			mockProm      *utils.MockPromAPI
 			deployment    appsv1.Deployment
 			va            llmdVariantAutoscalingV1alpha1.VariantAutoscaling
 			name          string
@@ -240,9 +241,9 @@ var _ = Describe("Collector", func() {
 		)
 
 		BeforeEach(func() {
-			mockProm = &mockPromAPI{
-				queryResults: make(map[string]model.Value),
-				queryErrors:  make(map[string]error),
+			mockProm = &utils.MockPromAPI{
+				QueryResults: make(map[string]model.Value),
+				QueryErrors:  make(map[string]error),
 			}
 
 			name = "test"
@@ -276,21 +277,21 @@ var _ = Describe("Collector", func() {
 
 		It("should collect metrics successfully", func() {
 			// Setup mock responses
-			arrivalQuery := `sum(rate(vllm:request_success_total{model_name="` + modelID + `",namespace="` + testNamespace + `"}[1m])) * 60`
-			tokenQuery := `sum(rate(vllm:request_generation_tokens_sum{model_name="` + modelID + `",namespace="` + testNamespace + `"}[1m]))/sum(rate(vllm:request_generation_tokens_count{model_name="` + modelID + `",namespace="` + testNamespace + `"}[1m]))`
-			waitQuery := `sum(rate(vllm:request_queue_time_seconds_sum{model_name="` + modelID + `",namespace="` + testNamespace + `"}[1m]))/sum(rate(vllm:request_queue_time_seconds_count{model_name="` + modelID + `",namespace="` + testNamespace + `"}[1m]))`
-			itlQuery := `sum(rate(vllm:time_per_output_token_seconds_sum{model_name="` + modelID + `",namespace="` + testNamespace + `"}[1m]))/sum(rate(vllm:time_per_output_token_seconds_count{model_name="` + modelID + `",namespace="` + testNamespace + `"}[1m]))`
+			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
+			tokenQuery := utils.CreateTokenQuery(modelID, testNamespace)
+			waitQuery := utils.CreateWaitQuery(modelID, testNamespace)
+			itlQuery := utils.CreateITLQuery(modelID, testNamespace)
 
-			mockProm.queryResults[arrivalQuery] = model.Vector{
+			mockProm.QueryResults[arrivalQuery] = model.Vector{
 				&model.Sample{Value: model.SampleValue(10.5)}, // 10.5 requests/min
 			}
-			mockProm.queryResults[tokenQuery] = model.Vector{
+			mockProm.QueryResults[tokenQuery] = model.Vector{
 				&model.Sample{Value: model.SampleValue(150.0)}, // 150 tokens per request
 			}
-			mockProm.queryResults[waitQuery] = model.Vector{
+			mockProm.QueryResults[waitQuery] = model.Vector{
 				&model.Sample{Value: model.SampleValue(0.5)}, // 0.5 seconds
 			}
-			mockProm.queryResults[itlQuery] = model.Vector{
+			mockProm.QueryResults[itlQuery] = model.Vector{
 				&model.Sample{Value: model.SampleValue(0.05)}, // 0.05 seconds
 			}
 
@@ -312,13 +313,13 @@ var _ = Describe("Collector", func() {
 			delete(va.Labels, "inference.optimization/acceleratorName")
 
 			// Setup minimal mock responses
-			arrivalQuery := `sum(rate(vllm:request_success_total{model_name="` + modelID + `",namespace="` + testNamespace + `"}[1m])) * 60`
-			tokenQuery := `sum(rate(vllm:request_generation_tokens_sum{model_name="` + modelID + `",namespace="` + testNamespace + `"}[1m]))/sum(rate(vllm:request_generation_tokens_count{model_name="` + modelID + `",namespace="` + testNamespace + `"}[1m]))`
+			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
+			tokenQuery := utils.CreateTokenQuery(modelID, testNamespace)
 
-			mockProm.queryResults[arrivalQuery] = model.Vector{
+			mockProm.QueryResults[arrivalQuery] = model.Vector{
 				&model.Sample{Value: model.SampleValue(5.0)},
 			}
-			mockProm.queryResults[tokenQuery] = model.Vector{
+			mockProm.QueryResults[tokenQuery] = model.Vector{
 				&model.Sample{Value: model.SampleValue(100.0)},
 			}
 
@@ -328,10 +329,10 @@ var _ = Describe("Collector", func() {
 			Expect(allocation.Accelerator).To(Equal("")) // Empty due to deleted accName label
 		})
 
-		It("should handle Prometheus query errors", func() {
-			// Setup error for arrival query
-			arrivalQuery := `sum(rate(vllm:request_success_total{model_name="` + modelID + `",namespace="` + testNamespace + `"}[1m])) * 60`
-			mockProm.queryErrors[arrivalQuery] = fmt.Errorf("prometheus connection failed")
+		It("should handle Prometheus Query errors", func() {
+			// Setup error for arrival Query
+			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
+			mockProm.QueryErrors[arrivalQuery] = fmt.Errorf("prometheus connection failed")
 
 			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
 
@@ -342,12 +343,12 @@ var _ = Describe("Collector", func() {
 
 		It("should handle empty metric results gracefully", func() {
 			// Setup empty responses (no data points)
-			arrivalQuery := `sum(rate(vllm:request_success_total{model_name="` + modelID + `",namespace="` + testNamespace + `"}[1m])) * 60`
-			tokenQuery := `delta(vllm:tokens_total{model_name="` + modelID + `",namespace="` + testNamespace + `"}[1m])/delta(vllm:request_success_total{model_name="` + modelID + `",namespace="` + testNamespace + `"}[1m])`
+			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
+			tokenQuery := utils.CreateTokenQuery(modelID, testNamespace)
 
 			// Empty vectors (no data)
-			mockProm.queryResults[arrivalQuery] = model.Vector{}
-			mockProm.queryResults[tokenQuery] = model.Vector{}
+			mockProm.QueryResults[arrivalQuery] = model.Vector{}
+			mockProm.QueryResults[tokenQuery] = model.Vector{}
 
 			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
 

@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: service-classes-config
-  namespace: inferno-autoscaler-system
+  namespace: workload-variant-autoscaler-system
 data:
   premium.yaml: |
     name: Premium

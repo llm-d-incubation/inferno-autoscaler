@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	llmdOptv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	llmdOptv1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 
-	"github.com/llm-d-incubation/inferno-autoscaler/internal/logger"
-	"github.com/llm-d-incubation/inferno-autoscaler/internal/metrics"
-	"github.com/llm-d-incubation/inferno-autoscaler/internal/utils"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/logger"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/metrics"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/utils"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

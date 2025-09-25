@@ -2,17 +2,17 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: variantautoscaling-config
-  namespace: inferno-autoscaler-system
+  namespace: workload-variant-autoscaler-system
   labels:
-    app.kubernetes.io/name: inferno-autoscaler
+    app.kubernetes.io/name: workload-variant-autoscaler
     app.kubernetes.io/managed-by: kustomize
 data:
   # Prometheus configuration - REQUIRED: Set your Prometheus server URL
   # Examples:
   # - General: "https://prometheus:9090"
   # - OpenShift: "https://thanos-querier.openshift-monitoring.svc.cluster.local:9091"
-  # - KIND cluster: "https://kube-prometheus-stack-prometheus.inferno-autoscaler-monitoring.svc.cluster.local:9090"
-  PROMETHEUS_BASE_URL: "https://kube-prometheus-stack-prometheus.inferno-autoscaler-monitoring.svc.cluster.local:9090"
+  # - KIND cluster: "https://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local:9090"
+  PROMETHEUS_BASE_URL: "https://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local:9090"
   
   # TLS Configuration (TLS is always enabled for HTTPS-only support)
   # PROMETHEUS_TLS_INSECURE_SKIP_VERIFY: "true"  # Skip certificate verification (development/testing only)

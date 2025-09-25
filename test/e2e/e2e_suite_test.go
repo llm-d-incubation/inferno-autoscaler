@@ -29,7 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/llm-d-incubation/inferno-autoscaler/test/utils"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/test/utils"
 )
 
 var (
@@ -60,7 +60,7 @@ const (
 // CertManager.
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
-	_, _ = fmt.Fprintf(GinkgoWriter, "Starting inferno-autoscaler integration test suite\n")
+	_, _ = fmt.Fprintf(GinkgoWriter, "Starting workload-variant-autoscaler integration test suite\n")
 	RunSpecs(t, "e2e suite")
 }
 
@@ -70,11 +70,11 @@ var _ = BeforeSuite(func() {
 	_, err := utils.Run(cmd)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager(Operator) image")
 
-	// Deploy llm-d and Inferno-autoscaler on the Kind cluster
-	By("deploying llm-d and Inferno-autoscaler on Kind")
+	// Deploy llm-d and workload-variant-autoscaler on the Kind cluster
+	By("deploying llm-d and workload-variant-autoscaler on Kind")
 	launchCmd := exec.Command("make", "deploy-llm-d-inferno-emulated-on-kind", fmt.Sprintf("KIND_ARGS=-n %d -g %d -t %s", numNodes, maximumAvailableGPUs, gpuTypes), fmt.Sprintf("IMG=%s", projectImage))
 	_, err = utils.Run(launchCmd)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to install llm-d and Inferno-autoscaler")
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to install llm-d and workload-variant-autoscaler")
 
 	// The script automatically applies a vLLM-e deployment
 	// We want to start tests with a clean slate
@@ -104,10 +104,10 @@ var _ = BeforeSuite(func() {
 		g.Expect(podList.Items).To(BeEmpty(), fmt.Sprintf("All Pods labelled: \"vLLM-e\" should be deleted. Found: %v", podList.Items))
 	}, 1*time.Minute, 1*time.Second).Should(Succeed())
 
-	// Waiting for the Inferno-autoscaler pods to be ready and for leader election
+	// Waiting for the workload-variant-autoscaler pods to be ready and for leader election
 	By("waiting for the controller-manager pods to be ready")
 	Eventually(func(g Gomega) {
-		podList, err := k8sClient.CoreV1().Pods(controllerNamespace).List(context.Background(), metav1.ListOptions{LabelSelector: "app.kubernetes.io/name=inferno-autoscaler"})
+		podList, err := k8sClient.CoreV1().Pods(controllerNamespace).List(context.Background(), metav1.ListOptions{LabelSelector: "app.kubernetes.io/name=workload-variant-autoscaler"})
 		if err != nil {
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to list manager pods labelled")
 		}
@@ -131,7 +131,7 @@ var _ = BeforeSuite(func() {
 	}, 2*time.Minute, 1*time.Second).Should(Succeed())
 
 	// Set MinimumReplicas to 0 if WVA_SCALE_TO_ZERO is true in the ConfigMap
-	cm, err := k8sClient.CoreV1().ConfigMaps(controllerNamespace).Get(context.Background(), "inferno-autoscaler-variantautoscaling-config", metav1.GetOptions{})
+	cm, err := k8sClient.CoreV1().ConfigMaps(controllerNamespace).Get(context.Background(), "workload-variant-autoscaler-variantautoscaling-config", metav1.GetOptions{})
 	if err != nil {
 		Fail("Failed to get ConfigMap: " + err.Error())
 	}

@@ -3,15 +3,15 @@ kind: ClusterRoleBinding
 metadata:
   name: prometheus-metrics-auth-rolebinding
   labels:
-    app.kubernetes.io/name: inferno-autoscaler
+    app.kubernetes.io/name: workload-variant-autoscaler
     app.kubernetes.io/managed-by: kustomize
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: inferno-autoscaler-metrics-auth-role
+  name: workload-variant-autoscaler-metrics-auth-role
 subjects:
 # Bind the Prometheus service account to the metrics auth role
 # This allows Prometheus to access Inferno's secure HTTPS metrics endpoint
 - kind: ServiceAccount
   name: kube-prometheus-stack-prometheus
-  namespace: inferno-autoscaler-monitoring 
+  namespace: workload-variant-autoscaler-monitoring 

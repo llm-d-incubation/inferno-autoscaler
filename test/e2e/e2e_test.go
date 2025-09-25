@@ -23,8 +23,8 @@ import (
 	"os/exec"
 	"time"
 
-	v1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
-	"github.com/llm-d-incubation/inferno-autoscaler/test/utils"
+	v1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
@@ -45,8 +45,8 @@ import (
 )
 
 const (
-	controllerNamespace           = "inferno-autoscaler-system"
-	controllerMonitoringNamespace = "inferno-autoscaler-monitoring"
+	controllerNamespace           = "workload-variant-autoscaler-system"
+	controllerMonitoringNamespace = "workload-variant-autoscaler-monitoring"
 	llmDNamespace                 = "llm-d-sim"
 	gatewayName                   = "infra-sim-inference-gateway"
 )
@@ -139,7 +139,7 @@ var _ = Describe("Manager", Ordered, func() {
 	})
 })
 
-var _ = Describe("Test Inferno-autoscaler with vllme deployment - single VA - critical requests", Ordered, func() {
+var _ = Describe("Test workload-variant-autoscaler with vllme deployment - single VA - critical requests", Ordered, func() {
 	var (
 		namespace      string
 		deployName     string
@@ -573,7 +573,7 @@ var _ = Describe("Test Inferno-autoscaler with vllme deployment - single VA - cr
 		By("verifying controller can connect to Prometheus with TLS")
 		Eventually(func(g Gomega) {
 			pods, err := k8sClient.CoreV1().Pods(controllerNamespace).List(ctx, metav1.ListOptions{
-				LabelSelector: "app.kubernetes.io/name=inferno-autoscaler",
+				LabelSelector: "app.kubernetes.io/name=workload-variant-autoscaler",
 			})
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to list controller pods")
 			g.Expect(pods.Items).NotTo(BeEmpty(), "Controller pods should exist")
@@ -596,7 +596,7 @@ var _ = Describe("Test Inferno-autoscaler with vllme deployment - single VA - cr
 
 	It("should handle TLS certificate verification correctly", func() {
 		By("verifying TLS configuration in controller ConfigMap")
-		configMap, err := k8sClient.CoreV1().ConfigMaps(controllerNamespace).Get(ctx, "inferno-autoscaler-variantautoscaling-config", metav1.GetOptions{})
+		configMap, err := k8sClient.CoreV1().ConfigMaps(controllerNamespace).Get(ctx, "workload-variant-autoscaler-variantautoscaling-config", metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred(), "ConfigMap should exist")
 
 		// Verify HTTPS URL is configured
@@ -610,7 +610,7 @@ var _ = Describe("Test Inferno-autoscaler with vllme deployment - single VA - cr
 		By("verifying controller startup with TLS configuration")
 		Eventually(func(g Gomega) {
 			pods, err := k8sClient.CoreV1().Pods(controllerNamespace).List(ctx, metav1.ListOptions{
-				LabelSelector: "app.kubernetes.io/name=inferno-autoscaler",
+				LabelSelector: "app.kubernetes.io/name=workload-variant-autoscaler",
 			})
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to list controller pods")
 
@@ -694,7 +694,7 @@ var _ = Describe("Test Inferno-autoscaler with vllme deployment - single VA - cr
 	})
 })
 
-var _ = Describe("Test Inferno-autoscaler with vllme deployment - multiple VAs - critical requests", Ordered, func() {
+var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multiple VAs - critical requests", Ordered, func() {
 	var (
 		namespace                string
 		firstDeployName          string

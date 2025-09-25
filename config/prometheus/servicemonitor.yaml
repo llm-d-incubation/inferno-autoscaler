@@ -1,8 +1,8 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: inferno-autoscaler
-  namespace: inferno-autoscaler-monitoring
+  name: workload-variant-autoscaler
+  namespace: workload-variant-autoscaler-monitoring
   labels:
     release: kube-prometheus-stack
 spec:
@@ -11,7 +11,7 @@ spec:
       control-plane: controller-manager
   namespaceSelector:
     matchNames:
-    - inferno-autoscaler-system
+    - workload-variant-autoscaler-system
   endpoints:
   - port: http
     scheme: http

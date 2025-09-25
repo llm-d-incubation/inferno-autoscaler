@@ -33,19 +33,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
-	infernoConfig "github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/config"
-	inferno "github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/core"
-	infernoManager "github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/manager"
-	infernoSolver "github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/solver"
-	actuator "github.com/llm-d-incubation/inferno-autoscaler/internal/actuator"
-	collector "github.com/llm-d-incubation/inferno-autoscaler/internal/collector"
-	interfaces "github.com/llm-d-incubation/inferno-autoscaler/internal/interfaces"
-	"github.com/llm-d-incubation/inferno-autoscaler/internal/logger"
-	"github.com/llm-d-incubation/inferno-autoscaler/internal/metrics"
-	analyzer "github.com/llm-d-incubation/inferno-autoscaler/internal/modelanalyzer"
-	variantAutoscalingOptimizer "github.com/llm-d-incubation/inferno-autoscaler/internal/optimizer"
-	"github.com/llm-d-incubation/inferno-autoscaler/internal/utils"
+	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
+	infernoConfig "github.com/llm-d-incubation/workload-variant-autoscaler/hack/inferno/pkg/config"
+	inferno "github.com/llm-d-incubation/workload-variant-autoscaler/hack/inferno/pkg/core"
+	infernoManager "github.com/llm-d-incubation/workload-variant-autoscaler/hack/inferno/pkg/manager"
+	infernoSolver "github.com/llm-d-incubation/workload-variant-autoscaler/hack/inferno/pkg/solver"
+	actuator "github.com/llm-d-incubation/workload-variant-autoscaler/internal/actuator"
+	collector "github.com/llm-d-incubation/workload-variant-autoscaler/internal/collector"
+	interfaces "github.com/llm-d-incubation/workload-variant-autoscaler/internal/interfaces"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/logger"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/metrics"
+	analyzer "github.com/llm-d-incubation/workload-variant-autoscaler/internal/modelanalyzer"
+	variantAutoscalingOptimizer "github.com/llm-d-incubation/workload-variant-autoscaler/internal/optimizer"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/utils"
 	"github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -71,8 +71,8 @@ type VariantAutoscalingReconciler struct {
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;update;list;watch
 
 const (
-	configMapName      = "inferno-autoscaler-variantautoscaling-config"
-	configMapNamespace = "inferno-autoscaler-system"
+	configMapName      = "workload-variant-autoscaler-variantautoscaling-config"
+	configMapNamespace = "workload-variant-autoscaler-system"
 )
 
 func initMetricsEmitter() {

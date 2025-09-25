@@ -10,7 +10,7 @@ kind: ConfigMap
 #
 metadata:
   name: accelerator-unit-costs
-  namespace: inferno-autoscaler-system
+  namespace: workload-variant-autoscaler-system
 data:
   A100: |
     {

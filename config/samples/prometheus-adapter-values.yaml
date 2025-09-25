@@ -1,5 +1,5 @@
 prometheus:
-  url: https://kube-prometheus-stack-prometheus.inferno-autoscaler-monitoring.svc.cluster.local
+  url: https://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local
   port: 9090
 
 rules:

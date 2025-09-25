@@ -3,7 +3,7 @@ package controller
 import (
 	"context"
 
-	llmdOptv1alpha1 "github.com/llm-d-incubation/inferno-autoscaler/api/v1alpha1"
+	llmdOptv1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
 )
 
 // VariantAutoscalingsEngine defines the interface for the optimization engine.

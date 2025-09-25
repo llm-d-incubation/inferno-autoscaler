@@ -1,8 +1,8 @@
 package manager
 
 import (
-	"github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/core"
-	"github.com/llm-d-incubation/inferno-autoscaler/hack/inferno/pkg/solver"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/hack/inferno/pkg/core"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/hack/inferno/pkg/solver"
 )
 
 type Manager struct {

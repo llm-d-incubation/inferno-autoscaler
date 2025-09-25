@@ -3,10 +3,10 @@ kind: Service
 metadata:
   labels:
     control-plane: controller-manager
-    app.kubernetes.io/name: inferno-autoscaler
+    app.kubernetes.io/name: workload-variant-autoscaler
     app.kubernetes.io/managed-by: kustomize
   name: controller-manager-metrics-service
-  namespace: inferno-autoscaler-system
+  namespace: workload-variant-autoscaler-system
 spec:
   ports:
   - name: https
@@ -15,4 +15,4 @@ spec:
     targetPort: 8443
   selector:
     control-plane: controller-manager
-    app.kubernetes.io/name: inferno-autoscaler
+    app.kubernetes.io/name: workload-variant-autoscaler
