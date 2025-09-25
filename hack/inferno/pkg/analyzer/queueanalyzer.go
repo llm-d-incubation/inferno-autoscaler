@@ -2,6 +2,8 @@ package analyzer
 
 import (
 	"fmt"
+
+	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/logger"
 )
 
 // small disturbance around a value
@@ -86,9 +88,11 @@ type TargetRate struct {
 // create a new queue analyzer from config
 func NewQueueAnalyzer(qConfig *Configuration, requestSize *RequestSize) (*QueueAnalyzer, error) {
 	if err := qConfig.check(); err != nil {
+		logger.Log.Debug("DELETE ME - ", "err ", err)
 		return nil, err
 	}
 	if err := requestSize.check(); err != nil {
+		logger.Log.Debug("DELETE ME - ", "err ", err)
 		return nil, err
 	}
 	// build queueing model
@@ -98,12 +102,21 @@ func NewQueueAnalyzer(qConfig *Configuration, requestSize *RequestSize) (*QueueA
 // build queueing model using service rates, leaving arrival rate as parameter
 func BuildModel(qConfig *Configuration, requestSize *RequestSize) (modelData *QueueAnalyzer) {
 	parms := qConfig.ServiceParms
+	logger.Log.Debug("DELETE ME - ", "params ", parms)
+	logger.Log.Debug("DELETE ME - ", "params ", parms)
 
 	// calculate state-dependent service rate
 	servRate := make([]float32, qConfig.MaxBatchSize)
 	for n := 1; n <= qConfig.MaxBatchSize; n++ {
 		prefillTime := parms.Prefill.PrefillTime(requestSize.AvgInputTokens, float32(n))
 		decodeTime := float32(requestSize.AvgOutputTokens-1) * parms.Decode.DecodeTime(float32(n))
+		logger.Log.Debug("DELETE ME - ", "decodeTime ", decodeTime)
+		logger.Log.Debug("DELETE ME - ", "prefillTime ", prefillTime)
+		if prefillTime+decodeTime == 0 {
+			decodeTime = 1.0
+			logger.Log.Warn("DELETE ME - ", "division by zero ; decodeTime ", decodeTime)
+
+		}
 		servRate[n-1] = float32(n) / (prefillTime + decodeTime)
 	}
 

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/logger"
+
 	"github.com/llm-d-incubation/workload-variant-autoscaler/hack/inferno/pkg/analyzer"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/hack/inferno/pkg/config"
 )
@@ -47,10 +49,14 @@ func CreateAllocation(serverName string, gName string) *Allocation {
 	if server = GetServer(serverName); server == nil {
 		return nil
 	}
+	logger.Log.Debug("DELETE ME ", "serverName: ", serverName, " accelerator: ", gName, " load: ", load)
 	if load = server.Load(); load == nil || load.ArrivalRate < 0 ||
 		load.AvgInTokens < 0 || load.AvgOutTokens < 0 {
+		logger.Log.Debug("DELETE ME - invalid server load - ", "serverName: ", serverName, " accelerator: ", gName, " load: ", load)
 		return nil
 	}
+
+	logger.Log.Debug("DELETE ME - ", "serverName: ", serverName, " accelerator: ", gName, " load: ", load)
 
 	// get model info
 	modelName := server.ModelName()
@@ -76,14 +82,19 @@ func CreateAllocation(serverName string, gName string) *Allocation {
 
 	// calculate max batch size (N) based on average request length (K)
 	K := load.AvgOutTokens
+	logger.Log.Debug("DELETE ME - ", "serverName: ", serverName, " accelerator: ", gName, " load: ", load, " AvgOutTokens: ", K)
 
 	// use maxBatchSize from configured value or scaled performance data
 	var N int
 	if server.maxBatchSize > 0 {
 		N = server.maxBatchSize
+		logger.Log.Debug("DELETE ME - ", "serverName: ", serverName, " accelerator: ", gName, " load: ", load, " MaxBatchSize: ", server.maxBatchSize)
 	} else {
+		logger.Log.Debug("DELETE ME - ", "serverName: ", serverName, " accelerator: ", gName, " load: ", load, " perfAtTTokens: ", perf.AtTokens, " perfBatch: ", perf.MaxBatchSize)
 		N = max(perf.MaxBatchSize*perf.AtTokens/K, 1)
+
 	}
+	logger.Log.Debug("DELETE ME - ", "serverName: ", serverName, " accelerator: ", gName, " load: ", load, " MaxBatchSize: ", N)
 	maxQueue := N * config.MaxQueueToBatchRatio
 
 	// create queue analyzer
@@ -101,6 +112,7 @@ func CreateAllocation(serverName string, gName string) *Allocation {
 			},
 		},
 	}
+	logger.Log.Debug("DELETE ME - ", "queueAnalyzer config: ", qConfig)
 
 	requestData := &analyzer.RequestSize{
 		AvgInputTokens:  load.AvgInTokens,

@@ -229,8 +229,9 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 		logger.Log.Info("Found SLO for model - ", "model: ", modelName, ", class: ", className, ", slo-tpot: ", entry.SLOTPOT, ", slo-ttft: ", entry.SLOTTFT)
 
 		for _, modelAcceleratorProfile := range va.Spec.ModelProfile.Accelerators {
-			if utils.AddModelAcceleratorProfileToSystemData(systemData, modelName, &modelAcceleratorProfile) != nil {
-				logger.Log.Error("variantAutoscaling bad model accelerator profile data, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
+			err := utils.AddModelAcceleratorProfileToSystemData(systemData, modelName, &modelAcceleratorProfile)
+			if err != nil {
+				logger.Log.Error(err, "variantAutoscaling bad model accelerator profile data, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
 				continue
 			}
 		}
@@ -243,7 +244,7 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 		}
 		acceleratorCostValFloat, err := strconv.ParseFloat(acceleratorCostVal, 32)
 		if err != nil {
-			logger.Log.Error("variantAutoscaling unable to parse accelerator cost in configMap, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
+			logger.Log.Error(err, "variantAutoscaling unable to parse accelerator cost in configMap, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
 			continue
 		}
 
@@ -269,7 +270,7 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 		updateVA.Status.CurrentAlloc = currentAllocation
 
 		if err := utils.AddServerInfoToSystemData(systemData, &updateVA, className); err != nil {
-			logger.Log.Info("variantAutoscaling bad deployment server data, skipping optimization - ", "variantAutoscaling-name: ", updateVA.Name)
+			logger.Log.Info(err, "variantAutoscaling bad deployment server data, skipping optimization - ", "variantAutoscaling-name: ", updateVA.Name)
 			continue
 		}
 
