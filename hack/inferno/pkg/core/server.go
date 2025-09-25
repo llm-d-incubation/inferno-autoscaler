@@ -3,6 +3,8 @@ package core
 import (
 	"fmt"
 
+	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/logger"
+
 	"github.com/llm-d-incubation/workload-variant-autoscaler/hack/inferno/pkg/config"
 )
 
@@ -56,9 +58,12 @@ func (s *Server) Calculate(accelerators map[string]*Accelerator) {
 	candidateAccelerators := s.GetCandidateAccelerators(accelerators)
 	s.allAllocations = make(map[string]*Allocation)
 	for _, g := range candidateAccelerators {
-		if alloc := CreateAllocation(s.name, g.Name()); alloc != nil {
+		alloc := CreateAllocation(s.name, g.Name())
+		logger.Log.Debug("DELETE ME - ", "modelAnalyzer: ", alloc)
+		if alloc != nil {
 			if s.curAllocation != nil {
 				penalty := s.curAllocation.TransitionPenalty(alloc)
+				logger.Log.Debug("DELETE ME - penalty calculated - ", "penalty: ", penalty)
 				alloc.SetValue(penalty)
 			}
 			s.allAllocations[g.Name()] = alloc
@@ -69,6 +74,7 @@ func (s *Server) Calculate(accelerators map[string]*Accelerator) {
 // Create a subset of candidate accelerators for a server from a given set
 func (s *Server) GetCandidateAccelerators(accelerators map[string]*Accelerator) map[string]*Accelerator {
 	if s.keepAccelerator {
+		logger.Log.Debug("DELETE ME - currAlloc: ", s.curAllocation, "accelerator: ", s.curAllocation.accelerator)
 		if s.curAllocation != nil && s.curAllocation.accelerator != "" {
 			accMap := make(map[string]*Accelerator)
 			curAccName := s.curAllocation.accelerator
@@ -77,6 +83,7 @@ func (s *Server) GetCandidateAccelerators(accelerators map[string]*Accelerator) 
 			}
 			return accMap
 		}
+		logger.Log.Warn("keepAccelerator is set but current allocation or accelerator is nil - ", "server-name: ", s.name)
 	}
 	return accelerators
 }
