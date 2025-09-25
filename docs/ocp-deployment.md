@@ -783,7 +783,7 @@ extraArguments:
 # k8s 1.21 needs fsGroup to be set for non root deployments
 # ref: https://github.com/kubernetes/kubernetes/issues/70679
 podSecurityContext:
-  fsGroup: 1000460000    # this may need to change, depending on the allowed IDs for the OCP project
+  fsGroup: null    # this may need to change, depending on the allowed IDs for the OCP project
 
 # SecurityContext of the container
 # ref. https://kubernetes.io/docs/tasks/configure-pod-container/security-context
@@ -793,7 +793,7 @@ securityContext:
     drop: ["ALL"]
   readOnlyRootFilesystem: true
   runAsNonRoot: true
-  runAsUser: 1000460000   # this may need to change, depending on the allowed IDs for the OCP project
+  runAsUser: null   # this may need to change, depending on the allowed IDs for the OCP project
   seccompProfile:
     type: RuntimeDefault
 ```
