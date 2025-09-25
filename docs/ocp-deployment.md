@@ -83,6 +83,36 @@ kind: ConfigMap
 # - cost is the cents/hour cost of this accelerator
 #
 metadata:
+  name: service-classes-config
+  namespace: workload-variant-autoscaler-system
+data:
+  premium.yaml: |
+    name: Premium
+    priority: 1
+    data:
+      - model: default/default
+        slo-tpot: 24
+        slo-ttft: 500
+      - model: llama0-70b
+        slo-tpot: 80
+        slo-ttft: 500
+      - model: unsloth/Meta-Llama-3.1-8B
+        slo-tpot: 9
+        slo-ttft: 1000
+  freemium.yaml: |
+    name: Freemium
+    priority: 10
+    data:
+      - model: granite-13b
+        slo-tpot: 200
+        slo-ttft: 2000
+      - model: llama0-7b
+        slo-tpot: 150
+        slo-ttft: 1500
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
   name: accelerator-unit-costs
   namespace: workload-variant-autoscaler-system
 data:
@@ -90,11 +120,6 @@ data:
     {
     "device": "NVIDIA-A100-PCIE-80GB",
     "cost": "40.00"
-    }
-  H100: | ##
-    {
-    "device": "NVIDIA-H100-80GB-HBM3",
-    "cost": "50.00"
     }
   MI300X: |
     {
@@ -106,33 +131,11 @@ data:
     "device": "Intel-Gaudi-2-96GB",
     "cost": "23.00"
     }
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: service-classes-config
-  namespace: workload-variant-autoscaler-system
-data:
-  premium.yaml: |
-    name: Premium
-    priority: 1
-    data:
-      - model: unsloth/Meta-Llama-3.1-8B
-        slo-tpot: 24
-        slo-ttft: 500
-      - model: llama0-70b
-        slo-tpot: 80
-        slo-ttft: 500
-  freemium.yaml: |
-    name: Freemium
-    priority: 10
-    data:
-      - model: granite-13b
-        slo-tpot: 200
-        slo-ttft: 2000
-      - model: llama0-7b
-        slo-tpot: 150
-        slo-ttft: 1500
+  H100: |
+    {
+    "device": "NVIDIA-H100-80GB-HBM3",
+    "cost": "100.0"
+    }
 EOF
 
 ```
