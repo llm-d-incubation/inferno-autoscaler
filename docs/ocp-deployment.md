@@ -402,6 +402,8 @@ helm upgrade -i prometheus-adapter prometheus-community/prometheus-adapter \
 
 An example of VariantAutoscaling resource can be found in the following command.
 
+**Note**: this example considers a VariantAutoscaling with using `H100` GPUs. This should be changed depending on what GPUs you have available on your cluster.  
+
 ```sh
 cat <<EOF | kubectl apply -f -
 apiVersion: llmd.ai/v1alpha1
