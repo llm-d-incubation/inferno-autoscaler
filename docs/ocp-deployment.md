@@ -174,6 +174,14 @@ spec:
 EOF
 ```
 
+#### Note on RBAC issues
+
+If you experience `403: Forbidden` or `401: Unauthorized` errors for the WVA when it tries to connect to Prometheus, you might consider adding the following ClusterRole to the ServiceAccount:
+
+```bash
+oc adm policy add-cluster-role-to-user cluster-monitoring-view -z workload-variant-autoscaler-controller-manager -n workload-variant-autoscaler-system
+```
+
 #### Deploying the llm-d infrastructure
 
 *Note*:
@@ -397,6 +405,14 @@ helm repo update
 helm upgrade -i prometheus-adapter prometheus-community/prometheus-adapter \
   -n $MONITORING_NAMESPACE \
   -f config/samples/prometheus-adapter-values-ocp.yaml
+```
+
+#### Note on RBAC issues
+
+If you experience `403: Forbidden` or `401: Unauthorized` errors for the Prometheus-Adapter when it tries to connect to Prometheus, you might consider adding the following ClusterRole to the ServiceAccount:
+
+```bash
+oc adm policy add-cluster-role-to-user cluster-monitoring-view -z prometheus-adapter -n openshift-user-workload-monitoring
 ```
 
 ### 3. Create the VariantAutoscaling resource
