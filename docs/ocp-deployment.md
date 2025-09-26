@@ -65,7 +65,8 @@ And then use the appropriate URL associated with the `thanos-querier` Service.
 After that, you can deploy the Workload-Variant-Autoscaler using the basic `Make` target:
 
 ```sh
-make deploy IMG=ghcr.io/llm-d/workload-variant-autoscaler:latest
+make deploy IMG=quay.io/infernoautoscaler/inferno-controller:0.0.1-multi-arch
+# make deploy IMG=ghcr.io/llm-d/workload-variant-autoscaler:latest
 ```
 
 Then, you need to deploy the required ConfigMaps for the accelerator costs and the service classes. An example of this configuration can be found in the following command.
@@ -384,7 +385,7 @@ kubectl create configmap prometheus-ca --from-file=ca.crt=/tmp/prometheus-ca.crt
 
 ### 2. Deploy the Prometheus Adapter
 
-Note: a `yaml` example snippet for the Prometheus Adapter configuration with TLS for OCP can be found [at the end of this README](#prometheus-adapter-values-configsamplesprometheus-adapter-valuesyaml).
+Note: a `yaml` example snippet for the Prometheus Adapter configuration with TLS for OCP can be found [at the end of this README](#prometheus-adapter-values-configsamplesprometheus-adapter-values-ocpyaml).
 
 ```sh
 # Add Prometheus community helm repo - already there if you deployed Workload-Variant-Autoscaler using the scripts
@@ -395,7 +396,7 @@ helm repo update
 # Deploy Prometheus Adapter with Workload-Variant-Autoscaler metrics configuration
 helm upgrade -i prometheus-adapter prometheus-community/prometheus-adapter \
   -n $MONITORING_NAMESPACE \
-  -f config/samples/prometheus-adapter-values.yaml
+  -f config/samples/prometheus-adapter-values-ocp.yaml
 ```
 
 ### 3. Create the VariantAutoscaling resource
@@ -740,7 +741,7 @@ helm uninstall prometheus-adapter -n ${MONITORING_NAMESPACE} --ignore-not-found
 
 ## Configuration Files
 
-### Prometheus Adapter Values (`config/samples/prometheus-adapter-values.yaml`)
+### Prometheus Adapter Values (`config/samples/prometheus-adapter-values-ocp.yaml`)
 
 ```yaml
 prometheus:
