@@ -137,7 +137,7 @@ data:
     "device": "NVIDIA-H100-80GB-HBM3",
     "cost": "100.0"
     }
-  L40: |
+  L40S: |
     {
     "device": "NVIDIA-L40S",
     "cost": "32.00"
@@ -464,6 +464,16 @@ spec:
           prefillParms:
             gamma: "5.2"
             delta: "0.1"
+        maxBatchSize: 512
+      - acc: "L40S"
+        accCount: 1
+        perfParms: 
+          decodeParms:
+            alpha: "22.619"
+            beta: "0.181"
+          prefillParms:
+            gamma: "226.19"
+            delta: "0.018"
         maxBatchSize: 512
 EOF
 ```
