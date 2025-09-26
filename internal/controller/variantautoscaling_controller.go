@@ -405,6 +405,10 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		if err != nil {
 			return fmt.Errorf("failed to create prometheus client config: %w", err)
 		}
+		logger.Log.Info(
+			"TLS configuration applied to Prometheus HTTPS transport",
+			"address", promConfig.BaseURL,
+		)
 		promClient, err := api.NewClient(*promClientConfig)
 		if err != nil {
 			return fmt.Errorf("failed to create prometheus client: %w", err)
