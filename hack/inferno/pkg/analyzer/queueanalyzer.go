@@ -103,7 +103,12 @@ func BuildModel(qConfig *Configuration, requestSize *RequestSize) (modelData *Qu
 	servRate := make([]float32, qConfig.MaxBatchSize)
 	for n := 1; n <= qConfig.MaxBatchSize; n++ {
 		prefillTime := parms.Prefill.PrefillTime(requestSize.AvgInputTokens, float32(n))
-		decodeTime := float32(requestSize.AvgOutputTokens-1) * parms.Decode.DecodeTime(float32(n))
+		numDecode := requestSize.AvgOutputTokens - 1 // number of decodes (one per output token except the first)
+		// special case: allow one decode in case of decode only and one output token
+		if requestSize.AvgInputTokens == 0 && requestSize.AvgOutputTokens == 1 {
+			numDecode = 1
+		}
+		decodeTime := float32(numDecode) * parms.Decode.DecodeTime(float32(n))
 		servRate[n-1] = float32(n) / (prefillTime + decodeTime)
 	}
 
