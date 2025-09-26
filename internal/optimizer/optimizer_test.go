@@ -62,6 +62,7 @@ var _ = Describe("Optimizer", Ordered, func() {
 
 		acceleratorCm  map[string]map[string]string
 		serviceClassCm map[string]string
+		minNumReplicas = 1
 	)
 
 	Context("Testing optimization", func() {
@@ -83,7 +84,7 @@ var _ = Describe("Optimizer", Ordered, func() {
 			return out, nil
 		}
 
-		readServClassFunc := func(c client.Client, ctx context.Context, cmName, cmNamespace string) (map[string]string, error) {
+		readCmFunc := func(c client.Client, ctx context.Context, cmName, cmNamespace string) (map[string]string, error) {
 			cm := corev1.ConfigMap{}
 			err := utils.GetConfigMapWithBackoff(ctx, c, cmName, cmNamespace, &cm)
 			if err != nil {
@@ -125,11 +126,19 @@ var _ = Describe("Optimizer", Ordered, func() {
 			configMap = testutils.CreateAcceleratorUnitCostConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
 
+			configMap = testutils.CreateVariantAutoscalingConfigMap(configMapName, ns.Name)
+			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
+
 			var err error
 			acceleratorCm, err = readAccFunc(k8sClient, ctx, "accelerator-unit-costs", configMapNamespace)
 			Expect(err).NotTo(HaveOccurred())
-			serviceClassCm, err = readServClassFunc(k8sClient, ctx, "service-classes-config", configMapNamespace)
+			serviceClassCm, err = readCmFunc(k8sClient, ctx, "service-classes-config", configMapNamespace)
 			Expect(err).NotTo(HaveOccurred())
+			wvaConfigCm, err := readCmFunc(k8sClient, ctx, configMapName, configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+			if wvaConfigCm["WVA_SCALE_TO_ZERO"] == "true" {
+				minNumReplicas = 0
+			}
 
 			By("Creating dummy inventory")
 			dummyInventory := map[string]map[string]collector.AcceleratorModelInfo{
@@ -240,6 +249,11 @@ var _ = Describe("Optimizer", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred(), "failed to get service-class-config configmap")
 			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, cmServClass))).To(Succeed())
 
+			cmWvaClass := &corev1.ConfigMap{}
+			err = utils.GetConfigMapWithBackoff(ctx, k8sClient, configMapName, configMapNamespace, cmWvaClass)
+			Expect(err).NotTo(HaveOccurred(), "failed to get service-class-config configmap")
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, cmWvaClass))).To(Succeed())
+
 			var variantAutoscalingList llmdVariantAutoscalingV1alpha1.VariantAutoscalingList
 			Expect(k8sClient.List(ctx, &variantAutoscalingList)).To(Succeed())
 			for _, va := range variantAutoscalingList.Items {
@@ -253,7 +267,7 @@ var _ = Describe("Optimizer", Ordered, func() {
 			}
 		})
 
-		It("should perform optimization for multiple VariantAutoscalings - scaled to zero without load", func() {
+		It(fmt.Sprintf("should perform optimization for multiple VariantAutoscalings - scaled to %d without load", minNumReplicas), func() {
 			allAnalyzerResponses := make(map[string]*interfaces.ModelAnalyzeResponse)
 			vaMap := make(map[string]*llmdVariantAutoscalingV1alpha1.VariantAutoscaling)
 
@@ -341,7 +355,7 @@ var _ = Describe("Optimizer", Ordered, func() {
 			Expect(len(optimizedAllocs)).To(Equal(len(updateList.Items)), "Expected optimized allocations for all VariantAutoscalings")
 			for key, value := range optimizedAllocs {
 				logger.Log.Info("Optimized allocation entry - ", "key: ", key, ", value: ", value)
-				Expect(value.NumReplicas).To(Equal(0), "Expected optimized number of replicas to be 0 under no load for VariantAutoscaling - ", key)
+				Expect(value.NumReplicas).To(Equal(minNumReplicas), fmt.Sprintf("Expected optimized number of replicas to be %d under no load for VariantAutoscaling - %s", minNumReplicas, key))
 			}
 		})
 

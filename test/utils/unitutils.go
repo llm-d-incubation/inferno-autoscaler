@@ -81,11 +81,11 @@ data:
 	}
 }
 
-func CreateVariantAutoscalingConfigMap(controllerNamespace string) *corev1.ConfigMap {
+func CreateVariantAutoscalingConfigMap(cmName, controllerNamespace string) *corev1.ConfigMap {
 
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "workload-variant-autoscaler-variantautoscaling-config",
+			Name:      cmName,
 			Namespace: controllerNamespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/name": "workload-variant-autoscaler",
