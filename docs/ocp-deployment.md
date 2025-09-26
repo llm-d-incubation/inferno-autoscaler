@@ -137,6 +137,11 @@ data:
     "device": "NVIDIA-H100-80GB-HBM3",
     "cost": "100.0"
     }
+  L40: |
+    {
+    "device": "NVIDIA-L40S",
+    "cost": "32.00"
+    }
 EOF
 
 ```
@@ -419,7 +424,7 @@ oc adm policy add-cluster-role-to-user cluster-monitoring-view -z prometheus-ada
 
 An example of VariantAutoscaling resource can be found in the following command.
 
-**Note**: this example considers a VariantAutoscaling with using `H100` GPUs. This should be changed depending on what GPUs you have available on your cluster.  
+**Note**: this example considers a VariantAutoscaling with using `H100` GPUs. **This should be *changed* depending on what GPUs you have available on your cluster**.  
 
 ```sh
 cat <<EOF | kubectl apply -f -
