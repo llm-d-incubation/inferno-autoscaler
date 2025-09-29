@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -372,52 +373,59 @@ func (r *VariantAutoscalingReconciler) applyOptimizedAllocations(
 	return nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
 func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error {
-
 	// Initialize metrics
 	initMetricsEmitter()
 
-	// Configure Prometheus client using flexible configuration with TLS support
-	promConfig, err := r.getPrometheusConfig(context.Background())
-	if err != nil {
-		return fmt.Errorf("failed to get Prometheus configuration: %w", err)
+	// Defer config read + Prom client init until AFTER cache sync
+	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		// Wait for the shared informer cache to sync
+		if ok := mgr.GetCache().WaitForCacheSync(ctx); !ok {
+			return fmt.Errorf("cache sync failed: cannot initialize Prometheus client")
+		}
+
+		promConfig, err := r.getPrometheusConfig(ctx)
+		if err != nil {
+			logger.Log.Error(err, "failed to get Prometheus configuration after cache sync")
+			return fmt.Errorf("failed to get Prometheus configuration: %w", err)
+		}
+		if promConfig == nil {
+			return fmt.Errorf("no Prometheus configuration found - this should not happen")
+		}
+
+		// Validate TLS configuration (HTTPS required)
+		if err := utils.ValidateTLSConfig(promConfig); err != nil {
+			logger.Log.Error(err, "TLS configuration validation failed - HTTPS is required")
+			return fmt.Errorf("TLS configuration validation failed: %w", err)
+		}
+
+		logger.Log.Info("Initializing Prometheus client -> ", "address: ", promConfig.BaseURL, " tls_enabled: true")
+
+		// Create Prometheus client with TLS support
+		promClientConfig, err := utils.CreatePrometheusClientConfig(promConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create prometheus client config: %w", err)
+		}
+		logger.Log.Info(
+			"TLS configuration applied to Prometheus HTTPS transport",
+			"address", promConfig.BaseURL,
+		)
+		promClient, err := api.NewClient(*promClientConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create prometheus client: %w", err)
+		}
+		r.PromAPI = promv1.NewAPI(promClient)
+
+		// Sanity-check API connectivity
+		if err := utils.ValidatePrometheusAPI(ctx, r.PromAPI); err != nil {
+			logger.Log.Error(err, "CRITICAL: Failed to connect to Prometheus - autoscaling requires Prometheus")
+			return fmt.Errorf("critical: failed to validate Prometheus API connection: %w", err)
+		}
+		logger.Log.Info("Prometheus client and API wrapper initialized and validated successfully")
+		return nil
+	})); err != nil {
+		return err
 	}
-
-	// ensure we have a valid configuration
-	if promConfig == nil {
-		return fmt.Errorf("no Prometheus configuration found - this should not happen")
-	}
-
-	// Always validate TLS configuration since HTTPS is required
-	if err := utils.ValidateTLSConfig(promConfig); err != nil {
-		logger.Log.Error(err, "TLS configuration validation failed - HTTPS is required")
-		return fmt.Errorf("TLS configuration validation failed: %w", err)
-	}
-
-	logger.Log.Info("Initializing Prometheus client -> ", "address: ", promConfig.BaseURL, " tls_enabled: true")
-
-	// Create Prometheus client with TLS support
-	promClientConfig, err := utils.CreatePrometheusClientConfig(promConfig)
-	if err != nil {
-		return fmt.Errorf("failed to create prometheus client config: %w", err)
-	}
-
-	promClient, err := api.NewClient(*promClientConfig)
-	if err != nil {
-		return fmt.Errorf("failed to create prometheus client: %w", err)
-	}
-
-	r.PromAPI = promv1.NewAPI(promClient)
-
-	// Validate that the API is working by testing a simple query with retry logic
-	if err := utils.ValidatePrometheusAPI(context.Background(), r.PromAPI); err != nil {
-		logger.Log.Error(err, "CRITICAL: Failed to connect to Prometheus - Inferno requires Prometheus connectivity for autoscaling decisions")
-		return fmt.Errorf("critical: failed to validate Prometheus API connection - autoscaling functionality requires Prometheus: %w", err)
-	}
-	logger.Log.Info("Prometheus client and API wrapper initialized and validated successfully")
-
-	//logger.Log.Info("Prometheus client initialized (validation skipped)")
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&llmdVariantAutoscalingV1alpha1.VariantAutoscaling{}).
@@ -427,12 +435,12 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 				// Return nothing, we only want the Node object cached
 				return nil
 			}),
-			builder.WithPredicates(predicate.Funcs{ // minimal predicate that returns false
+			builder.WithPredicates(predicate.Funcs{
 				CreateFunc:  func(_ event.CreateEvent) bool { return false },
 				UpdateFunc:  func(_ event.UpdateEvent) bool { return false },
 				DeleteFunc:  func(_ event.DeleteEvent) bool { return false },
 				GenericFunc: func(_ event.GenericEvent) bool { return false },
-			}), // never trigger reconciliation
+			}),
 		).
 		// Watch the specific ConfigMap to trigger global reconcile
 		Watches(
@@ -443,25 +451,16 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 				}
 				return nil
 			}),
-			// Predicate to filter only the target configmap
 			builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
 				return obj.GetName() == configMapName && obj.GetNamespace() == configMapNamespace
 			})),
 		).
 		Named("variantAutoscaling").
 		WithEventFilter(predicate.Funcs{
-			CreateFunc: func(e event.CreateEvent) bool {
-				return true
-			},
-			UpdateFunc: func(e event.UpdateEvent) bool {
-				return false
-			},
-			DeleteFunc: func(e event.DeleteEvent) bool {
-				return false
-			},
-			GenericFunc: func(e event.GenericEvent) bool {
-				return false
-			},
+			CreateFunc:  func(e event.CreateEvent) bool { return true },
+			UpdateFunc:  func(e event.UpdateEvent) bool { return false },
+			DeleteFunc:  func(e event.DeleteEvent) bool { return false },
+			GenericFunc: func(e event.GenericEvent) bool { return false },
 		}).
 		Complete(r)
 }
