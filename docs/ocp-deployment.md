@@ -236,7 +236,11 @@ helmfile apply -f "gateway-control-plane-providers/kgateway.helmfile.yaml"
 
 *Note*: we want to run experiments using the `unsloth/Meta-Llama-3.1-8B` model. Therefore, we will change the model deployed by `llm-d` into it.
 
+*Note*: for testing purposes and to avoid deploying a LoadBalancer Service, we want to change the deployed service type to `NodePort`.
+
 ```sh
+yq eval '.gateway.service.type = "NodePort"' -i $PROJECT/charts/llm-d-infra/values.yaml
+
 cd $EXAMPLES_DIR
 sed -i '' "s/llm-d-inference-scheduler/$NAMESPACE/g" helmfile.yaml.gotmpl
 yq eval '(.. | select(. == "Qwen/Qwen3-0.6B")) = "unsloth/Meta-Llama-3.1-8B" | (.. | select(. == "hf://Qwen/Qwen3-0.6B")) = "hf://unsloth/Meta-Llama-3.1-8B"' -i ms-$BASE_NAME/values.yaml
