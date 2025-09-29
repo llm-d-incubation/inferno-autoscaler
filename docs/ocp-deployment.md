@@ -31,7 +31,6 @@ First, export the following environment variables:
 export WVA_PROJECT=$PWD
 export BASE_NAME="inference-scheduling"
 export NAMESPACE="llm-d-$BASE_NAME"
-export EXAMPLES_DIR="examples/$BASE_NAME"
 export MONITORING_NAMESPACE="openshift-user-workload-monitoring" 
 ```
 
@@ -217,7 +216,7 @@ git clone -b $RELEASE -- https://github.com/$OWNER/$PROJECT.git $PROJECT
 3. Install the required dependencies, including the Gateway API and Inference Extension CRDs:
 
 ```sh
-cd $PROJECT/quickstart
+cd $WVA_PROJECT/$PROJECT/quickstart
 bash dependencies/install-deps.sh
 bash gateway-control-plane-providers/install-gateway-provider-dependencies.sh
 ```
@@ -239,7 +238,9 @@ helmfile apply -f "gateway-control-plane-providers/kgateway.helmfile.yaml"
 *Note*: for testing purposes and to avoid deploying a LoadBalancer Service, we want to change the deployed service type to `NodePort`.
 
 ```sh
-yq eval '.gateway.service.type = "NodePort"' -i $PROJECT/charts/llm-d-infra/values.yaml
+export EXAMPLES_DIR="$WVA_PROJECT/$PROJECT/quickstart/examples/$BASE_NAME"
+
+yq eval '.gateway.service.type = "NodePort"' -i $WVA_$PROJECT/$PROJECT/charts/llm-d-infra/values.yaml
 
 cd $EXAMPLES_DIR
 sed -i '' "s/llm-d-inference-scheduler/$NAMESPACE/g" helmfile.yaml.gotmpl
@@ -739,8 +740,6 @@ To undeploy the `llm-d` components, uninstall the Helm Charts deployed previousl
 ```bash
 export BASE_NAME="inference-scheduling"
 export NAMESPACE="llm-d-$BASE_NAME"
-export EXAMPLES_DIR="examples/$BASE_NAME"
-export PROJECT="llm-d-infra"
 export MONITORING_NAMESPACE="openshift-user-workload-monitoring"
 ```
 
