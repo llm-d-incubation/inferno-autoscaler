@@ -19,8 +19,8 @@ func CreateTokenQuery(modelID, namespace string) string {
 	return `sum(rate(vllm:request_generation_tokens_sum{model_name="` + modelID + `",namespace="` + namespace + `"}[1m]))/sum(rate(vllm:request_generation_tokens_count{model_name="` + modelID + `",namespace="` + namespace + `"}[1m]))`
 }
 
-func CreateWaitQuery(modelID, namespace string) string {
-	return `sum(rate(vllm:request_queue_time_seconds_sum{model_name="` + modelID + `",namespace="` + namespace + `"}[1m]))/sum(rate(vllm:request_queue_time_seconds_count{model_name="` + modelID + `",namespace="` + namespace + `"}[1m]))`
+func CreateTTFTQuery(modelID, namespace string) string {
+	return `sum(rate(vllm:time_to_first_token_seconds_sum{model_name="` + modelID + `",namespace="` + namespace + `"}[1m]))/sum(rate(vllm:time_to_first_token_seconds_count{model_name="` + modelID + `",namespace="` + namespace + `"}[1m]))`
 }
 
 func CreateITLQuery(modelID, namespace string) string {

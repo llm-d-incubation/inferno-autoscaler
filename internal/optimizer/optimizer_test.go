@@ -420,7 +420,7 @@ var _ = Describe("Optimizer", Ordered, func() {
 				testNamespace := va.Namespace
 				arrivalQuery := testutils.CreateArrivalQuery(modelName, testNamespace)
 				avgDecToksQuery := testutils.CreateTokenQuery(modelName, testNamespace)
-				ttftQuery := testutils.CreateWaitQuery(modelName, testNamespace)
+				ttftQuery := testutils.CreateTTFTQuery(modelName, testNamespace)
 				itlQuery := testutils.CreateITLQuery(modelName, testNamespace)
 
 				// High load metrics that should trigger scaling up

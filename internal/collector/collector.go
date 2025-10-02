@@ -80,7 +80,6 @@ func AddMetricsToOptStatus(ctx context.Context,
 	modelName := opt.Spec.ModelID
 
 	// Setup Prometheus client
-	// TODO: agree on using standard vllm metrics
 	// Query 1: Arrival rate (requests per minute)
 	arrivalQuery := fmt.Sprintf(`sum(rate(vllm:request_success_total{model_name="%s",namespace="%s"}[1m])) * 60`, modelName, deployNamespace)
 	arrivalVal := 0.0
@@ -97,55 +96,74 @@ func AddMetricsToOptStatus(ctx context.Context,
 	}
 	FixValue(&arrivalVal)
 
-	// TODO: add query to get prompt tokens
+	// Query 2: Average prompt length
+	avgPromptToksQuery := fmt.Sprintf(`sum(rate(vllm:request_prompt_tokens_sum{model_name="%s",namespace="%s"}[1m]))/sum(rate(vllm:request_prompt_tokens_count{model_name="%s",namespace="%s"}[1m]))`,
+		modelName, deployNamespace, modelName, deployNamespace)
 	avgInputTokens := 0.0
+	if val, warn, err := promAPI.Query(ctx, avgPromptToksQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+		vec := val.(model.Vector)
+		if len(vec) > 0 {
+			avgInputTokens = float64(vec[0].Value)
+		}
+		if warn != nil {
+			logger.Log.Warn("Prometheus warnings - ", "warnings: ", warn)
+		}
+	}
+	// In case of error, we work with 0 input tokens
+	FixValue(&avgInputTokens)
 
-	// Query 2: Average token length
-	// TODO: split composite query to individual queries
+	// Query 3: Average decode length
 	avgDecToksQuery := fmt.Sprintf(`sum(rate(vllm:request_generation_tokens_sum{model_name="%s",namespace="%s"}[1m]))/sum(rate(vllm:request_generation_tokens_count{model_name="%s",namespace="%s"}[1m]))`,
 		modelName, deployNamespace, modelName, deployNamespace)
 	avgOutputTokens := 0.0
-	if val, _, err := promAPI.Query(ctx, avgDecToksQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+	if val, warn, err := promAPI.Query(ctx, avgDecToksQuery, time.Now()); err == nil && val.Type() == model.ValVector {
 		vec := val.(model.Vector)
 		if len(vec) > 0 {
 			avgOutputTokens = float64(vec[0].Value)
+		}
+		if warn != nil {
+			logger.Log.Warn("Prometheus warnings - ", "warnings: ", warn)
 		}
 	} else {
 		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
 	}
 	FixValue(&avgOutputTokens)
 
-	// TODO: change waiting time to TTFT
-
-	// Query 3: Average waiting time
-	ttftQuery := fmt.Sprintf(`sum(rate(vllm:request_queue_time_seconds_sum{model_name="%s",namespace="%s"}[1m]))/sum(rate(vllm:request_queue_time_seconds_count{model_name="%s",namespace="%s"}[1m]))`,
+	// Query 4: Average TTFT
+	ttftQuery := fmt.Sprintf(`sum(rate(vllm:time_to_first_token_seconds_sum{model_name="%s",namespace="%s"}[1m]))/sum(rate(vllm:time_to_first_token_seconds_count{model_name="%s",namespace="%s"}[1m]))`,
 		modelName, deployNamespace, modelName, deployNamespace)
 	ttftAverageTime := 0.0
-	if val, _, err := promAPI.Query(ctx, ttftQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+	if val, warn, err := promAPI.Query(ctx, ttftQuery, time.Now()); err == nil && val.Type() == model.ValVector {
 		vec := val.(model.Vector)
 		if len(vec) > 0 {
 			ttftAverageTime = float64(vec[0].Value) * 1000 //msec
 		}
-	} else {
-		logger.Log.Warn("failed to get avg wait time, using 0: ", "model: ", modelName)
+		if warn != nil {
+			logger.Log.Warn("Prometheus warnings - ", "warnings: ", warn)
+		}
 	}
+	// In case of error, we work with 0 TTFT time
 	FixValue(&ttftAverageTime)
 
-	// Query 4: Average ITL
+	// Query 5: Average ITL
 	itlQuery := fmt.Sprintf(`sum(rate(vllm:time_per_output_token_seconds_sum{model_name="%s",namespace="%s"}[1m]))/sum(rate(vllm:time_per_output_token_seconds_count{model_name="%s",namespace="%s"}[1m]))`,
 		modelName, deployNamespace, modelName, deployNamespace)
 	itlAverage := 0.0
-	if val, _, err := promAPI.Query(ctx, itlQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+	if val, warn, err := promAPI.Query(ctx, itlQuery, time.Now()); err == nil && val.Type() == model.ValVector {
 		vec := val.(model.Vector)
 		if len(vec) > 0 {
 			itlAverage = float64(vec[0].Value) * 1000 //msec
 		}
+		if warn != nil {
+			logger.Log.Warn("Prometheus warnings - ", "warnings: ", warn)
+		}
 	} else {
-		logger.Log.Warn("failed to get avg itl time, using 0: ", "model: ", modelName)
+		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
 	}
 	FixValue(&itlAverage)
 
 	// number of replicas
+	// TODO: Should the numReplicas reflect the actual active servers?
 	numReplicas := int(*deployment.Spec.Replicas)
 
 	// accelerator type
