@@ -279,7 +279,7 @@ var _ = Describe("Collector", func() {
 			// Setup mock responses
 			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
 			tokenQuery := utils.CreateTokenQuery(modelID, testNamespace)
-			waitQuery := utils.CreateWaitQuery(modelID, testNamespace)
+			ttftQuery := utils.CreateTTFTQuery(modelID, testNamespace)
 			itlQuery := utils.CreateITLQuery(modelID, testNamespace)
 
 			mockProm.QueryResults[arrivalQuery] = model.Vector{
@@ -288,7 +288,7 @@ var _ = Describe("Collector", func() {
 			mockProm.QueryResults[tokenQuery] = model.Vector{
 				&model.Sample{Value: model.SampleValue(150.0)}, // 150 tokens per request
 			}
-			mockProm.QueryResults[waitQuery] = model.Vector{
+			mockProm.QueryResults[ttftQuery] = model.Vector{
 				&model.Sample{Value: model.SampleValue(0.5)}, // 0.5 seconds
 			}
 			mockProm.QueryResults[itlQuery] = model.Vector{
