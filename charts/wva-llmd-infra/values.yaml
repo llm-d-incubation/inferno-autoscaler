@@ -1,11 +1,11 @@
 wva:
   baseName: inference-scheduling
-  namespace: llm-d-inference-scheduling
   image:
     repository: ghcr.io/llm-d/workload-variant-autoscaler
     tag: v0.0.1
 
   replicaCount: 1
+  modelName: ms-inference-scheduling-llm-d-modelservice
 
   monitoringNamespace: openshift-user-workload-monitoring
 
@@ -14,6 +14,9 @@ wva:
     port: 8443
     secure: true
 
+  va:
+    enabled: true
+
 prometheusAdapter:
   enabled: true
   namespaceOverride: openshift-user-workload-monitoring
@@ -21,11 +24,12 @@ prometheusAdapter:
 llmd:
   namespace: llm-d-inference-scheduling
 
-hfToken: "" # required
-
 variantAutoscaling:
+  enabled: true
   accelerator: L40S
   modelID: "unsloth/Meta-Llama-3.1-8B"
+  sloTpot: 9
+  sloTtft: 1000
 
 hpa:
   maxReplicas: 10

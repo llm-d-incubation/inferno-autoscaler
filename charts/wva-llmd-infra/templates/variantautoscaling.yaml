@@ -1,10 +1,11 @@
+{{- if .Values.wva.va.enabled }}
 apiVersion: llmd.ai/v1alpha1
 # Optimizing a variant, create only when the model is deployed and serving traffic
 # this is for the collector the collect existing (previous) running metrics of the variant.
 kind: VariantAutoscaling
 metadata:
   # Unique name of the variant
-  name: ms-inference-scheduling-llm-d-modelservice-decode 
+  name: {{ printf "%s-decode" .Values.wva.modelName }}
   namespace: {{ .Values.llmd.namespace }}
   labels:
     inference.optimization/acceleratorName: {{ .Values.variantAutoscaling.accelerator }}
@@ -45,3 +46,4 @@ spec:
             gamma: "5.2"
             delta: "0.1"
         maxBatchSize: 512
+{{- end }}

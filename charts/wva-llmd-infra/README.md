@@ -50,11 +50,10 @@ cd $WVA_PROJECT/charts
 helm upgrade -i workload-variant-autoscaler ./wva-llmd-infra \
   -n $WVA_NS \
   --set-file prometheus.caCert=/tmp/prometheus-ca.crt \
-  --set hfToken=$HF_TOKEN \
   --set variantAutoscaling.accelerator=L40S \
   --set variantAutoscaling.modelID=unsloth/Meta-Llama-3.1-8B \
   --set vllmService.enabled=true \
-  --set vllmService.nodePort=30000 \
+  --set vllmService.nodePort=30000
 ```
 
 ### INSTALL LLM-D

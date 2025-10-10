@@ -22,9 +22,9 @@ data:
       - model: llama0-70b
         slo-tpot: 80
         slo-ttft: 500
-      - model: unsloth/Meta-Llama-3.1-8B
-        slo-tpot: 9
-        slo-ttft: 1000
+      - model: {{ .Values.variantAutoscaling.modelID }}
+        slo-tpot: {{ .Values.variantAutoscaling.sloTpot }}
+        slo-ttft: {{ .Values.variantAutoscaling.sloTtft }}
   freemium.yaml: |
     name: Freemium
     priority: 10

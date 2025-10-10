@@ -1,13 +1,14 @@
+{{- if .Values.wva.va.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
   name: vllm-service
   namespace: {{ .Values.llmd.namespace }}
   labels:
-    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
+    llm-d.ai/model: {{ .Values.wva.modelName }}
 spec:
   selector:
-    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
+    llm-d.ai/model: {{ .Values.wva.modelName }}
   ports:
     - name: vllm
       port: 8200
@@ -15,3 +16,4 @@ spec:
       targetPort: 8200
       nodePort: {{ .Values.vllmService.nodePort }}
   type: NodePort
+{{- end }}
