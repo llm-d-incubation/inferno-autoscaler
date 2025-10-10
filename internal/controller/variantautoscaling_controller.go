@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -99,7 +100,7 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	if os.Getenv("WVA_SCALE_TO_ZERO") != "false" {
+	if strings.EqualFold(os.Getenv("WVA_SCALE_TO_ZERO"), "true") {
 		logger.Log.Info("Scaling to zero is enabled!")
 	}
 

@@ -1,0 +1,256 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.2
+  name: variantautoscalings.llmd.ai
+spec:
+  group: llmd.ai
+  names:
+    kind: VariantAutoscaling
+    listKind: VariantAutoscalingList
+    plural: variantautoscalings
+    shortNames:
+    - va
+    singular: variantautoscaling
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.modelID
+      name: Model
+      type: string
+    - jsonPath: .status.currentAlloc.accelerator
+      name: Accelerator
+      type: string
+    - jsonPath: .status.currentAlloc.numReplicas
+      name: CurrentReplicas
+      type: integer
+    - jsonPath: .status.desiredOptimizedAlloc.numReplicas
+      name: Optimized
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          VariantAutoscaling is the Schema for the variantautoscalings API.
+          It represents the autoscaling configuration and status for a model variant.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: Spec defines the desired state for autoscaling the model
+              variant.
+            properties:
+              modelID:
+                description: ModelID specifies the unique identifier of the model
+                  to be autoscaled.
+                minLength: 1
+                type: string
+              modelProfile:
+                description: ModelProfile provides resource and performance characteristics
+                  for the model variant.
+                properties:
+                  accelerators:
+                    description: Accelerators is a list of accelerator profiles for
+                      the model variant.
+                    items:
+                      description: |-
+                        AcceleratorProfile defines the configuration for an accelerator used in autoscaling.
+                        It specifies the type and count of accelerator, as well as parameters for scaling behavior.
+                      properties:
+                        acc:
+                          description: Acc specifies the type or name of the accelerator
+                            (e.g., GPU type).
+                          minLength: 1
+                          type: string
+                        accCount:
+                          description: AccCount specifies the number of accelerator
+                            units to be used.
+                          minimum: 1
+                          type: integer
+                        maxBatchSize:
+                          description: MaxBatchSize is the maximum batch size supported
+                            by the accelerator.
+                          minimum: 1
+                          type: integer
+                        perfParms:
+                          description: PerParms specifies the prefill and decode parameters
+                            for ttft and itl models
+                          properties:
+                            decodeParms:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                DecodeParms contains parameters for the decode phase (ITL calculation)
+                                Expected keys: "alpha", "beta" for equation: itl = alpha + beta * maxBatchSize
+                              minProperties: 1
+                              type: object
+                            prefillParms:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                PrefillParms contains parameters for the prefill phase (TTFT calculation)
+                                Expected keys: "gamma", "delta" for equation: ttft = gamma + delta * tokens * maxBatchSize
+                              minProperties: 1
+                              type: object
+                          required:
+                          - decodeParms
+                          - prefillParms
+                          type: object
+                      required:
+                      - acc
+                      - accCount
+                      - maxBatchSize
+                      - perfParms
+                      type: object
+                    minItems: 1
+                    type: array
+                required:
+                - accelerators
+                type: object
+              sloClassRef:
+                description: SLOClassRef references the ConfigMap key containing Service
+                  Level Objective (SLO) configuration.
+                properties:
+                  key:
+                    description: Key is the key within the ConfigMap.
+                    minLength: 1
+                    type: string
+                  name:
+                    description: Name is the name of the ConfigMap.
+                    minLength: 1
+                    type: string
+                required:
+                - key
+                - name
+                type: object
+            required:
+            - modelID
+            - modelProfile
+            - sloClassRef
+            type: object
+          status:
+            description: Status represents the current status of autoscaling for the
+              model variant.
+            properties:
+              actuation:
+                description: Actuation provides details about the actuation process
+                  and its current status.
+                properties:
+                  applied:
+                    description: Applied indicates whether the actuation was successfully
+                      applied.
+                    type: boolean
+                required:
+                - applied
+                type: object
+              currentAlloc:
+                description: CurrentAlloc specifies the current resource allocation
+                  for the variant.
+                properties:
+                  accelerator:
+                    description: Accelerator is the type of accelerator currently
+                      allocated.
+                    minLength: 1
+                    type: string
+                  itlAverage:
+                    description: ITLAverage is the average inter token latency for
+                      the current allocation.
+                    pattern: ^\d+(\.\d+)?$
+                    type: string
+                  load:
+                    description: Load describes the workload characteristics for the
+                      current allocation.
+                    properties:
+                      arrivalRate:
+                        description: ArrivalRate is the rate of incoming requests
+                          in inference server.
+                        type: string
+                      avgInputTokens:
+                        description: AvgInputTokens is the average number of input(prefill)
+                          tokens per request in inference server.
+                        type: string
+                      avgOutputTokens:
+                        description: AvgOutputTokens is the average number of output(decode)
+                          tokens per request in inference server.
+                        type: string
+                    required:
+                    - arrivalRate
+                    - avgInputTokens
+                    - avgOutputTokens
+                    type: object
+                  maxBatch:
+                    description: MaxBatch is the maximum batch size currently allocated.
+                    minimum: 0
+                    type: integer
+                  numReplicas:
+                    description: NumReplicas is the number of replicas currently allocated.
+                    minimum: 0
+                    type: integer
+                  ttftAverage:
+                    description: TTFTAverage is the average time to first token for
+                      the current allocation
+                    pattern: ^\d+(\.\d+)?$
+                    type: string
+                  variantCost:
+                    description: VariantCost is the cost associated with the current
+                      variant allocation.
+                    pattern: ^\d+(\.\d+)?$
+                    type: string
+                required:
+                - accelerator
+                - itlAverage
+                - load
+                - maxBatch
+                - numReplicas
+                - ttftAverage
+                - variantCost
+                type: object
+              desiredOptimizedAlloc:
+                description: DesiredOptimizedAlloc indicates the target optimized
+                  allocation based on autoscaling logic.
+                properties:
+                  accelerator:
+                    description: Accelerator is the type of accelerator for the optimized
+                      allocation.
+                    minLength: 2
+                    type: string
+                  lastRunTime:
+                    description: LastRunTime is the timestamp of the last optimization
+                      run.
+                    format: date-time
+                    type: string
+                  numReplicas:
+                    description: NumReplicas is the number of replicas for the optimized
+                      allocation.
+                    minimum: 0
+                    type: integer
+                required:
+                - accelerator
+                - numReplicas
+                type: object
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

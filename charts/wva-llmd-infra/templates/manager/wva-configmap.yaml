@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workload-variant-autoscaler-variantautoscaling-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: workload-variant-autoscaler
+data:
+  # Prometheus configuration - REQUIRED: Set your Prometheus server URL
+  # Examples:
+  # - General: "https://prometheus:9090"
+  # - OpenShift: "https://thanos-querier.openshift-monitoring.svc.cluster.local:9091"
+  # - KIND cluster: "https://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local:9090"
+  #PROMETHEUS_BASE_URL: "https://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local:9090"
+  PROMETHEUS_BASE_URL: {{ .Values.prometheus.baseURL | quote }}
+
+  # TLS Configuration (TLS is always enabled for HTTPS-only support)
+  # PROMETHEUS_TLS_INSECURE_SKIP_VERIFY: "true"  # Skip certificate verification (development/testing only)
+  # PROMETHEUS_CA_CERT_PATH: "/path/to/ca.crt"   # CA certificate for server validation
+  # PROMETHEUS_CLIENT_CERT_PATH: "/path/to/client.crt"  # Client certificate for mutual TLS
+  # PROMETHEUS_CLIENT_KEY_PATH: "/path/to/client.key"   # Client private key for mutual TLS
+  # PROMETHEUS_SERVER_NAME: "prometheus.example.com"    # Expected server name for SNI
+  PROMETHEUS_TLS_INSECURE_SKIP_VERIFY: "true"
+  
+  # Authentication Configuration (BearerToken takes precedence over TokenPath)
+  # PROMETHEUS_BEARER_TOKEN: "your-token-here"           # Direct bearer token (development/testing)
+  # PROMETHEUS_TOKEN_PATH: "/path/to/token/file"        # Path to bearer token file (production with mounted secrets)
+  
+  # Optimization configuration
+  GLOBAL_OPT_INTERVAL: "60s"
+
+  # Option to scale variants to zero replicas (default: true)
+  WVA_SCALE_TO_ZERO: "false"

@@ -61,6 +61,8 @@ Modeling and optimization techniques used in the workload-variant-autoscaler are
 
 ## Quickstart Guide: Installation of workload-variant-autoscaler along with llm-d infrastructure emulated deployment on a Kind cluster
 
+_Note: If you are on a Mac with Apple Silicon, please disable Rosetta. See [this issue](https://github.com/llm-d-incubation/workload-variant-autoscaler/issues/181) for details._
+
 Use this target to spin up a local test environment integrated with llm-d core components:
 
 ```sh

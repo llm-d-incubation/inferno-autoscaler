@@ -68,7 +68,7 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 			configMap = testutils.CreateAcceleratorUnitCostConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
 
-			configMap = testutils.CreateVariantAutoscalingConfigMap(ns.Name)
+			configMap = testutils.CreateVariantAutoscalingConfigMap(configMapName, ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
 
 			By("creating the custom resource for the Kind VariantAutoscalings")
@@ -216,7 +216,7 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 			configMap = testutils.CreateAcceleratorUnitCostConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).NotTo(HaveOccurred())
 
-			configMap = testutils.CreateVariantAutoscalingConfigMap(ns.Name)
+			configMap = testutils.CreateVariantAutoscalingConfigMap(configMapName, ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).NotTo(HaveOccurred())
 		})
 
@@ -588,7 +588,7 @@ data:
 			configMap = testutils.CreateAcceleratorUnitCostConfigMap(ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
 
-			configMap = testutils.CreateVariantAutoscalingConfigMap(ns.Name)
+			configMap = testutils.CreateVariantAutoscalingConfigMap(configMapName, ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
 
 			By("Creating dummy inventory")

@@ -1,0 +1,14 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/name: workload-variant-autoscaler
+  name: workload-variant-autoscaler-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: workload-variant-autoscaler-manager-role
+subjects:
+- kind: ServiceAccount
+  name: workload-variant-autoscaler-controller-manager
+  namespace: {{ .Release.Namespace }}

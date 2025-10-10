@@ -1,0 +1,49 @@
+wva:
+  baseName: inference-scheduling
+  namespace: llm-d-inference-scheduling
+  image:
+    repository: ghcr.io/llm-d/workload-variant-autoscaler
+    tag: v0.0.1
+
+  replicaCount: 1
+
+  monitoringNamespace: openshift-user-workload-monitoring
+
+  metrics:
+    enabled: true
+    port: 8443
+    secure: true
+
+prometheusAdapter:
+  enabled: true
+  namespaceOverride: openshift-user-workload-monitoring
+
+llmd:
+  namespace: llm-d-inference-scheduling
+
+hfToken: "" # required
+
+variantAutoscaling:
+  accelerator: L40S
+  modelID: "unsloth/Meta-Llama-3.1-8B"
+
+hpa:
+  maxReplicas: 10
+  targetAverageValue: "1"
+
+guidellm:
+  enabled: false
+  image: quay.io/vishakharamani/guidellm:latest
+  rate: 8
+  maxSeconds: 1800
+
+vllmService:
+  enabled: true
+  nodePort: 30000
+
+prometheus:
+  baseURL: "https://thanos-querier.openshift-monitoring.svc.cluster.local:9091"
+  caCert: |
+    -----BEGIN CERTIFICATE-----
+    placeholder...
+    -----END CERTIFICATE-----

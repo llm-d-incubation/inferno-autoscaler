@@ -1,0 +1,6 @@
+apiVersion: v2
+name: wva-llmd-infra
+description: Helm chart for Workload-Variant-Autoscaler + llm-d integration on OpenShift
+type: application
+version: 0.1.0
+appVersion: "1.0"

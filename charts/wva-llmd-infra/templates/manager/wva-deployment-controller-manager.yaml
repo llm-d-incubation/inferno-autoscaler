@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workload-variant-autoscaler-controller-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    control-plane: controller-manager
+    app.kubernetes.io/name: workload-variant-autoscaler
+spec:
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+      app.kubernetes.io/name: workload-variant-autoscaler
+  replicas: 2
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        control-plane: controller-manager
+        app.kubernetes.io/name: workload-variant-autoscaler
+    spec:
+      # TODO(user): Uncomment the following code to configure the nodeAffinity expression
+      # according to the platforms which are supported by your solution.
+      # It is considered best practice to support multiple architectures. You can
+      # build your manager image using the makefile target docker-buildx.
+      # affinity:
+      #   nodeAffinity:
+      #     requiredDuringSchedulingIgnoredDuringExecution:
+      #       nodeSelectorTerms:
+      #         - matchExpressions:
+      #           - key: kubernetes.io/arch
+      #             operator: In
+      #             values:
+      #               - amd64
+      #               - arm64
+      #               - ppc64le
+      #               - s390x
+      #           - key: kubernetes.io/os
+      #             operator: In
+      #             values:
+      #               - linux
+      securityContext:
+        # Projects are configured by default to adhere to the "restricted" Pod Security Standards.
+        # This ensures that deployments meet the highest security requirements for Kubernetes.
+        # For more details, see: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - command:
+        - /manager
+        args:
+          - --leader-elect=true
+          - --health-probe-bind-address=:8081
+          {{- if .Values.wva.metrics.enabled }}
+          - --metrics-bind-address=:{{ .Values.wva.metrics.port }}
+          - --metrics-secure={{ .Values.wva.metrics.secure }}
+          {{- end }}
+        image: "{{ .Values.wva.image.repository }}:{{ .Values.wva.image.tag }}"
+        imagePullPolicy: Always
+        env:
+          - name: LOG_LEVEL
+            value: "debug"  # or "info", "warn", "error"
+          - name: PROMETHEUS_BASE_URL
+            valueFrom:
+              configMapKeyRef:
+                name: workload-variant-autoscaler-variantautoscaling-config
+                key: PROMETHEUS_BASE_URL
+          - name: PROMETHEUS_TLS_INSECURE_SKIP_VERIFY
+            valueFrom:
+              configMapKeyRef:
+                name: workload-variant-autoscaler-variantautoscaling-config
+                key: PROMETHEUS_TLS_INSECURE_SKIP_VERIFY
+          - name: PROMETHEUS_TOKEN_PATH
+            value: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+          - name: WVA_SCALE_TO_ZERO
+            valueFrom:
+              configMapKeyRef:
+                name: workload-variant-autoscaler-variantautoscaling-config
+                key: WVA_SCALE_TO_ZERO
+        name: manager
+        ports:
+          - name: healthz
+            containerPort: 8081
+            protocol: TCP
+          {{- if .Values.wva.metrics.enabled }}
+          - name: https
+            containerPort: {{ .Values.wva.metrics.port }}
+            protocol: TCP
+          {{- end }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - "ALL"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        # TODO(user): Configure the resources accordingly based on the project requirements.
+        # More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        volumeMounts:
+        - name: prometheus-client-certs
+          mountPath: /etc/prometheus-certs
+          readOnly: true
+      volumes:
+      - name: prometheus-client-certs
+        secret:
+          secretName: prometheus-client-cert
+          optional: true
+          items:
+          - key: ca.crt
+            path: ca.crt
+          - key: tls.crt
+            path: tls.crt
+          - key: tls.key
+            path: tls.key
+      serviceAccountName: workload-variant-autoscaler-controller-manager
+      terminationGracePeriodSeconds: 10

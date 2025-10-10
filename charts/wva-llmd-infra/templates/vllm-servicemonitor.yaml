@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vllm-servicemonitor
+  namespace: {{ .Values.wva.monitoringNamespace }}
+  labels:
+    llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
+spec:
+  selector:
+    matchLabels:
+      llm-d.ai/model: ms-inference-scheduling-llm-d-modelservice
+  endpoints:
+  - port: vllm
+    path: /metrics
+    interval: 15s
+  namespaceSelector:
+    any: true

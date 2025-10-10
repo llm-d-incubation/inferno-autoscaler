@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+# This configMap defines the set of accelerators available
+# to the autoscaler to assign to variants
+#
+# For each accelerator, need to specify a (unique) name and some properties:
+# - device is the name of the device (card) corresponding to this accelerator,
+#   it should be the same as the device specified in the node object
+# - cost is the cents/hour cost of this accelerator
+#
+metadata:
+  name: service-classes-config
+  namespace: {{ .Release.Namespace }}
+data:
+  premium.yaml: |
+    name: Premium
+    priority: 1
+    data:
+      - model: default/default
+        slo-tpot: 24
+        slo-ttft: 500
+      - model: llama0-70b
+        slo-tpot: 80
+        slo-ttft: 500
+      - model: unsloth/Meta-Llama-3.1-8B
+        slo-tpot: 9
+        slo-ttft: 1000
+  freemium.yaml: |
+    name: Freemium
+    priority: 10
+    data:
+      - model: granite-13b
+        slo-tpot: 200
+        slo-ttft: 2000
+      - model: llama0-7b
+        slo-tpot: 150
+        slo-ttft: 1500

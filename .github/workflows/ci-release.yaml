@@ -46,12 +46,14 @@ jobs:
 
       - name: Build and push multi-arch image
         run: |
-          IMAGE=ghcr.io/llm-d/${{ steps.version.outputs.project_name }}:${{ steps.tag.outputs.tag }}
-          echo "Building $IMAGE for linux/amd64 and linux/arm64"
+          IMAGE=ghcr.io/llm-d/${{ steps.version.outputs.project_name }}
+          VERSION_TAG=${{ steps.tag.outputs.tag }}
+          echo "Building $IMAGE with tags $VERSION_TAG and latest for linux/amd64 and linux/arm64"
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --push \
-            -t $IMAGE .
+            -t $IMAGE:$VERSION_TAG \
+            -t $IMAGE:latest .
 
       - name: Run Trivy scan
         uses: ./.github/actions/trivy-scan

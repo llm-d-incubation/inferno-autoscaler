@@ -1,0 +1,47 @@
+apiVersion: llmd.ai/v1alpha1
+# Optimizing a variant, create only when the model is deployed and serving traffic
+# this is for the collector the collect existing (previous) running metrics of the variant.
+kind: VariantAutoscaling
+metadata:
+  # Unique name of the variant
+  name: ms-inference-scheduling-llm-d-modelservice-decode 
+  namespace: {{ .Values.llmd.namespace }}
+  labels:
+    inference.optimization/acceleratorName: {{ .Values.variantAutoscaling.accelerator }}
+# This is essentially static input to the optimizer
+spec:
+  # OpenAI API compatible name of the model
+  modelID: {{ .Values.variantAutoscaling.modelID | quote }}
+  # Add SLOs in configmap, add reference to this per model data
+  # to avoid duplication and Move to ISOs when available
+  sloClassRef:
+    # Configmap name to load in the same namespace as optimizer object
+    # we start with static (non-changing) ConfigMaps (for ease of implementation only)
+    name: premium-slo
+    # Key (modelID) present inside configmap
+    key: opt-125m
+  # Static profiled benchmarked data for a variant running on different accelerators
+  modelProfile:
+    accelerators:
+      - acc: "L40S"
+        accCount: 1
+        perfParms: 
+          decodeParms:
+            alpha: "22.619"
+            beta: "0.181"
+          prefillParms:
+            gamma: "226.19"
+            delta: "0.018"
+        maxBatchSize: 512
+      - acc: "H100"
+        accCount: 1
+        perfParms: 
+          decodeParms:
+            # Decode parameters for ITL equation: itl = alpha + beta * maxBatchSize
+            alpha: "6.958"
+            beta: "0.042"
+          # Prefill parameters for TTFT equation: ttft = gamma + delta * tokens * maxBatchSize  
+          prefillParms:
+            gamma: "5.2"
+            delta: "0.1"
+        maxBatchSize: 512
