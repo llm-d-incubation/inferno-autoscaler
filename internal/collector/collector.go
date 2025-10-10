@@ -12,8 +12,6 @@ import (
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type AcceleratorModelInfo struct {
@@ -21,47 +19,25 @@ type AcceleratorModelInfo struct {
 	Memory string
 }
 
-// Collector holds the k8s client and discovers GPU inventory
+// TODO: Resource accounting and capacity tracking for limited mode.
+// The WVA currently operates in unlimited mode only, where each variant receives
+// optimal allocation independently without cluster capacity constraints.
+// Limited mode support requires integration with the llmd stack and additional
+// design work to handle degraded mode operations without violating SLOs.
+// Future work: Implement CollectInventoryK8S and capacity-aware allocation for limited mode.
+
+// vendors list for GPU vendors - kept for future limited mode support
 var vendors = []string{
 	"nvidia.com",
 	"amd.com",
 	"intel.com",
 }
 
-// CollectInventory lists all Nodes and builds a map[nodeName][model]→info.
-// It checks labels <vendor>/gpu.product, <vendor>/gpu.memory
-// and capacity <vendor>/gpu.
-func CollectInventoryK8S(ctx context.Context, r client.Client) (map[string]map[string]AcceleratorModelInfo, error) {
-	var nodeList corev1.NodeList
-	if err := r.List(ctx, &nodeList); err != nil {
-		return nil, fmt.Errorf("failed to list nodes: %w", err)
-	}
-
-	inv := make(map[string]map[string]AcceleratorModelInfo)
-	for _, node := range nodeList.Items {
-		nodeName := node.Name
-		for _, vendor := range vendors {
-			prodKey := vendor + "/gpu.product"
-			memKey := vendor + "/gpu.memory"
-			if model, ok := node.Labels[prodKey]; ok {
-				// found a GPU of this vendor
-				mem := node.Labels[memKey]
-				count := 0
-				if cap, ok := node.Status.Allocatable[corev1.ResourceName(vendor+"/gpu")]; ok {
-					count = int(cap.Value())
-				}
-				if inv[nodeName] == nil {
-					inv[nodeName] = make(map[string]AcceleratorModelInfo)
-				}
-				inv[nodeName][model] = AcceleratorModelInfo{
-					Count:  count,
-					Memory: mem,
-				}
-				logger.Log.Debug("Found inventory: ", "nodeName - ", nodeName, " , model - ", model, " , count - ", count, " , mem - ", mem)
-			}
-		}
-	}
-	return inv, nil
+// CollectInventoryK8S is a stub for future limited mode support.
+// Currently returns empty inventory as WVA operates in unlimited mode.
+func CollectInventoryK8S(ctx context.Context, r interface{}) (map[string]map[string]AcceleratorModelInfo, error) {
+	// Stub implementation - will be properly implemented for limited mode
+	return make(map[string]map[string]AcceleratorModelInfo), nil
 }
 
 type MetricKV struct {

@@ -13,7 +13,6 @@ import (
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
 	infernoConfig "github.com/llm-d-incubation/workload-variant-autoscaler/hack/inferno/pkg/config"
-	collector "github.com/llm-d-incubation/workload-variant-autoscaler/internal/collector"
 	interfaces "github.com/llm-d-incubation/workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/logger"
 	"go.uber.org/zap/zapcore"
@@ -104,11 +103,11 @@ func UpdateStatusWithBackoff[T client.Object](ctx context.Context, c client.Clie
 	})
 }
 
-// Adapter to create inferno system data types from config maps and cluster inventory data
+// Adapter to create wva system data types from config maps.
+// Note: WVA operates in unlimited mode, so capacity data is not used.
 func CreateSystemData(
 	acceleratorCm map[string]map[string]string,
-	serviceClassCm map[string]string,
-	newInventory map[string]map[string]collector.AcceleratorModelInfo) *infernoConfig.SystemData {
+	serviceClassCm map[string]string) *infernoConfig.SystemData {
 
 	systemData := &infernoConfig.SystemData{
 		Spec: infernoConfig.SystemSpec{
@@ -139,27 +138,8 @@ func CreateSystemData(
 	}
 	systemData.Spec.Accelerators.Spec = acceleratorData
 
-	// get capacity data
-	acceleratorMap := make(map[string]int)
-	for _, nodeAccMap := range newInventory {
-		for accName, info := range nodeAccMap {
-			if val, exists := acceleratorMap[accName]; !exists {
-				acceleratorMap[accName] = info.Count
-			} else {
-				acceleratorMap[accName] = val + info.Count
-			}
-		}
-	}
-	capacityData := make([]infernoConfig.AcceleratorCount, len(acceleratorMap))
-	i := 0
-	for key, val := range acceleratorMap {
-		capacityData[i] = infernoConfig.AcceleratorCount{
-			Type:  key,
-			Count: val,
-		}
-		i++
-	}
-	systemData.Spec.Capacity.Count = capacityData
+	// Capacity data is not used in unlimited mode - initialize empty for future limited mode work
+	systemData.Spec.Capacity.Count = []infernoConfig.AcceleratorCount{}
 
 	// get service class data
 	serviceClassData := []infernoConfig.ServiceClassSpec{}

@@ -37,7 +37,9 @@ var _ = Describe("Collector", func() {
 		Expect(llmdVariantAutoscalingV1alpha1.AddToScheme(scheme)).To(Succeed())
 	})
 
-	Context("When collecting inventory from K8s", func() {
+	// TODO: Re-enable these tests when implementing limited mode support
+	// These tests are for CollectInventoryK8S which is not used in unlimited mode
+	PContext("When collecting inventory from K8s", func() {
 		It("should collect GPU inventory from multiple nodes", func() {
 			// Create nodes with fake GPU labels
 			nodes := []corev1.Node{
@@ -429,7 +431,8 @@ var _ = Describe("Collector", func() {
 		})
 	})
 
-	Context("When testing vendor list", func() {
+	// TODO: Re-enable when implementing limited mode support
+	PContext("When testing vendor list", func() {
 		It("should have expected GPU vendors", func() {
 			expectedVendors := []string{
 				"nvidia.com",

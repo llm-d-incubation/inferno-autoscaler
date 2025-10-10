@@ -140,33 +140,8 @@ var _ = Describe("Optimizer", Ordered, func() {
 				minNumReplicas = 0
 			}
 
-			By("Creating dummy inventory")
-			dummyInventory := map[string]map[string]collector.AcceleratorModelInfo{
-				"gpu-node-1": {
-					"A100": collector.AcceleratorModelInfo{
-						Count:  4,
-						Memory: "40Gi",
-					},
-					"H100": collector.AcceleratorModelInfo{
-						Count:  2,
-						Memory: "80Gi",
-					},
-				},
-				"gpu-node-2": {
-					"A100": collector.AcceleratorModelInfo{
-						Count:  8,
-						Memory: "40Gi",
-					},
-				},
-				"gpu-node-3": {
-					"V100": collector.AcceleratorModelInfo{
-						Count:  4,
-						Memory: "32Gi",
-					},
-				},
-			}
-
-			systemData = utils.CreateSystemData(acceleratorCm, serviceClassCm, dummyInventory)
+			// WVA operates in unlimited mode - no inventory data needed
+			systemData = utils.CreateSystemData(acceleratorCm, serviceClassCm)
 
 			By("Creating test VariantAutoscaling resources")
 			for i := 1; i <= 3; i++ {

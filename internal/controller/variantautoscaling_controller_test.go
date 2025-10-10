@@ -34,7 +34,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
-	collector "github.com/llm-d-incubation/workload-variant-autoscaler/internal/collector"
 	logger "github.com/llm-d-incubation/workload-variant-autoscaler/internal/logger"
 	utils "github.com/llm-d-incubation/workload-variant-autoscaler/internal/utils"
 	testutils "github.com/llm-d-incubation/workload-variant-autoscaler/test/utils"
@@ -534,7 +533,6 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 
 	Context("When handling multiple VariantAutoscalings", func() {
 		const totalVAs = 3
-		var dummyInventory map[string]map[string]collector.AcceleratorModelInfo
 
 		var CreateServiceClassConfigMap = func(controllerNamespace string, models ...string) *v1.ConfigMap {
 			data := map[string]string{}
@@ -590,32 +588,6 @@ data:
 
 			configMap = testutils.CreateVariantAutoscalingConfigMap(configMapName, ns.Name)
 			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
-
-			By("Creating dummy inventory")
-			dummyInventory = map[string]map[string]collector.AcceleratorModelInfo{
-				"gpu-node-1": {
-					"A100": collector.AcceleratorModelInfo{
-						Count:  4,
-						Memory: "40Gi",
-					},
-					"H100": collector.AcceleratorModelInfo{
-						Count:  2,
-						Memory: "80Gi",
-					},
-				},
-				"gpu-node-2": {
-					"A100": collector.AcceleratorModelInfo{
-						Count:  8,
-						Memory: "40Gi",
-					},
-				},
-				"gpu-node-3": {
-					"V100": collector.AcceleratorModelInfo{
-						Count:  4,
-						Memory: "32Gi",
-					},
-				},
-			}
 
 			By("Creating VariantAutoscaling resources and Deployments")
 			for i := range totalVAs {
@@ -778,7 +750,8 @@ data:
 
 			// Prepare system data for VAs
 			By("Preparing the system data for optimization")
-			systemData := utils.CreateSystemData(accMap, serviceClassMap, dummyInventory)
+			// WVA operates in unlimited mode - no inventory data needed
+			systemData := utils.CreateSystemData(accMap, serviceClassMap)
 			Expect(systemData).NotTo(BeNil(), "System data should not be nil")
 
 			updateList, vaMap, allAnalyzerResponses, err := controllerReconciler.prepareVariantAutoscalings(ctx, activeVAs, accMap, serviceClassMap, systemData)

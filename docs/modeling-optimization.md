@@ -85,30 +85,35 @@ As such, one can estimate these parameters using either a model tuner that uses 
 
 ## Optimization
 
-The optimizer considers all variants in the system and the availability of accelerators in the cluster.
-Its objective is to mimize total cost, while satisfying the SLOs for all variants.
+The optimizer considers all variants in the system to determine optimal allocations.
+Its objective is to minimize total cost while satisfying the SLOs for all variants.
 The optimizer uses the model analyzer to estimate the minimum number of replicas needed for each variant to satisfy its SLOs, given the observed load statistics.
 
-The behavior of the optimizer is configurable. The optimizer specifications include two parameters:
+### Current Mode: Unlimited
 
-1. **Unlimited**: A boolean to determine whether the optimizer can allocate acelerators to the variants beyond the cluster capacity, or not. In case of `Unlimited=true` and the total resource demand exceeds cluster capacity, then some pods will be in a Pending state. (This may trigger a cluster autoscaler.) On the other hand, in case of `Unlimited=false` and the total resource demand exceeds cluster capacity, then some variants will get an allocation that may not satisfy their SLOs. Hence, another policy is needed to deal with this overload situation.
-2. **SaturationPolicy**: Set an allocation policy under saturated condition.
+**The WVA currently operates exclusively in unlimited mode.** In this mode, each variant receives its optimal allocation independently, without cluster capacity constraints. If total resource demand exceeds cluster capacity, some pods will be in a Pending state, which may trigger a cluster autoscaler in cloud environments.
 
-      - ***None***: no additional allocation beyond satisfying SLOs
-      - ***PriorityExhaustive***: allocating exhaustively to variants in priority ordering
-      - ***PriorityRoundRobin***: allocating in round-robin fashion within priority groups
-      - ***RoundRobin***: allocating in round-robin fashion across all variants
-
-The default optimizer specifications are as follows.
+The optimizer specifications are configured as:
 
 ```bash
 infernoConfig.OptimizerSpec{
   Unlimited:        true,
   SaturationPolicy: "None",
 }
-  ```
+```
 
-If `Unlimited=false`, then the preferred saturation policy is `"PriorityRoundRobin"`. Accordingly, an unsatisfied variant with higher priority will get resources before lower priority ones, and unsatisfied variants of same priority will be equally allocated resources.
+### Future Work: Limited Mode
+
+Limited mode support is planned for future releases. In limited mode, the optimizer would respect cluster capacity constraints and implement resource accounting. However, operating in limited mode introduces challenges around degraded mode operations and potential SLO violations under resource pressure. More design work is needed to integrate limited mode with the llmd stack before it can be enabled.
+
+When implemented, limited mode will support the following parameters:
+
+1. **Unlimited**: Set to `false` for limited mode operation with capacity constraints
+2. **SaturationPolicy**: Allocation policy under saturated conditions:
+   - ***None***: no additional allocation beyond satisfying SLOs
+   - ***PriorityExhaustive***: allocating exhaustively to variants in priority ordering
+   - ***PriorityRoundRobin***: allocating in round-robin fashion within priority groups (preferred for limited mode)
+   - ***RoundRobin***: allocating in round-robin fashion across all variants
 
 ## References
 

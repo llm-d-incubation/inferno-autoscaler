@@ -130,13 +130,8 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 
-	newInventory, err := collector.CollectInventoryK8S(ctx, r.Client)
-	if err != nil {
-		logger.Log.Error(err, "failed to get cluster inventory")
-		return ctrl.Result{}, err
-	}
-
-	systemData := utils.CreateSystemData(acceleratorCm, serviceClassCm, newInventory)
+	// WVA operates in unlimited mode - no cluster inventory collection needed
+	systemData := utils.CreateSystemData(acceleratorCm, serviceClassCm)
 
 	updateList, vaMap, allAnalyzerResponses, err := r.prepareVariantAutoscalings(ctx, activeVAs, acceleratorCm, serviceClassCm, systemData)
 	if err != nil {
@@ -421,19 +416,6 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&llmdVariantAutoscalingV1alpha1.VariantAutoscaling{}).
-		Watches(
-			&corev1.Node{},
-			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-				// Return nothing, we only want the Node object cached
-				return nil
-			}),
-			builder.WithPredicates(predicate.Funcs{ // minimal predicate that returns false
-				CreateFunc:  func(_ event.CreateEvent) bool { return false },
-				UpdateFunc:  func(_ event.UpdateEvent) bool { return false },
-				DeleteFunc:  func(_ event.DeleteEvent) bool { return false },
-				GenericFunc: func(_ event.GenericEvent) bool { return false },
-			}), // never trigger reconciliation
-		).
 		// Watch the specific ConfigMap to trigger global reconcile
 		Watches(
 			&corev1.ConfigMap{},
