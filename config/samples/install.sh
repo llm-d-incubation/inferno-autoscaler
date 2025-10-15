@@ -133,13 +133,19 @@ metadata:
     control-plane: controller-manager
 EOF
 
+kubectl apply -f "${WVA_CHARTS_DIR}"/crds/llmd.ai_variantautoscalings.yaml
+
 execute helm upgrade -i workload-variant-autoscaler "${WVA_CHARTS_DIR}" \
     -n "${WVA_NAMESPACE}" \
-    -f "${WVA_VALUES_FILE}"
-execute helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
-execute helm repo update
-execute helm upgrade -i prometheus-adapter prometheus-community/prometheus-adapter \
-    -n "${PROM_MONITORING_NAMESPACE}" \
-    -f "${PROMETHUS_VALUES_FILE}"
+    -f "${WVA_VALUES_FILE}" \
+    --skip-crds
+
+if [[ ${WVA_ENABLED} == "true" ]]; then
+    execute helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
+    execute helm repo update
+    execute helm upgrade -i prometheus-adapter prometheus-community/prometheus-adapter \
+        -n "${PROM_MONITORING_NAMESPACE}" \
+        -f "${PROMETHUS_VALUES_FILE}"
+fi
 
 exit 0
