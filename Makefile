@@ -12,6 +12,8 @@ LLMD_NAMESPACE       ?= llm-d-inference-scheduling
 GATEWAY_NAME         ?= infra-inference-scheduling-inference-gateway
 MODEL_ID             ?= unsloth/Meta-Llama-3.1-8B
 DEPLOYMENT           ?= ms-inference-scheduling-llm-d-modelservice-decode
+REQUEST_RATE         ?=20
+NUM_PROMPTS          ?=3000
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -157,6 +159,8 @@ test-e2e-openshift: ## Run the e2e tests on OpenShift. Requires KUBECONFIG and p
 	GATEWAY_NAME=$(GATEWAY_NAME) \
 	MODEL_ID=$(MODEL_ID) \
 	DEPLOYMENT=$(DEPLOYMENT) \
+	REQUEST_RATE=$(REQUEST_RATE) \
+	NUM_PROMPTS=$(NUM_PROMPTS) \
 	KUBECONFIG=$(KUBECONFIG) \
 	go test ./test/e2e-openshift/ -timeout 30m -v -ginkgo.v $(FOCUS_ARGS) $(SKIP_ARGS)
 

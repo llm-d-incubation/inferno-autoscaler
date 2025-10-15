@@ -103,13 +103,51 @@ The `sharegpt_scaleup_test.go` test performs the following steps:
 
 ### Run All OpenShift E2E Tests
 
+##### Default Arguments:
+
+
+```bash
+CONTROLLER_NAMESPACE = workload-variant-autoscaler-system
+MONITORING_NAMESPACE = openshift-user-workload-monitoring
+LLMD_NAMESPACE       = llm-d-inference-scheduling
+GATEWAY_NAME         = infra-inference-scheduling-inference-gateway
+MODEL_ID             = unsloth/Meta-Llama-3.1-8B
+DEPLOYMENT           = ms-inference-scheduling-llm-d-modelservice-decode
+REQUEST_RATE         =20
+NUM_PROMPTS          =3000
+```
+
+
+#### Example 1: Using Default Arguments
+
+
 ```bash
 make test-e2e-openshift
 ```
 
-or
 
+#### Example 2: Using Custom Arguments
 ```bash
+make test-e2e-openshift \
+LLMD_NAMESPACE=llmd-stack \
+DEPLOYMENT=unsloth--00171c6f-a-3-1-8b-decode \
+GATEWAY_NAME=infra-llmd-inference-gateway \
+REQUEST_RATE=20 \
+NUM_PROMPTS=3000
+```
+
+#### Example 3: Using GO Directly Using Default Arguments
+```bash
+go test ./test/e2e-openshift/... -v -ginkgo.v -timeout 30m
+```
+
+#### Example 4: Using GO Directly Using Custom Arguments
+```bash
+export LLMD_NAMESPACE=llmd-stack
+export DEPLOYMENT=unsloth--00171c6f-a-3-1-8b-decode
+export GATEWAY_NAME=infra-llmd-inference-gateway
+export REQUEST_RATE=8
+export NUM_PROMPTS=2000
 go test ./test/e2e-openshift/... -v -ginkgo.v -timeout 30m
 ```
 
@@ -126,21 +164,24 @@ go test ./test/e2e-openshift/... -v -ginkgo.v -timeout 45m
 
 ## Test Parameters
 
-You can modify the load generation parameters in `sharegpt_scaleup_test.go`:
+By using the environment variables `REQUEST_RATE` and `NUM_PROMPTS` to modify the load generation.
+
+- `REQUEST_RATE` is the number of requests per second (r/s)
+- `NUM_PROMPTS` is the number of prompts to process
+
+So for example, if there are 3000 prompts and 20 requests per second, then 20 prompts will be requested per second.
+
+Under the covers, the function `createSharedGPTJob` will use the provided variables to generate load.
 
 ```go
-job := createShareGPTJob(jobName, llmDNamespace, 20, 3000)
-//                                               ^^  ^^^^
-//                                               |    |
-//                                               |    +--- Number of prompts
-//                                               +-------- Request rate (req/s)
+job := createShareGPTJob(jobName, llmDNamespace, numRequests, numPrompts)
 ```
 
 ### Recommended Parameters
 
-- **Light load** (should stay at 1 replica): `requestRate: 8, numPrompts: 2000`
-- **Medium load** (should scale to 2 replicas): `requestRate: 20, numPrompts: 3000`
-- **Heavy load** (may scale to 3+ replicas): `requestRate: 40, numPrompts: 5000`
+- **Light load** (should stay at 1 replica): `REQUEST_RATE=8, NUM_PROMPTS=2000`
+- **Medium load** (should scale to 2 replicas): `REQUEST_RATE=20, NUM_PROMPTS=3000`
+- **Heavy load** (may scale to 3+ replicas): `REQUEST_RATE=40, NUM_PROMPTS=5000`
 
 ## Expected Results
 
