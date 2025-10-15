@@ -2,6 +2,26 @@
 1. Before running, be sure to delete all previous helm installations for workload-variant-scheduler and prometheus-adapter.
 2. llm-d must be installed for WVA to do it's magic. If you plan on installing llm-d with these instructions, please be sure to remove any other helm installation of llm-d before proceeding.
 
+#### Sample Automation
+
+We have thrown together a basic `install.sh` script that should aid in generating and applying the `values.yaml` file for deploying WVA. Here is an example usage of that script. There are many configurable options that you
+should inspect inside of the `install.sh` found within `config/samples`.
+
+```
+#!/usr/bin/env bash
+
+export LLMD_NAMESPACE="vezio-wva-test"
+export LLMD_MODEL_NAME="unsloth--00171c6f-a-3-1-8b"
+export VA_ACCELERATOR="H100"
+export VLLM_NODE_PORT=30001
+
+kubectl get secret thanos-querier-tls -n openshift-monitoring -o jsonpath='{.data.tls\.crt}' > /tmp/prometheus-ca.crt
+export PROM_CA_CERT=$(< /tmp/prometheus-ca.crt)
+
+./config/samples/install.sh
+```
+
+
 #### NOTE: to view which helm charts you already have installed in your cluster, use:
 ```
 helm ls -A
