@@ -7,6 +7,11 @@ if ! command -v helm >/dev/null 2>&1; then
     exit 1
 fi
 
+if ! command -v kubectl >/dev/null 2>&1; then
+    echo "Kubectl is not installed. https://kubernetes.io/docs/reference/kubectl/" >&2
+    exit 1
+fi
+
 DRY_RUN=${DRY_RUN:-"false"}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -117,6 +122,16 @@ function execute() {
         exit 1
     fi
 }
+
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ${WVA_NAMESPACE}
+  labels:
+    app.kubernetes.io/name: workload-variant-autoscaler
+    control-plane: controller-manager
+EOF
 
 execute helm upgrade -i workload-variant-autoscaler "${WVA_CHARTS_DIR}" \
     -n "${WVA_NAMESPACE}" \
