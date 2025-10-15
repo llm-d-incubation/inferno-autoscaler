@@ -1,3 +1,4 @@
+{{- if .Values.wva.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -29,3 +30,4 @@ data:
     "device": "NVIDIA-L40S",
     "cost": "32.00"
     }
+{{- end }}

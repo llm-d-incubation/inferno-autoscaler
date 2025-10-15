@@ -1,3 +1,4 @@
+{{- if .Values.wva.enabled }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -5,7 +6,7 @@ metadata:
     app.kubernetes.io/name: workload-variant-autoscaler
     control-plane: controller-manager
   name: workload-variant-autoscaler-controller-manager-metrics-monitor
-  namespace: {{ .Values.wva.monitoringNamespace }}
+  namespace: {{ .Values.wva.prometheus.monitoringNamespace }}
 spec:
   endpoints:
   - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
@@ -22,3 +23,4 @@ spec:
     matchLabels:
       app.kubernetes.io/name: workload-variant-autoscaler
       control-plane: controller-manager
+{{- end }}

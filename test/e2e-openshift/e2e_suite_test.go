@@ -38,16 +38,13 @@ import (
 	v1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
 )
 
-const (
-	controllerNamespace = "workload-variant-autoscaler-system"
-	monitoringNamespace = "openshift-user-workload-monitoring"
-	llmDNamespace       = "llm-d-inference-scheduling"
-	gatewayName         = "infra-inference-scheduling-inference-gateway"
-)
-
-const (
-	modelID    = "unsloth/Meta-Llama-3.1-8B"
-	deployment = "ms-inference-scheduling-llm-d-modelservice-decode"
+var (
+	controllerNamespace = getEnv("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")
+	monitoringNamespace = getEnv("MONITORING_NAMESPACE", "openshift-user-workload-monitoring")
+	llmDNamespace       = getEnv("LLMD_NAMESPACE", "vezio-wva-test")
+	gatewayName         = getEnv("GATEWAY_NAME", "infra-llmdbench-inference-gateway")
+	modelID             = getEnv("MODEL_ID", "unsloth/Meta-Llama-3.1-8B")
+	deployment          = getEnv("DEPLOYMENT", "unsloth--00171c6f-a-3-1-8b-decode")
 )
 
 var (
@@ -59,6 +56,13 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(v1alpha1.AddToScheme(scheme))
+}
+
+func getEnv(key, fallback string) string {
+	if val := os.Getenv(key); val != "" {
+		return val
+	}
+	return fallback
 }
 
 // TestE2EOpenShift runs the end-to-end (e2e) test suite for OpenShift deployments.
@@ -104,6 +108,14 @@ var _ = BeforeSuite(func() {
 	}
 
 	initializeK8sClient()
+
+	_, _ = fmt.Fprintf(GinkgoWriter, "Using environment variables:\n")
+	_, _ = fmt.Fprintf(GinkgoWriter, "CONTROLLER_NAMESPACE=%s\n", controllerNamespace)
+	_, _ = fmt.Fprintf(GinkgoWriter, "MONITORING_NAMESPACE=%s\n", monitoringNamespace)
+	_, _ = fmt.Fprintf(GinkgoWriter, "LLMD_NAMESPACE=%s\n", llmDNamespace)
+	_, _ = fmt.Fprintf(GinkgoWriter, "GATEWAY_NAME=%s\n", gatewayName)
+	_, _ = fmt.Fprintf(GinkgoWriter, "MODEL_ID=%s\n", modelID)
+	_, _ = fmt.Fprintf(GinkgoWriter, "DEPLOYMENT=%s\n", deployment)
 
 	ctx := context.Background()
 

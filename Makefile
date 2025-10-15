@@ -6,6 +6,13 @@ KIND_ARGS ?= -t mix -n 3 -g 2   # Default: 3 nodes, 2 GPUs per node, mixed vendo
 KUBECONFIG ?= $(HOME)/.kube/config
 K8S_VERSION ?= v1.32.0
 
+CONTROLLER_NAMESPACE ?= workload-variant-autoscaler-system
+MONITORING_NAMESPACE ?= openshift-user-workload-monitoring
+LLMD_NAMESPACE       ?= llm-d-inference-scheduling
+GATEWAY_NAME         ?= infra-inference-scheduling-inference-gateway
+MODEL_ID             ?= unsloth/Meta-Llama-3.1-8B
+DEPLOYMENT           ?= ms-inference-scheduling-llm-d-modelservice-decode
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -140,9 +147,18 @@ test-e2e-openshift: ## Run the e2e tests on OpenShift. Requires KUBECONFIG and p
 		echo "Error: KUBECONFIG is not set"; \
 		exit 1; \
 	fi
+
 	$(eval FOCUS_ARGS := $(if $(FOCUS),-ginkgo.focus="$(FOCUS)",))
 	$(eval SKIP_ARGS := $(if $(SKIP),-ginkgo.skip="$(SKIP)",))
-	export KUBECONFIG=$(KUBECONFIG) && go test ./test/e2e-openshift/ -timeout 30m -v -ginkgo.v $(FOCUS_ARGS) $(SKIP_ARGS)
+
+	CONTROLLER_NAMESPACE=$(CONTROLLER_NAMESPACE) \
+	MONITORING_NAMESPACE=$(MONITORING_NAMESPACE) \
+	LLMD_NAMESPACE=$(LLMD_NAMESPACE) \
+	GATEWAY_NAME=$(GATEWAY_NAME) \
+	MODEL_ID=$(MODEL_ID) \
+	DEPLOYMENT=$(DEPLOYMENT) \
+	KUBECONFIG=$(KUBECONFIG) \
+	go test ./test/e2e-openshift/ -timeout 30m -v -ginkgo.v $(FOCUS_ARGS) $(SKIP_ARGS)
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter

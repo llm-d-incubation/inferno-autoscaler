@@ -4,7 +4,7 @@
 # Grants read-only access to llmd.llm-d.ai resources.
 # This role is intended for users who need visibility into these resources
 # without permissions to modify them. It is ideal for monitoring purposes and limited-access viewing.
-
+{{- if .Values.wva.enabled }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -26,3 +26,4 @@ rules:
   - variantautoscalings/status
   verbs:
   - get
+{{- end }}
