@@ -12,8 +12,8 @@ spec:
           image: {{ .Values.guidellm.image }}
           args:
             - benchmark
-            - --target=http://infra-inference-scheduling-inference-gateway:80
-            - --rate-type=constant
+            - --target={{ .Values.guidellm.target | quote }}
+            - --rate-type{{ .Values.guidellm.rateType | quote }}
             - --rate={{ .Values.guidellm.rate | quote }}
             - --max-seconds={{ .Values.guidellm.maxSeconds | quote }}
             - --model={{ .Values.variantAutoscaling.modelID | quote }}
