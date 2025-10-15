@@ -8,7 +8,7 @@ if ! command -v helm >/dev/null 2>&1; then
 fi
 
 if ! command -v kubectl >/dev/null 2>&1; then
-    echo "Kubectl is not installed. https://kubernetes.io/docs/reference/kubectl/" >&2
+    echo "Kubectl is not installed. Please install it from https://kubernetes.io/docs/reference/kubectl/" >&2
     exit 1
 fi
 
@@ -46,7 +46,7 @@ LLMD_MODEL_ID=${LLMD_MODEL_ID:-"unsloth/Meta-Llama-3.1-8B"}
 # --- Variant Autoscaling ---
 VA_ENABLED=${VA_ENABLED:-true}
 VA_ACCELERATOR=${VA_ACCELERATOR:-"L40S"}
-VA_SLO_TPOT=${VA_SLO_TPOT:-9}
+VA_SLO_TPOT=${VA_SLO_TPOT:-30}
 VA_SLO_TTFT=${VA_SLO_TTFT:-1000}
 
 # --- HPA ---

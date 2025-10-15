@@ -42,10 +42,10 @@ import (
 var (
 	controllerNamespace = getEnvString("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")
 	monitoringNamespace = getEnvString("MONITORING_NAMESPACE", "openshift-user-workload-monitoring")
-	llmDNamespace       = getEnvString("LLMD_NAMESPACE", "vezio-wva-test")
-	gatewayName         = getEnvString("GATEWAY_NAME", "infra-llmdbench-inference-gateway")
+	llmDNamespace       = getEnvString("LLMD_NAMESPACE", "llm-d-inference-scheduling")
+	gatewayName         = getEnvString("GATEWAY_NAME", "infra-inference-scheduling-inference-gateway")
 	modelID             = getEnvString("MODEL_ID", "unsloth/Meta-Llama-3.1-8B")
-	deployment          = getEnvString("DEPLOYMENT", "unsloth--00171c6f-a-3-1-8b-decode")
+	deployment          = getEnvString("DEPLOYMENT", "ms-inference-scheduling-llm-d-modelservice-decode")
 	requestRate         = getEnvInt("REQUEST_RATE", 20)
 	numPrompts          = getEnvInt("NUM_PROMPTS", 3000)
 )
