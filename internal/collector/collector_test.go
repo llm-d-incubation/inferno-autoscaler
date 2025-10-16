@@ -280,17 +280,21 @@ var _ = Describe("Collector", func() {
 		It("should collect metrics successfully", func() {
 			// Setup mock responses
 			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
-			tokenQuery := utils.CreateTokenQuery(modelID, testNamespace)
-			waitQuery := utils.CreateWaitQuery(modelID, testNamespace)
+			avgPromptToksQuery := utils.CreatePromptToksQuery(modelID, testNamespace)
+			avgDecToksQuery := utils.CreateDecToksQuery(modelID, testNamespace)
+			ttftQuery := utils.CreateTTFTQuery(modelID, testNamespace)
 			itlQuery := utils.CreateITLQuery(modelID, testNamespace)
 
 			mockProm.QueryResults[arrivalQuery] = model.Vector{
-				&model.Sample{Value: model.SampleValue(10.5)}, // 10.5 requests/min
+				&model.Sample{Value: model.SampleValue(0.175)}, // 0.175 req/sec = 10.5 req/min after * 60
 			}
-			mockProm.QueryResults[tokenQuery] = model.Vector{
-				&model.Sample{Value: model.SampleValue(150.0)}, // 150 tokens per request
+			mockProm.QueryResults[avgPromptToksQuery] = model.Vector{
+				&model.Sample{Value: model.SampleValue(100.0)}, // 100 input tokens per request
 			}
-			mockProm.QueryResults[waitQuery] = model.Vector{
+			mockProm.QueryResults[avgDecToksQuery] = model.Vector{
+				&model.Sample{Value: model.SampleValue(150.0)}, // 150 output tokens per request
+			}
+			mockProm.QueryResults[ttftQuery] = model.Vector{
 				&model.Sample{Value: model.SampleValue(0.5)}, // 0.5 seconds
 			}
 			mockProm.QueryResults[itlQuery] = model.Vector{
@@ -307,7 +311,8 @@ var _ = Describe("Collector", func() {
 			Expect(allocation.TTFTAverage).To(Equal("500.00"))          // 0.5 * 1000 ms
 			Expect(allocation.ITLAverage).To(Equal("50.00"))            // 0.05 * 1000 ms
 			Expect(allocation.Load.ArrivalRate).To(Equal("10.50"))      // req per min
-			Expect(allocation.Load.AvgOutputTokens).To(Equal("150.00")) // tokens per req
+			Expect(allocation.Load.AvgInputTokens).To(Equal("100.00"))  // input tokens per req
+			Expect(allocation.Load.AvgOutputTokens).To(Equal("150.00")) // output tokens per req
 		})
 
 		It("should handle missing accelerator label", func() {
@@ -316,7 +321,7 @@ var _ = Describe("Collector", func() {
 
 			// Setup minimal mock responses
 			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
-			tokenQuery := utils.CreateTokenQuery(modelID, testNamespace)
+			tokenQuery := utils.CreateDecToksQuery(modelID, testNamespace)
 
 			mockProm.QueryResults[arrivalQuery] = model.Vector{
 				&model.Sample{Value: model.SampleValue(5.0)},
@@ -346,7 +351,7 @@ var _ = Describe("Collector", func() {
 		It("should handle empty metric results gracefully", func() {
 			// Setup empty responses (no data points)
 			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
-			tokenQuery := utils.CreateTokenQuery(modelID, testNamespace)
+			tokenQuery := utils.CreateDecToksQuery(modelID, testNamespace)
 
 			// Empty vectors (no data)
 			mockProm.QueryResults[arrivalQuery] = model.Vector{}

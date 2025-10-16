@@ -12,15 +12,19 @@ import (
 
 // The following utility functions are used to create Prometheus queries for testing
 func CreateArrivalQuery(modelID, namespace string) string {
-	return `sum(rate(vllm:request_success_total{model_name="` + modelID + `",namespace="` + namespace + `"}[1m])) * 60`
+	return `sum(rate(vllm:request_success_total{model_name="` + modelID + `",namespace="` + namespace + `"}[1m]))`
 }
 
-func CreateTokenQuery(modelID, namespace string) string {
+func CreatePromptToksQuery(modelID, namespace string) string {
+	return `sum(rate(vllm:request_prompt_tokens_sum{model_name="` + modelID + `",namespace="` + namespace + `"}[1m]))/sum(rate(vllm:request_prompt_tokens_count{model_name="` + modelID + `",namespace="` + namespace + `"}[1m]))`
+}
+
+func CreateDecToksQuery(modelID, namespace string) string {
 	return `sum(rate(vllm:request_generation_tokens_sum{model_name="` + modelID + `",namespace="` + namespace + `"}[1m]))/sum(rate(vllm:request_generation_tokens_count{model_name="` + modelID + `",namespace="` + namespace + `"}[1m]))`
 }
 
-func CreateWaitQuery(modelID, namespace string) string {
-	return `sum(rate(vllm:request_queue_time_seconds_sum{model_name="` + modelID + `",namespace="` + namespace + `"}[1m]))/sum(rate(vllm:request_queue_time_seconds_count{model_name="` + modelID + `",namespace="` + namespace + `"}[1m]))`
+func CreateTTFTQuery(modelID, namespace string) string {
+	return `sum(rate(vllm:time_to_first_token_seconds_sum{model_name="` + modelID + `",namespace="` + namespace + `"}[1m]))/sum(rate(vllm:time_to_first_token_seconds_count{model_name="` + modelID + `",namespace="` + namespace + `"}[1m]))`
 }
 
 func CreateITLQuery(modelID, namespace string) string {
@@ -96,6 +100,7 @@ func CreateVariantAutoscalingConfigMap(cmName, controllerNamespace string) *core
 			"GLOBAL_OPT_INTERVAL": "60s",
 			"GLOBAL_OPT_TRIGGER":  "false",
 			"WVA_SCALE_TO_ZERO":   "false",
+			"DISABLING_TTFT":      "false", // TODO: this will be removed in future releases once llm-d-sim supports TTFT metrics
 		},
 	}
 }
