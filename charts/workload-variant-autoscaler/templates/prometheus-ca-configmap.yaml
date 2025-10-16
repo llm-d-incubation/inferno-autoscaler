@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: prometheus-ca
-  namespace: {{ .Values.wva.monitoringNamespace }}
+  namespace: {{ .Values.wva.prometheus.monitoringNamespacee }}
 data:
   ca.crt: |
-{{ .Values.prometheus.caCert | indent 4 }}
+{{ .Values.wva.prometheus.caCert | b64dec | indent 4 }}

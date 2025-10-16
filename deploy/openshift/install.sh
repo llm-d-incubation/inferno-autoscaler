@@ -42,8 +42,12 @@ WVA_IMAGE_REPO=${WVA_IMAGE_REPO:-"ghcr.io/llm-d/workload-variant-autoscaler"}
 WVA_IMAGE_TAG=${WVA_IMAGE_TAG:-"v0.0.1"}
 LLM_D_OWNER=${LLM_D_OWNER:-"llm-d"}
 LLM_D_RELEASE=${LLM_D_RELEASE:-"v0.3.0"}
+LLM_D_MODELSERVICE_NAME=${LLM_D_MODELSERVICE_NAME:-"ms-$WELL_LIT_PATH_NAME-llm-d-modelservice-decode"}
 PREREQ_DIR=${PREREQ_DIR:-"$WVA_PROJECT/$LLM_D_PROJECT/guides/prereq"}
 EXAMPLE_DIR=${EXAMPLE_DIR:-"$WVA_PROJECT/$LLM_D_PROJECT/guides/$WELL_LIT_PATH_NAME"}
+PROM_CA_CERT_PATH=${PROM_CA_CERT_PATH:-"/tmp/prometheus-ca.crt"}
+VLLM_SVC_ENABLED=${VLLM_SVC_ENABLED:-"true"}
+VLLM_SVC_NODEPORT=${VLLM_SVC_NODEPORT:-30000}
 DEFAULT_MODEL_ID=${DEFAULT_MODEL_ID:-"Qwen/Qwen3-0.6B"}
 MODEL_ID=${MODEL_ID:-"unsloth/Meta-Llama-3.1-8B"}
 ACCELERATOR_TYPE=${ACCELERATOR_TYPE:-"H100"}
@@ -187,8 +191,9 @@ deploy_wva_controller() {
 
     # Extract Thanos TLS certificate
     log_info "Extracting Thanos TLS certificate"
-    kubectl get secret thanos-querier-tls -n openshift-monitoring -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/prometheus-ca.crt
-    
+    kubectl get secret thanos-querier-tls -n openshift-monitoring -o jsonpath='{.data.tls\.crt}' > ${PROM_CA_CERT_PATH}
+    PROM_CA_CERT=$(< ${PROM_CA_CERT_PATH})
+
     # Update Prometheus URL in configmap
     log_info "Updating Prometheus URL in config/manager/configmap.yaml"
     sed -i.bak "s|PROMETHEUS_BASE_URL:.*|PROMETHEUS_BASE_URL: \"$THANOS_URL\"|" config/manager/configmap.yaml
@@ -201,13 +206,13 @@ deploy_wva_controller() {
     # TODO: update to use Helm repo
     helm upgrade -i workload-variant-autoscaler ./workload-variant-autoscaler \
     -n $WVA_NS \
-    --set-file prometheus.caCert=/tmp/prometheus-ca.crt \
+    --set wva.prometheus.caCert=${PROM_CA_CERT} \
     --set wva.image.repository=$WVA_IMAGE_REPO \
     --set wva.image.tag=$WVA_IMAGE_TAG \
-    --set variantAutoscaling.accelerator=$ACCELERATOR_TYPE \
-    --set variantAutoscaling.modelID=$MODEL_ID \
-    --set variantAutoscaling.sloTpot=$SLO_TPOT \
-    --set variantAutoscaling.sloTtft=$SLO_TTFT \
+    --set va.accelerator=$ACCELERATOR_TYPE \
+    --set llmd.modelID=$MODEL_ID \
+    --set va.sloTpot=$SLO_TPOT \
+    --set va.sloTtft=$SLO_TTFT \
     --set vllmService.enabled=true \
     --set vllmService.nodePort=30000
 
@@ -307,7 +312,7 @@ deploy_prometheus_adapter() {
     
     # Create CA ConfigMap on Thanos TLS certificate
     kubectl create configmap prometheus-ca \
-        --from-file=ca.crt=/tmp/prometheus-ca.crt \
+        --from-file=ca.crt=$PROM_CA_CERT_PATH \
         -n $MONITORING_NAMESPACE \
         --dry-run=client -o yaml | kubectl apply -f -
     
@@ -412,7 +417,7 @@ YAML
     fi
     
     # TODO: update to parametrize deployment name
-    kubectl patch deployment ms-$WELL_LIT_PATH_NAME-llm-d-modelservice-decode \
+    kubectl patch deployment $LLM_D_MODELSERVICE_NAME \
         -n $LLMD_NS \
         --patch-file config/samples/probes-patch.yaml
     
@@ -435,8 +440,7 @@ verify_deployment() {
     
     # Check llm-d pods
     log_info "Checking llm-d infrastructure..."
-    # TODO: update to parametrize deployment name
-    if kubectl get deployment ms-$WELL_LIT_PATH_NAME-llm-d-modelservice-decode -n $LLMD_NS &> /dev/null; then
+    if kubectl get deployment $LLM_D_MODELSERVICE_NAME -n $LLMD_NS &> /dev/null; then
         log_success "vLLM deployment exists"
     else
         log_error "vLLM deployment not found"
@@ -454,8 +458,7 @@ verify_deployment() {
     
     # Check VariantAutoscaling
     log_info "Checking VariantAutoscaling resource..."
-    # TODO: update to parametrize deployment name
-    if kubectl get variantautoscaling ms-$WELL_LIT_PATH_NAME-llm-d-modelservice-decode -n $LLMD_NS &> /dev/null; then
+    if kubectl get variantautoscaling $LLM_D_MODELSERVICE_NAME -n $LLMD_NS &> /dev/null; then
         log_success "VariantAutoscaling resource exists"
     else
         log_error "VariantAutoscaling resource not found"

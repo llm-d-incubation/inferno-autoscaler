@@ -1,18 +1,18 @@
-{{- if .Values.wva.va.enabled }}
+{{- if .Values.va.enabled }}
 apiVersion: llmd.ai/v1alpha1
 # Optimizing a variant, create only when the model is deployed and serving traffic
 # this is for the collector the collect existing (previous) running metrics of the variant.
 kind: VariantAutoscaling
 metadata:
   # Unique name of the variant
-  name: {{ printf "%s-decode" .Values.wva.modelName }}
+  name: {{ printf "%s-decode" .Values.llmd.modelName }}
   namespace: {{ .Values.llmd.namespace }}
   labels:
-    inference.optimization/acceleratorName: {{ .Values.variantAutoscaling.accelerator }}
+    inference.optimization/acceleratorName: {{ .Values.va.accelerator }}
 # This is essentially static input to the optimizer
 spec:
   # OpenAI API compatible name of the model
-  modelID: {{ .Values.variantAutoscaling.modelID | quote }}
+  modelID: {{ .Values.llmd.modelID | quote }}
   # Add SLOs in configmap, add reference to this per model data
   # to avoid duplication and Move to ISOs when available
   sloClassRef:
