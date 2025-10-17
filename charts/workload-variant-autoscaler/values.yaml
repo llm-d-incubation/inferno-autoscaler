@@ -3,6 +3,7 @@ wva:
   image:
     repository: ghcr.io/llm-d/workload-variant-autoscaler
     tag: v0.0.1
+  imagePullPolicy: Always
 
   replicaCount: 1
   modelName: ms-inference-scheduling-llm-d-modelservice

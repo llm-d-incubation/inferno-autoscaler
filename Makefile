@@ -117,7 +117,14 @@ deploy-wva-on-openshift: manifests kustomize ## Deploy WVA to OpenShift cluster 
 .PHONY: undeploy-llm-d-wva-emulated-on-kind
 undeploy-llm-d-wva-emulated-on-kind:
 	@echo ">>> Undeploying llm-d and workload-variant-autoscaler"
-	deploy/kind-emulator/undeploy-llm-d.sh
+	export KIND=$(KIND) KUBECTL=$(KUBECTL) && \
+		deploy/kind-emulator/deploy-llm-d.sh --undeploy
+
+.PHONY: undeploy-llm-d-wva-emulated-on-kind-delete-cluster
+undeploy-llm-d-wva-emulated-on-kind-delete-cluster:
+	@echo ">>> Undeploying llm-d and workload-variant-autoscaler and deleting Kind cluster"
+	export KIND=$(KIND) KUBECTL=$(KUBECTL) && \
+		deploy/kind-emulator/deploy-llm-d.sh --undeploy --delete-cluster
 
 # Backwards compatibility aliases (deprecated - use wva targets above)
 .PHONY: deploy-inferno-emulated-on-kind

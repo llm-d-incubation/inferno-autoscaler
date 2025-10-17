@@ -7,7 +7,7 @@ Quick start guide for local development using Kind (Kubernetes in Docker) with e
 - Docker
 - Kind
 - kubectl
-- Helm (optional, but recommended)
+- Helm
 
 ## Quick Start
 
@@ -17,10 +17,11 @@ Deploy WVA with full llm-d infrastructure:
 
 ```bash
 # From project root
-make deploy-llm-d-inferno-emulated-on-kind
+make deploy-llm-d-wva-emulated-on-kind
 ```
 
 This creates:
+
 - Kind cluster with 3 nodes, emulated GPUs (mixed vendors)
 - WVA controller
 - llm-d infrastructure (simulation mode)
@@ -30,6 +31,7 @@ This creates:
 ### Step-by-Step Setup
 
 **1. Create Kind cluster:**
+
 ```bash
 make create-kind-cluster
 
@@ -41,11 +43,13 @@ make create-kind-cluster KIND_ARGS="-t mix -n 4 -g 2"
 ```
 
 **2. Deploy WVA only:**
+
 ```bash
 make deploy-wva-emulated-on-kind
 ```
 
 **3. Deploy with llm-d:**
+
 ```bash
 make deploy-llm-d-wva-emulated-on-kind
 ```
@@ -61,6 +65,7 @@ Creates Kind cluster with emulated GPU support.
 ```
 
 **Options:**
+
 - `-t`: Vendor type (nvidia|amd|intel|mix) - default: mix
 - `-n`: Number of nodes - default: 3
 - `-g`: GPUs per node - default: 2
@@ -114,32 +119,37 @@ nodes:
 ```
 
 GPUs are emulated using extended resources:
+
 - `nvidia.com/gpu`
 - `amd.com/gpu`
 - `intel.com/gpu`
 
 ## Testing Locally
 
-### 1. Access Services
+### 1. Access metrics, Services and Pods
 
 **Port-forward WVA metrics:**
+
 ```bash
 kubectl port-forward -n workload-variant-autoscaler-system \
   svc/workload-variant-autoscaler-controller-manager-metrics 8080:8080
 ```
 
 **Port-forward Prometheus:**
+
 ```bash
 kubectl port-forward -n workload-variant-autoscaler-monitoring \
   svc/prometheus-operated 9090:9090
 ```
 
 **Port-forward vLLM emulator:**
+
 ```bash
 kubectl port-forward -n llm-d-sim svc/vllme-service 8000:80
 ```
 
 **Port-forward Inference Gateway:**
+
 ```bash
 kubectl port-forward -n llm-d-sim svc/infra-sim-inference-gateway 8000:80
 ```
@@ -187,7 +197,7 @@ kubectl logs -n workload-variant-autoscaler-system \
 
 ```bash
 # Clean up and retry
-kind delete cluster --name kind-inferno-gpu-cluster
+kind delete cluster --name kind-wva-gpu-cluster
 make create-kind-cluster
 ```
 
@@ -228,20 +238,27 @@ kubectl get pods -n <namespace>
 
 1. **Make code changes**
 2. **Build new image:**
+
    ```bash
    make docker-build IMG=localhost:5000/wva:dev
    ```
+
 3. **Load image to Kind:**
+
    ```bash
    kind load docker-image localhost:5000/wva:dev --name kind-inferno-gpu-cluster
    ```
+
 4. **Update deployment:**
+
    ```bash
    kubectl set image deployment/workload-variant-autoscaler-controller-manager \
      -n workload-variant-autoscaler-system \
      manager=localhost:5000/wva:dev
    ```
+
 5. **Verify changes:**
+
    ```bash
    kubectl logs -n workload-variant-autoscaler-system \
      deployment/workload-variant-autoscaler-controller-manager -f
@@ -250,16 +267,19 @@ kubectl get pods -n <namespace>
 ## Clean Up
 
 **Remove deployments:**
+
 ```bash
-make undeploy-llm-d-inferno-emulated-on-kind
+make undeploy-llm-d-wva-emulated-on-kind
 ```
 
 **Destroy cluster:**
+
 ```bash
 make destroy-kind-cluster
 ```
 
 **Or use scripts directly:**
+
 ```bash
 ./undeploy-llm-d.sh
 ./teardown.sh
@@ -270,4 +290,3 @@ make destroy-kind-cluster
 - [Run E2E tests](../../docs/developer-guide/testing.md#e2e-tests)
 - [Development Guide](../../docs/developer-guide/development.md)
 - [Testing Guide](../../docs/developer-guide/testing.md)
-
