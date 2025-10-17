@@ -33,6 +33,8 @@ import (
 	v1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
 )
 
+var lowLoad = numPrompts <= 2000 && requestRate <= 8
+
 var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 	var (
 		ctx                  context.Context
@@ -94,7 +96,7 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 		time.Sleep(2 * time.Second)
 
 		By("creating ShareGPT load generation job")
-		job := createShareGPTJob(jobName, llmDNamespace, 20, 3000) // 20 req/s, 3000 prompts
+		job := createShareGPTJob(jobName, llmDNamespace, requestRate, numPrompts)
 		_, err := k8sClient.BatchV1().Jobs(llmDNamespace).Create(ctx, job, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred(), "Should be able to create load generation job")
 
@@ -136,8 +138,12 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 				scaledOptimized, initialOptimized, currentRateStr)
 
 			// Expect scale-up recommendation (more than initial)
-			g.Expect(scaledOptimized).To(BeNumerically(">", initialOptimized),
-				fmt.Sprintf("WVA should recommend more replicas under load (current: %d, initial: %d)", scaledOptimized, initialOptimized))
+			if !lowLoad {
+				g.Expect(scaledOptimized).To(BeNumerically(">", initialOptimized),
+					fmt.Sprintf("WVA should recommend more replicas under load (current: %d, initial: %d)", scaledOptimized, initialOptimized))
+			} else {
+				_, _ = fmt.Fprintf(GinkgoWriter, "Low load detected, skipping scale-up recommendation check\n")
+			}
 
 		}, 5*time.Minute, 10*time.Second).Should(Succeed())
 
@@ -154,22 +160,24 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 			g.Expect(hpa.Status.CurrentMetrics).NotTo(BeEmpty(), "HPA should have current metrics")
 
 			// The HPA should show a target value > 1 (indicating scale-up needed)
-			for _, metric := range hpa.Status.CurrentMetrics {
-				if metric.External != nil && metric.External.Metric.Name == "inferno_desired_replicas" {
-					currentValue := metric.External.Current.AverageValue
-					g.Expect(currentValue).NotTo(BeNil(), "Current metric value should not be nil")
+			if !lowLoad {
+				for _, metric := range hpa.Status.CurrentMetrics {
+					if metric.External != nil && metric.External.Metric.Name == "inferno_desired_replicas" {
+						currentValue := metric.External.Current.AverageValue
+						g.Expect(currentValue).NotTo(BeNil(), "Current metric value should not be nil")
 
-					currentReplicas := currentValue.AsApproximateFloat64()
-					_, _ = fmt.Fprintf(GinkgoWriter, "HPA current metric value: %.2f\n", currentReplicas)
-					g.Expect(currentReplicas).To(BeNumerically(">", float64(initialOptimized)),
-						"HPA should see increased replica recommendation")
+						currentReplicas := currentValue.AsApproximateFloat64()
+						_, _ = fmt.Fprintf(GinkgoWriter, "HPA current metric value: %.2f\n", currentReplicas)
+						g.Expect(currentReplicas).To(BeNumerically(">", float64(initialOptimized)),
+							"HPA should see increased replica recommendation")
+					}
 				}
+				// Check desired replicas
+				g.Expect(hpa.Status.DesiredReplicas).To(BeNumerically(">", initialReplicas),
+					fmt.Sprintf("HPA should desire more replicas (current: %d, initial: %d)", hpa.Status.DesiredReplicas, initialReplicas))
+			} else {
+				_, _ = fmt.Fprintf(GinkgoWriter, "Low load detected, skipping HPA scale-up check\n")
 			}
-
-			// Check desired replicas
-			g.Expect(hpa.Status.DesiredReplicas).To(BeNumerically(">", initialReplicas),
-				fmt.Sprintf("HPA should desire more replicas (current: %d, initial: %d)", hpa.Status.DesiredReplicas, initialReplicas))
-
 		}, 3*time.Minute, 10*time.Second).Should(Succeed())
 
 		_, _ = fmt.Fprintf(GinkgoWriter, "HPA triggered scale-up\n")
@@ -186,10 +194,16 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 				scaledReplicas, initialReplicas, scaledOptimized)
 
 			// Verify that deployment has scaled up
-			g.Expect(deploy.Status.Replicas).To(BeNumerically(">", initialReplicas),
-				"Deployment should have more total replicas")
-			g.Expect(scaledReplicas).To(BeNumerically(">=", scaledOptimized),
-				fmt.Sprintf("Deployment should have at least %d ready replicas to match optimizer recommendation", scaledOptimized))
+			if !lowLoad {
+				// Only expect scaling when load is high
+				g.Expect(deploy.Status.Replicas).To(BeNumerically(">", initialReplicas),
+					"Deployment should have more total replicas under high load")
+				g.Expect(scaledReplicas).To(BeNumerically(">=", scaledOptimized),
+					fmt.Sprintf("Deployment should have at least %d ready replicas to match optimizer recommendation", scaledOptimized))
+			} else {
+				// Under low load, scaling up is optional
+				_, _ = fmt.Fprintf(GinkgoWriter, "Low load detected, skipping scale-up check\n")
+			}
 
 		}, 10*time.Minute, 10*time.Second).Should(Succeed())
 
