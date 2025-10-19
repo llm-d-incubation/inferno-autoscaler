@@ -77,7 +77,7 @@ spec:
   modelID: "meta/llama-3.1-13b"
 
   # No enableScaleToZero specified - will use global WVA_SCALE_TO_ZERO setting
-  # No scaleToZeroPodRetentionPeriod specified - will scale down immediately when enabled
+  # No scaleToZeroPodRetentionPeriod specified - will use default 10-minute retention period when enabled
 
   sloClassRef:
     name: service-classes-config

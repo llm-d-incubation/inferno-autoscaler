@@ -97,9 +97,9 @@ func TestGetScaleToZeroRetentionPeriod(t *testing.T) {
 			expected: 30 * time.Second,
 		},
 		{
-			name:     "retention period not set",
+			name:     "retention period not set - uses default",
 			duration: nil,
-			expected: 0,
+			expected: 10 * time.Minute, // DefaultScaleToZeroRetentionPeriod
 		},
 	}
 

@@ -54,6 +54,13 @@ var (
 	}
 )
 
+const (
+	// DefaultScaleToZeroRetentionPeriod is the default time to wait after the last request
+	// before scaling down to zero replicas. This default applies when scale-to-zero is enabled
+	// but no explicit retention period is specified.
+	DefaultScaleToZeroRetentionPeriod = 10 * time.Minute
+)
+
 // IsScaleToZeroEnabled determines if scale-to-zero is enabled for a specific VariantAutoscaling.
 // It checks the per-model EnableScaleToZero field first, and falls back to the global
 // WVA_SCALE_TO_ZERO environment variable if the per-model setting is not specified.
@@ -70,13 +77,13 @@ func IsScaleToZeroEnabled(va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling)
 
 // GetScaleToZeroRetentionPeriod returns the pod retention period for scale-to-zero.
 // If the per-model ScaleToZeroPodRetentionPeriod is specified, it returns that duration.
-// Otherwise, it returns 0 (immediate scale-down).
+// Otherwise, it returns the DefaultScaleToZeroRetentionPeriod (10 minutes).
 // This period defines how long to wait after the last request before scaling to zero.
 func GetScaleToZeroRetentionPeriod(va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling) time.Duration {
 	if va.Spec.ScaleToZeroPodRetentionPeriod != nil {
 		return va.Spec.ScaleToZeroPodRetentionPeriod.Duration
 	}
-	return 0
+	return DefaultScaleToZeroRetentionPeriod
 }
 
 // GetMinNumReplicas returns the minimum number of replicas based on scale-to-zero configuration.

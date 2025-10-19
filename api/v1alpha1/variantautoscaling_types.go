@@ -29,7 +29,7 @@ type VariantAutoscalingSpec struct {
 	// before scaling down to zero replicas. This grace period helps avoid rapid scale-up/scale-down
 	// cycles for intermittent traffic patterns.
 	// The value must be a valid duration string (e.g., "5m", "1h", "30s").
-	// If not specified when EnableScaleToZero is true, defaults to immediate scale-down.
+	// If not specified when EnableScaleToZero is true, defaults to 10 minutes.
 	// This field is ignored when EnableScaleToZero is false.
 	// +optional
 	// +kubebuilder:validation:Type=string
