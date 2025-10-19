@@ -54,6 +54,40 @@ var (
 	}
 )
 
+// IsScaleToZeroEnabled determines if scale-to-zero is enabled for a specific VariantAutoscaling.
+// It checks the per-model EnableScaleToZero field first, and falls back to the global
+// WVA_SCALE_TO_ZERO environment variable if the per-model setting is not specified.
+// Returns true if scale-to-zero should be enabled for this variant.
+func IsScaleToZeroEnabled(va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling) bool {
+	// Check per-model setting first
+	if va.Spec.EnableScaleToZero != nil {
+		return *va.Spec.EnableScaleToZero
+	}
+
+	// Fall back to global environment variable
+	return strings.EqualFold(os.Getenv("WVA_SCALE_TO_ZERO"), "true")
+}
+
+// GetScaleToZeroRetentionPeriod returns the pod retention period for scale-to-zero.
+// If the per-model ScaleToZeroPodRetentionPeriod is specified, it returns that duration.
+// Otherwise, it returns 0 (immediate scale-down).
+// This period defines how long to wait after the last request before scaling to zero.
+func GetScaleToZeroRetentionPeriod(va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling) time.Duration {
+	if va.Spec.ScaleToZeroPodRetentionPeriod != nil {
+		return va.Spec.ScaleToZeroPodRetentionPeriod.Duration
+	}
+	return 0
+}
+
+// GetMinNumReplicas returns the minimum number of replicas based on scale-to-zero configuration.
+// Returns 0 if scale-to-zero is enabled, otherwise returns 1.
+func GetMinNumReplicas(va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling) int {
+	if IsScaleToZeroEnabled(va) {
+		return 0
+	}
+	return 1
+}
+
 // GetResourceWithBackoff performs a Get operation with exponential backoff retry logic
 func GetResourceWithBackoff[T client.Object](ctx context.Context, c client.Client, objKey client.ObjectKey, obj T, backoff wait.Backoff, resourceType string) error {
 	return wait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
@@ -279,10 +313,18 @@ func AddServerInfoToSystemData(
 	}
 
 	// all server data
-	minNumReplicas := 1 // scale to zero is disabled by default
-	if os.Getenv("WVA_SCALE_TO_ZERO") == "true" {
-		minNumReplicas = 0
+	// Determine minimum replicas based on per-model or global scale-to-zero configuration
+	minNumReplicas := GetMinNumReplicas(va)
+
+	// Get retention period (for future use in scale-to-zero logic)
+	retentionPeriod := GetScaleToZeroRetentionPeriod(va)
+	if retentionPeriod > 0 {
+		logger.Log.Debug("Scale-to-zero retention period configured",
+			"variant", va.Name,
+			"namespace", va.Namespace,
+			"retentionPeriod", retentionPeriod)
 	}
+
 	serverSpec := &infernoConfig.ServerSpec{
 		Name:            FullName(va.Name, va.Namespace),
 		Class:           className,

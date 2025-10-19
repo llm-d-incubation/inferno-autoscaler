@@ -63,6 +63,12 @@ spec:
             description: Spec defines the desired state for autoscaling the model
               variant.
             properties:
+              enableScaleToZero:
+                description: |-
+                  EnableScaleToZero enables scaling the model variant to zero replicas when there is no traffic.
+                  When enabled, the autoscaler can scale down to 0 replicas during periods of inactivity.
+                  If not specified, defaults to the global WVA_SCALE_TO_ZERO setting.
+                type: boolean
               modelID:
                 description: ModelID specifies the unique identifier of the model
                   to be autoscaled.
@@ -130,6 +136,16 @@ spec:
                 required:
                 - accelerators
                 type: object
+              scaleToZeroPodRetentionPeriod:
+                description: |-
+                  ScaleToZeroPodRetentionPeriod specifies how long to wait after the last request
+                  before scaling down to zero replicas. This grace period helps avoid rapid scale-up/scale-down
+                  cycles for intermittent traffic patterns.
+                  The value must be a valid duration string (e.g., "5m", "1h", "30s").
+                  If not specified when EnableScaleToZero is true, defaults to immediate scale-down.
+                  This field is ignored when EnableScaleToZero is false.
+                pattern: ^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
+                type: string
               sloClassRef:
                 description: SLOClassRef references the ConfigMap key containing Service
                   Level Objective (SLO) configuration.

@@ -220,6 +220,8 @@ _Appears in:_
 | `modelID` _string_ | ModelID specifies the unique identifier of the model to be autoscaled. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `sloClassRef` _[ConfigMapKeyRef](#configmapkeyref)_ | SLOClassRef references the ConfigMap key containing Service Level Objective (SLO) configuration. |  | Required: \{\} <br /> |
 | `modelProfile` _[ModelProfile](#modelprofile)_ | ModelProfile provides resource and performance characteristics for the model variant. |  | Required: \{\} <br /> |
+| `enableScaleToZero` _boolean_ | EnableScaleToZero enables scaling the model variant to zero replicas when there is no traffic.<br />When enabled, the autoscaler can scale down to 0 replicas during periods of inactivity.<br />If not specified, defaults to the global WVA_SCALE_TO_ZERO setting. |  |  |
+| `scaleToZeroPodRetentionPeriod` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.32/#duration-v1-meta)_ | ScaleToZeroPodRetentionPeriod specifies how long to wait after the last request<br />before scaling down to zero replicas. This grace period helps avoid rapid scale-up/scale-down<br />cycles for intermittent traffic patterns.<br />The value must be a valid duration string (e.g., "5m", "1h", "30s").<br />If not specified when EnableScaleToZero is true, defaults to immediate scale-down.<br />This field is ignored when EnableScaleToZero is false. |  | Pattern: `^([0-9]+(\.[0-9]+)?(ns\|us\|µs\|ms\|s\|m\|h))+$` <br />Type: string <br /> |
 
 
 #### VariantAutoscalingStatus
@@ -239,5 +241,6 @@ _Appears in:_
 | `currentAlloc` _[Allocation](#allocation)_ | CurrentAlloc specifies the current resource allocation for the variant. |  |  |
 | `desiredOptimizedAlloc` _[OptimizedAlloc](#optimizedalloc)_ | DesiredOptimizedAlloc indicates the target optimized allocation based on autoscaling logic. |  |  |
 | `actuation` _[ActuationStatus](#actuationstatus)_ | Actuation provides details about the actuation process and its current status. |  |  |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.32/#condition-v1-meta) array_ | Conditions represent the latest available observations of the VariantAutoscaling's state |  |  |
 
 

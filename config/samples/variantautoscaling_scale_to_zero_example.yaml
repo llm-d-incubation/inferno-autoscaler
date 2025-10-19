@@ -1,0 +1,97 @@
+apiVersion: llmd.ai/v1alpha1
+kind: VariantAutoscaling
+metadata:
+  name: llama-with-scale-to-zero
+  namespace: default
+  labels:
+    inference.optimization/acceleratorName: "A100"
+spec:
+  modelID: "meta/llama-3.1-8b"
+
+  # Enable scale-to-zero for this specific model
+  # This overrides the global WVA_SCALE_TO_ZERO setting
+  enableScaleToZero: true
+
+  # Wait 5 minutes after last request before scaling to zero
+  # This prevents rapid scale-up/down cycles for intermittent traffic
+  scaleToZeroPodRetentionPeriod: "5m"
+
+  sloClassRef:
+    name: service-classes-config
+    key: premium.yaml
+
+  modelProfile:
+    accelerators:
+      - acc: "A100"
+        accCount: 1
+        perfParms:
+          decodeParms:
+            alpha: "20.58"
+            beta: "0.41"
+          prefillParms:
+            gamma: "5.2"
+            delta: "0.1"
+        maxBatchSize: 4
+
+---
+apiVersion: llmd.ai/v1alpha1
+kind: VariantAutoscaling
+metadata:
+  name: llama-no-scale-to-zero
+  namespace: default
+  labels:
+    inference.optimization/acceleratorName: "L40S"
+spec:
+  modelID: "meta/llama-3.1-70b"
+
+  # Explicitly disable scale-to-zero for this model
+  # even if the global setting enables it
+  enableScaleToZero: false
+
+  sloClassRef:
+    name: service-classes-config
+    key: premium.yaml
+
+  modelProfile:
+    accelerators:
+      - acc: "L40S"
+        accCount: 1
+        perfParms:
+          decodeParms:
+            alpha: "18.5"
+            beta: "0.35"
+          prefillParms:
+            gamma: "4.8"
+            delta: "0.08"
+        maxBatchSize: 8
+
+---
+apiVersion: llmd.ai/v1alpha1
+kind: VariantAutoscaling
+metadata:
+  name: llama-use-global-setting
+  namespace: default
+  labels:
+    inference.optimization/acceleratorName: "A100"
+spec:
+  modelID: "meta/llama-3.1-13b"
+
+  # No enableScaleToZero specified - will use global WVA_SCALE_TO_ZERO setting
+  # No scaleToZeroPodRetentionPeriod specified - will scale down immediately when enabled
+
+  sloClassRef:
+    name: service-classes-config
+    key: premium.yaml
+
+  modelProfile:
+    accelerators:
+      - acc: "A100"
+        accCount: 1
+        perfParms:
+          decodeParms:
+            alpha: "20.0"
+            beta: "0.40"
+          prefillParms:
+            gamma: "5.0"
+            delta: "0.09"
+        maxBatchSize: 6
