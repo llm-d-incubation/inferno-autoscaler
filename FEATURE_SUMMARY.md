@@ -121,23 +121,7 @@ Priority from highest to lowest:
 ✅ go vet ./...       - No vet warnings
 ✅ golangci-lint run  - No linting errors
 ```
-
-### Integration Tests ⚠️
-
-**Note**: Integration tests requiring envtest (actuator, collector, controller, optimizer) cannot run on Windows without envtest setup. These tests require:
-- Kubernetes control plane binaries (etcd, kube-apiserver)
-- Setup via `make setup-envtest` in Linux/WSL environment
-
 **Our changes (utils) are fully tested via unit tests and don't require envtest.**
-
-### E2E Tests
-
-E2E tests (`make test-e2e`) require:
-- Kind cluster setup
-- Full deployment with emulated GPUs
-- WSL/Linux environment
-
-These should be run in CI/CD pipeline or Linux development environment.
 
 ## Code Quality & Best Practices
 
@@ -315,29 +299,6 @@ Based on CONTRIBUTING.md requirements:
   - ✅ Examples updated
 - ✅ No CRD schema changes (no `make crd-docs` needed)
 - ✅ ConfigMap watch added for automatic reconciliation
-- ⚠️ E2E tests require Kind setup (defer to CI/CD or Linux environment)
-
-## Next Steps for Full Validation
-
-To complete full testing in a proper development environment:
-
-1. **Setup envtest** (Linux/WSL):
-   ```bash
-   make setup-envtest
-   make test
-   ```
-
-2. **Run E2E tests** (requires Kind):
-   ```bash
-   make deploy-llm-d-wva-emulated-on-kind
-   make test-e2e
-   ```
-
-3. **Verify in real cluster**:
-   - Deploy ConfigMap with global defaults
-   - Create VariantAutoscaling resources
-   - Verify scale-to-zero behavior
-   - Test ConfigMap updates trigger reconciliation
 
 ## Summary
 
@@ -346,21 +307,3 @@ The scale-to-zero feature with global defaults support has been successfully imp
 The implementation is ready for:
 - ✅ Code review
 - ✅ Unit test verification
-- ⏳ E2E testing (requires Kind environment)
-- ⏳ Integration testing (requires full K8s environment)
-
-## Files Changed Summary
-
-- **Modified**: 4 core files (utils.go, controller.go, 2 test files)
-- **Created**: 1 test file, 1 feature doc
-- **Updated**: 4 documentation/example files
-- **Total**: 10 files
-- **Lines Added**: ~1500+
-- **Test Coverage**: 56 new test cases
-
----
-
-**Branch**: scale-to-zero-independent
-**Feature**: Per-model scale-to-zero with global defaults
-**Status**: Ready for review
-**Tests**: 56/56 unit tests passing ✅

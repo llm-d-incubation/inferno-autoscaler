@@ -614,6 +614,19 @@ func (r *VariantAutoscalingReconciler) readOptimizationConfig(ctx context.Contex
 	return interval, nil
 }
 
+// readScaleToZeroConfig reads per-model scale-to-zero configuration from a ConfigMap.
+//
+// ConfigMap Key Format Requirements:
+// Kubernetes ConfigMap keys must match the regex: [-._a-zA-Z0-9]+
+// Since model IDs typically contain '/' (e.g., "meta/llama-3.1-8b"), users MUST
+// replace '/' with '_' in ConfigMap keys.
+//
+// Examples:
+//   - Model ID: "meta/llama-3.1-8b"     → ConfigMap key: "meta_llama-3.1-8b"
+//   - Model ID: "mistralai/Mistral-7B"  → ConfigMap key: "mistralai_Mistral-7B"
+//
+// The function returns an empty map if the ConfigMap is not found (it's optional).
+// Invalid JSON entries are logged and skipped.
 func (r *VariantAutoscalingReconciler) readScaleToZeroConfig(ctx context.Context, cmName, cmNamespace string) (utils.ScaleToZeroConfigData, error) {
 	cm := corev1.ConfigMap{}
 	err := utils.GetConfigMapWithBackoff(ctx, r.Client, cmName, cmNamespace, &cm)
