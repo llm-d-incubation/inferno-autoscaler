@@ -763,7 +763,8 @@ data:
 			systemData := utils.CreateSystemData(accMap, serviceClassMap)
 			Expect(systemData).NotTo(BeNil(), "System data should not be nil")
 
-			updateList, vaMap, allAnalyzerResponses, err := controllerReconciler.prepareVariantAutoscalings(ctx, activeVAs, accMap, serviceClassMap, systemData)
+			scaleToZeroConfigData := make(utils.ScaleToZeroConfigData)
+			updateList, vaMap, allAnalyzerResponses, err := controllerReconciler.prepareVariantAutoscalings(ctx, activeVAs, accMap, serviceClassMap, systemData, scaleToZeroConfigData)
 
 			Expect(err).NotTo(HaveOccurred(), "prepareVariantAutoscalings should not return an error")
 			Expect(vaMap).NotTo(BeNil(), "VA map should not be nil")
@@ -813,8 +814,9 @@ data:
 
 			By("Preparing system data and calling prepareVariantAutoscalings")
 			systemData := utils.CreateSystemData(accMap, serviceClassMap)
+			scaleToZeroConfigData := make(utils.ScaleToZeroConfigData)
 
-			_, _, _, err = controllerReconciler.prepareVariantAutoscalings(ctx, activeVAs, accMap, serviceClassMap, systemData)
+			_, _, _, err = controllerReconciler.prepareVariantAutoscalings(ctx, activeVAs, accMap, serviceClassMap, systemData, scaleToZeroConfigData)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking that MetricsAvailable condition is set to False")
@@ -869,6 +871,201 @@ data:
 					}
 				}
 			}
+		})
+	})
+
+	Context("Scale-to-Zero ConfigMap Integration Tests", func() {
+		It("should read scale-to-zero ConfigMap successfully", func() {
+			By("Creating a scale-to-zero ConfigMap")
+			scaleToZeroConfigMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "model-scale-to-zero-config",
+					Namespace: configMapNamespace,
+				},
+				Data: map[string]string{
+					"meta/llama-3.1-8b": `{
+						"enableScaleToZero": true,
+						"retentionPeriod": "5m"
+					}`,
+					"meta/llama-3.1-70b": `{
+						"enableScaleToZero": false
+					}`,
+					"mistralai/Mistral-7B-v0.1": `{
+						"enableScaleToZero": true,
+						"retentionPeriod": "15m"
+					}`,
+				},
+			}
+			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())
+
+			By("Reading the scale-to-zero ConfigMap")
+			controllerReconciler := &VariantAutoscalingReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			configData, err := controllerReconciler.readScaleToZeroConfig(ctx, "model-scale-to-zero-config", configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(configData).NotTo(BeNil())
+
+			By("Verifying ConfigMap data was parsed correctly")
+			Expect(len(configData)).To(Equal(3))
+
+			// Check llama-3.1-8b config
+			config1, exists := configData["meta/llama-3.1-8b"]
+			Expect(exists).To(BeTrue())
+			Expect(config1.EnableScaleToZero).To(BeTrue())
+			Expect(config1.RetentionPeriod).To(Equal("5m"))
+
+			// Check llama-3.1-70b config
+			config2, exists := configData["meta/llama-3.1-70b"]
+			Expect(exists).To(BeTrue())
+			Expect(config2.EnableScaleToZero).To(BeFalse())
+			Expect(config2.RetentionPeriod).To(BeEmpty())
+
+			// Check Mistral config
+			config3, exists := configData["mistralai/Mistral-7B-v0.1"]
+			Expect(exists).To(BeTrue())
+			Expect(config3.EnableScaleToZero).To(BeTrue())
+			Expect(config3.RetentionPeriod).To(Equal("15m"))
+
+			By("Cleaning up ConfigMap")
+			Expect(k8sClient.Delete(ctx, scaleToZeroConfigMap)).To(Succeed())
+		})
+
+		It("should return empty config when ConfigMap does not exist", func() {
+			By("Reading non-existent scale-to-zero ConfigMap")
+			controllerReconciler := &VariantAutoscalingReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			configData, err := controllerReconciler.readScaleToZeroConfig(ctx, "non-existent-configmap", configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(configData).NotTo(BeNil())
+			Expect(len(configData)).To(Equal(0))
+		})
+
+		It("should skip invalid JSON entries in ConfigMap", func() {
+			By("Creating a ConfigMap with invalid JSON")
+			scaleToZeroConfigMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "model-scale-to-zero-config-invalid",
+					Namespace: configMapNamespace,
+				},
+				Data: map[string]string{
+					"meta/llama-3.1-8b": `{
+						"enableScaleToZero": true,
+						"retentionPeriod": "5m"
+					}`,
+					"meta/llama-3.1-70b": `invalid json`,
+					"mistralai/Mistral-7B-v0.1": `{
+						"enableScaleToZero": true,
+						"retentionPeriod": "15m"
+					}`,
+				},
+			}
+			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())
+
+			By("Reading the ConfigMap")
+			controllerReconciler := &VariantAutoscalingReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			configData, err := controllerReconciler.readScaleToZeroConfig(ctx, "model-scale-to-zero-config-invalid", configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying only valid entries were parsed")
+			Expect(len(configData)).To(Equal(2))
+
+			// Check valid entries exist
+			_, exists := configData["meta/llama-3.1-8b"]
+			Expect(exists).To(BeTrue())
+			_, exists = configData["mistralai/Mistral-7B-v0.1"]
+			Expect(exists).To(BeTrue())
+
+			// Check invalid entry was skipped
+			_, exists = configData["meta/llama-3.1-70b"]
+			Expect(exists).To(BeFalse())
+
+			By("Cleaning up ConfigMap")
+			Expect(k8sClient.Delete(ctx, scaleToZeroConfigMap)).To(Succeed())
+		})
+
+		It("should apply scale-to-zero config during prepareVariantAutoscalings", func() {
+			By("Creating required ConfigMaps")
+			scaleToZeroConfigMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "model-scale-to-zero-config-test",
+					Namespace: configMapNamespace,
+				},
+				Data: map[string]string{
+					"vllm:meta/llama-3.1-8b": `{
+						"enableScaleToZero": true,
+						"retentionPeriod": "5m"
+					}`,
+				},
+			}
+			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())
+
+			By("Reading ConfigMaps")
+			controllerReconciler := &VariantAutoscalingReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			accMap, err := controllerReconciler.readAcceleratorConfig(ctx, "accelerator-unit-costs", configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+
+			serviceClassMap, err := controllerReconciler.readServiceClassConfig(ctx, configMapName, configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+
+			scaleToZeroConfigData, err := controllerReconciler.readScaleToZeroConfig(ctx, "model-scale-to-zero-config-test", configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Listing VariantAutoscaling resources")
+			var variantAutoscalingList llmdVariantAutoscalingV1alpha1.VariantAutoscalingList
+			err = k8sClient.List(ctx, &variantAutoscalingList)
+			Expect(err).NotTo(HaveOccurred())
+
+			activeVAs := filterActiveVariantAutoscalings(variantAutoscalingList.Items)
+			if len(activeVAs) > 0 {
+				By("Creating system data")
+				systemData := utils.CreateSystemData(accMap, serviceClassMap)
+				Expect(systemData).NotTo(BeNil())
+
+				By("Calling prepareVariantAutoscalings with scale-to-zero config")
+				updateList, vaMap, _, err := controllerReconciler.prepareVariantAutoscalings(ctx, activeVAs, accMap, serviceClassMap, systemData, scaleToZeroConfigData)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(vaMap).NotTo(BeNil())
+				Expect(updateList).NotTo(BeNil())
+			}
+
+			By("Cleaning up ConfigMap")
+			Expect(k8sClient.Delete(ctx, scaleToZeroConfigMap)).To(Succeed())
+		})
+
+		It("should handle empty ConfigMap data", func() {
+			By("Creating an empty ConfigMap")
+			scaleToZeroConfigMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "model-scale-to-zero-config-empty",
+					Namespace: configMapNamespace,
+				},
+				Data: map[string]string{},
+			}
+			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())
+
+			By("Reading the empty ConfigMap")
+			controllerReconciler := &VariantAutoscalingReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			configData, err := controllerReconciler.readScaleToZeroConfig(ctx, "model-scale-to-zero-config-empty", configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(configData).NotTo(BeNil())
+			Expect(len(configData)).To(Equal(0))
+
+			By("Cleaning up ConfigMap")
+			Expect(k8sClient.Delete(ctx, scaleToZeroConfigMap)).To(Succeed())
 		})
 	})
 })

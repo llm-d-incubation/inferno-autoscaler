@@ -220,8 +220,38 @@ _Appears in:_
 | `modelID` _string_ | ModelID specifies the unique identifier of the model to be autoscaled. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `sloClassRef` _[ConfigMapKeyRef](#configmapkeyref)_ | SLOClassRef references the ConfigMap key containing Service Level Objective (SLO) configuration. |  | Required: \{\} <br /> |
 | `modelProfile` _[ModelProfile](#modelprofile)_ | ModelProfile provides resource and performance characteristics for the model variant. |  | Required: \{\} <br /> |
-| `enableScaleToZero` _boolean_ | EnableScaleToZero enables scaling the model variant to zero replicas when there is no traffic.<br />When enabled, the autoscaler can scale down to 0 replicas during periods of inactivity.<br />If not specified, defaults to the global WVA_SCALE_TO_ZERO setting. |  |  |
-| `scaleToZeroPodRetentionPeriod` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.32/#duration-v1-meta)_ | ScaleToZeroPodRetentionPeriod specifies how long to wait after the last request<br />before scaling down to zero replicas. This grace period helps avoid rapid scale-up/scale-down<br />cycles for intermittent traffic patterns.<br />The value must be a valid duration string (e.g., "5m", "1h", "30s").<br />If not specified when EnableScaleToZero is true, defaults to 10 minutes.<br />This field is ignored when EnableScaleToZero is false. |  | Pattern: `^([0-9]+(\.[0-9]+)?(ns\|us\|µs\|ms\|s\|m\|h))+$` <br />Type: string <br /> |
+
+**Scale-to-Zero Configuration:**
+
+Scale-to-zero configuration is managed per-model using a ConfigMap named `model-scale-to-zero-config` in the `workload-variant-autoscaler-system` namespace. This allows multiple variants with different accelerators for the same model to share the same scale-to-zero behavior.
+
+Configure scale-to-zero with the following structure:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: model-scale-to-zero-config
+  namespace: workload-variant-autoscaler-system
+data:
+  # Global defaults for all models (recommended)
+  "__defaults__": '{"enableScaleToZero": true, "retentionPeriod": "15m"}'
+
+  # Per-model overrides
+  "model-id": '{"enableScaleToZero": true, "retentionPeriod": "5m"}'
+```
+
+Configuration fields:
+- **enableScaleToZero** (boolean): Enables scale-to-zero for this model
+- **retentionPeriod** (string, optional): Duration to wait after the last request before scaling to zero (e.g., "5m", "1h", "30s"). Defaults to 10 minutes if not specified.
+
+Configuration priority (highest to lowest):
+1. Per-model configuration (specific modelID)
+2. Global defaults (`"__defaults__"` key in ConfigMap)
+3. `WVA_SCALE_TO_ZERO` environment variable
+4. System default (disabled, 10-minute retention)
+
+See `config/samples/model-scale-to-zero-config.yaml` for a complete example.
 
 
 #### VariantAutoscalingStatus

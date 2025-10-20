@@ -1,0 +1,69 @@
+# ConfigMap for per-model scale-to-zero configuration
+#
+# This ConfigMap defines scale-to-zero behavior for specific models.
+# Each key in the data section is a modelID, and the value is a JSON object
+# containing the scale-to-zero configuration for that model.
+#
+# Configuration fields:
+#   - enableScaleToZero (boolean): Enables scale-to-zero for this model
+#   - retentionPeriod (string): Duration after last request before scaling to zero
+#                                (e.g., "5m", "1h", "30s"). Optional, defaults to 10 minutes.
+#
+# All VariantAutoscaling resources with the same modelID share the configuration
+# defined here, regardless of accelerator.
+#
+# Configuration priority (highest to lowest):
+#   1. Per-model configuration (specific modelID)
+#   2. Global defaults in this ConfigMap (key: "__defaults__")
+#   3. WVA_SCALE_TO_ZERO environment variable
+#   4. System default (disabled, 10-minute retention)
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: model-scale-to-zero-config
+  namespace: workload-variant-autoscaler-system
+data:
+  # Global defaults for all models
+  # Models can override these defaults with their specific configuration
+  "__defaults__": |
+    {
+      "enableScaleToZero": true,
+      "retentionPeriod": "15m"
+    }
+
+  # PARTIAL OVERRIDE: Only override retentionPeriod, inherit enableScaleToZero from defaults
+  # Result: scale-to-zero ENABLED (from defaults) with 5-minute retention (overridden)
+  # Both A100 and L40S variants of this model will scale to zero after 5 minutes
+  "meta/llama-3.1-8b": |
+    {
+      "retentionPeriod": "5m"
+    }
+
+  # PARTIAL OVERRIDE: Only disable scale-to-zero, retention doesn't matter when disabled
+  # Result: scale-to-zero DISABLED (overridden), minimum 1 replica maintained
+  "meta/llama-3.1-70b": |
+    {
+      "enableScaleToZero": false
+    }
+
+  # FULL OVERRIDE: Specify both fields explicitly
+  # Result: scale-to-zero ENABLED with 15-minute retention (both explicit)
+  "mistralai/Mistral-7B-v0.1": |
+    {
+      "enableScaleToZero": true,
+      "retentionPeriod": "15m"
+    }
+
+  # PARTIAL OVERRIDE: Only enable scale-to-zero (useful if defaults have it disabled)
+  # Result: scale-to-zero ENABLED, inherits retention from defaults (15m)
+  "meta/llama-2-7b": |
+    {
+      "enableScaleToZero": true
+    }
+
+# Note: Models not explicitly listed in this ConfigMap (e.g., "meta/llama-3.1-13b")
+# will inherit the settings from "__defaults__". In this example, they will have
+# scale-to-zero enabled with a 15-minute retention period.
+# If "__defaults__" is not specified, models fall back to the WVA_SCALE_TO_ZERO
+# environment variable.

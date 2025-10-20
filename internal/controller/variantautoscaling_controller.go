@@ -117,6 +117,13 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	// Read scale-to-zero configuration (optional - falls back to global defaults if not found)
+	scaleToZeroConfigData, err := r.readScaleToZeroConfig(ctx, "model-scale-to-zero-config", configMapNamespace)
+	if err != nil {
+		logger.Log.Error(err, "unable to read scale-to-zero configMap, using global defaults")
+		scaleToZeroConfigData = make(utils.ScaleToZeroConfigData)
+	}
+
 	var variantAutoscalingList llmdVariantAutoscalingV1alpha1.VariantAutoscalingList
 	if err := r.List(ctx, &variantAutoscalingList); err != nil {
 		logger.Log.Error(err, "unable to list variantAutoscaling resources")
@@ -133,7 +140,7 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// WVA operates in unlimited mode - no cluster inventory collection needed
 	systemData := utils.CreateSystemData(acceleratorCm, serviceClassCm)
 
-	updateList, vaMap, allAnalyzerResponses, err := r.prepareVariantAutoscalings(ctx, activeVAs, acceleratorCm, serviceClassCm, systemData)
+	updateList, vaMap, allAnalyzerResponses, err := r.prepareVariantAutoscalings(ctx, activeVAs, acceleratorCm, serviceClassCm, systemData, scaleToZeroConfigData)
 	if err != nil {
 		logger.Log.Error(err, "failed to prepare variant autoscalings")
 		return ctrl.Result{}, err
@@ -221,6 +228,7 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 	acceleratorCm map[string]map[string]string,
 	serviceClassCm map[string]string,
 	systemData *infernoConfig.SystemData,
+	scaleToZeroConfigData utils.ScaleToZeroConfigData,
 ) (*llmdVariantAutoscalingV1alpha1.VariantAutoscalingList, map[string]*llmdVariantAutoscalingV1alpha1.VariantAutoscaling, map[string]*interfaces.ModelAnalyzeResponse, error) {
 	var updateList llmdVariantAutoscalingV1alpha1.VariantAutoscalingList
 	allAnalyzerResponses := make(map[string]*interfaces.ModelAnalyzeResponse)
@@ -322,7 +330,7 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 		}
 		updateVA.Status.CurrentAlloc = currentAllocation
 
-		if err := utils.AddServerInfoToSystemData(systemData, &updateVA, className); err != nil {
+		if err := utils.AddServerInfoToSystemData(systemData, &updateVA, className, scaleToZeroConfigData); err != nil {
 			logger.Log.Info("variantAutoscaling bad deployment server data, skipping optimization - ", "variantAutoscaling-name: ", updateVA.Name)
 			continue
 		}
@@ -469,6 +477,19 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 				return obj.GetName() == configMapName && obj.GetNamespace() == configMapNamespace
 			})),
 		).
+		// Watch the model-scale-to-zero-config ConfigMap to trigger reconcile when scale-to-zero config changes
+		Watches(
+			&corev1.ConfigMap{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+				if obj.GetName() == "model-scale-to-zero-config" && obj.GetNamespace() == configMapNamespace {
+					return []reconcile.Request{{}}
+				}
+				return nil
+			}),
+			builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+				return obj.GetName() == "model-scale-to-zero-config" && obj.GetNamespace() == configMapNamespace
+			})),
+		).
 		Named("variantAutoscaling").
 		WithEventFilter(predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
@@ -591,4 +612,28 @@ func (r *VariantAutoscalingReconciler) readOptimizationConfig(ctx context.Contex
 
 	interval = cm.Data["GLOBAL_OPT_INTERVAL"]
 	return interval, nil
+}
+
+func (r *VariantAutoscalingReconciler) readScaleToZeroConfig(ctx context.Context, cmName, cmNamespace string) (utils.ScaleToZeroConfigData, error) {
+	cm := corev1.ConfigMap{}
+	err := utils.GetConfigMapWithBackoff(ctx, r.Client, cmName, cmNamespace, &cm)
+	if err != nil {
+		// ConfigMap is optional - return empty map if not found
+		logger.Log.Debug("Scale-to-zero ConfigMap not found, using global defaults", "configMap", cmName, "namespace", cmNamespace)
+		return make(utils.ScaleToZeroConfigData), nil
+	}
+
+	out := make(utils.ScaleToZeroConfigData)
+	for modelID, configStr := range cm.Data {
+		var config utils.ModelScaleToZeroConfig
+		if err := json.Unmarshal([]byte(configStr), &config); err != nil {
+			logger.Log.Warn("Failed to parse scale-to-zero config for model, skipping",
+				"modelID", modelID,
+				"configMap", cmName,
+				"error", err)
+			continue
+		}
+		out[modelID] = config
+	}
+	return out, nil
 }

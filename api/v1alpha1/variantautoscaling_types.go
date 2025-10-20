@@ -18,23 +18,6 @@ type VariantAutoscalingSpec struct {
 	// ModelProfile provides resource and performance characteristics for the model variant.
 	// +kubebuilder:validation:Required
 	ModelProfile ModelProfile `json:"modelProfile"`
-
-	// EnableScaleToZero enables scaling the model variant to zero replicas when there is no traffic.
-	// When enabled, the autoscaler can scale down to 0 replicas during periods of inactivity.
-	// If not specified, defaults to the global WVA_SCALE_TO_ZERO setting.
-	// +optional
-	EnableScaleToZero *bool `json:"enableScaleToZero,omitempty"`
-
-	// ScaleToZeroPodRetentionPeriod specifies how long to wait after the last request
-	// before scaling down to zero replicas. This grace period helps avoid rapid scale-up/scale-down
-	// cycles for intermittent traffic patterns.
-	// The value must be a valid duration string (e.g., "5m", "1h", "30s").
-	// If not specified when EnableScaleToZero is true, defaults to 10 minutes.
-	// This field is ignored when EnableScaleToZero is false.
-	// +optional
-	// +kubebuilder:validation:Type=string
-	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$`
-	ScaleToZeroPodRetentionPeriod *metav1.Duration `json:"scaleToZeroPodRetentionPeriod,omitempty"`
 }
 
 // ConfigMapKeyRef references a specific key within a ConfigMap.

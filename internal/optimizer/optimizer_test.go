@@ -297,7 +297,9 @@ var _ = Describe("Optimizer", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred(), "unable to fetch metrics and add to Optimizer status for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 				updateVA.Status.CurrentAlloc = currentAllocation
 
-				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className)
+				// For tests, pass empty scale-to-zero config data - will use global defaults
+				scaleToZeroConfigData := make(utils.ScaleToZeroConfigData)
+				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className, scaleToZeroConfigData)
 				Expect(err).NotTo(HaveOccurred(), "failed to add server info to system data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 
 				By("Updating system data with VariantAutoscaling info")
@@ -416,7 +418,9 @@ var _ = Describe("Optimizer", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred(), "unable to fetch metrics and add to Optimizer status for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 				updateVA.Status.CurrentAlloc = currentAllocation
 
-				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className)
+				// For tests, pass empty scale-to-zero config data - will use global defaults
+				scaleToZeroConfigData := make(utils.ScaleToZeroConfigData)
+				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className, scaleToZeroConfigData)
 				Expect(err).NotTo(HaveOccurred(), "failed to add server info to system data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 
 				By("Updating system data with VariantAutoscaling info")
