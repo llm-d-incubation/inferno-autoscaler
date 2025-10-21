@@ -270,10 +270,10 @@ func TestIsScaleToZeroEnabled(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup environment variable
 			if tt.setEnv {
-				os.Setenv("WVA_SCALE_TO_ZERO", tt.envVarValue)
-				defer os.Unsetenv("WVA_SCALE_TO_ZERO")
+				_ = os.Setenv("WVA_SCALE_TO_ZERO", tt.envVarValue)
+				defer func() { _ = os.Unsetenv("WVA_SCALE_TO_ZERO") }()
 			} else {
-				os.Unsetenv("WVA_SCALE_TO_ZERO")
+				_ = os.Unsetenv("WVA_SCALE_TO_ZERO")
 			}
 
 			result := IsScaleToZeroEnabled(tt.configData, tt.modelID)
@@ -579,10 +579,10 @@ func TestGetMinNumReplicas(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup environment variable
 			if tt.setEnv {
-				os.Setenv("WVA_SCALE_TO_ZERO", tt.envVarValue)
-				defer os.Unsetenv("WVA_SCALE_TO_ZERO")
+				_ = os.Setenv("WVA_SCALE_TO_ZERO", tt.envVarValue)
+				defer func() { _ = os.Unsetenv("WVA_SCALE_TO_ZERO") }()
 			} else {
-				os.Unsetenv("WVA_SCALE_TO_ZERO")
+				_ = os.Unsetenv("WVA_SCALE_TO_ZERO")
 			}
 
 			result := GetMinNumReplicas(tt.configData, tt.modelID)
@@ -723,8 +723,8 @@ func TestScaleToZeroIntegration(t *testing.T) {
 	})
 
 	t.Run("End-to-end workflow for model using global defaults", func(t *testing.T) {
-		os.Setenv("WVA_SCALE_TO_ZERO", "true")
-		defer os.Unsetenv("WVA_SCALE_TO_ZERO")
+		_ = os.Setenv("WVA_SCALE_TO_ZERO", "true")
+		defer func() { _ = os.Unsetenv("WVA_SCALE_TO_ZERO") }()
 
 		configData := ScaleToZeroConfigData{}
 		modelID := "meta/llama-3.1-13b"
