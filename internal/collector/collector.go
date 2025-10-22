@@ -1,4 +1,4 @@
-package controller
+package collector
 
 import (
 	"context"
@@ -127,8 +127,39 @@ func ValidateMetricsAvailability(ctx context.Context, promAPI promv1.API, modelN
 	}
 }
 
+// CollectAggregateMetricsWithCache collects aggregate metrics for a model,
+// using cache to avoid redundant Prometheus queries.
+// If cache is nil, behaves like CollectAggregateMetrics (no caching).
+func CollectAggregateMetricsWithCache(ctx context.Context,
+	modelName string,
+	namespace string,
+	promAPI promv1.API,
+	cache *ModelMetricsCache) (llmdVariantAutoscalingV1alpha1.LoadProfile, string, string, error) {
+
+	// Check cache first if available
+	if cache != nil {
+		if cached, found := cache.Get(modelName, namespace); found && cached.Valid {
+			logger.Log.Debug("Using cached metrics for model", "model", modelName, "namespace", namespace)
+			return cached.Load, cached.TTFTAverage, cached.ITLAverage, nil
+		}
+	}
+
+	// Cache miss or disabled - query Prometheus
+	logger.Log.Debug("Querying Prometheus for model metrics", "model", modelName, "namespace", namespace)
+	load, ttftAvg, itlAvg, err := CollectAggregateMetrics(ctx, modelName, namespace, promAPI)
+
+	// Update cache even on error (mark as invalid) to prevent thundering herd
+	if cache != nil {
+		cache.Set(modelName, namespace, load, ttftAvg, itlAvg, err == nil)
+	}
+
+	return load, ttftAvg, itlAvg, err
+}
+
 // CollectAggregateMetrics collects aggregate metrics (Load, ITL, TTFT) for a modelID
 // across all deployments serving that model. These metrics are shared across all variants.
+//
+// Note: For production use, prefer CollectAggregateMetricsWithCache to avoid redundant queries.
 func CollectAggregateMetrics(ctx context.Context,
 	modelName string,
 	namespace string,

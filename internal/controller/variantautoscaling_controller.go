@@ -60,7 +60,8 @@ type VariantAutoscalingReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 
-	PromAPI promv1.API
+	PromAPI      promv1.API
+	MetricsCache *collector.ModelMetricsCache // Cache for model-level metrics
 }
 
 // +kubebuilder:rbac:groups=llmd.ai,resources=variantautoscalings,verbs=get;list;watch;create;update;patch;delete
@@ -339,7 +340,8 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 		}
 
 		// Collect aggregate metrics (shared across all variants of this model)
-		load, ttftAvg, itlAvg, err := collector.CollectAggregateMetrics(ctx, modelName, deploy.Namespace, r.PromAPI)
+		// Use cache to avoid redundant Prometheus queries for same model
+		load, ttftAvg, itlAvg, err := collector.CollectAggregateMetricsWithCache(ctx, modelName, deploy.Namespace, r.PromAPI, r.MetricsCache)
 		if err != nil {
 			logger.Log.Error(err, "unable to fetch aggregate metrics, skipping this variantAutoscaling loop")
 			// Don't update status here - will be updated in next reconcile when metrics are available
@@ -488,6 +490,12 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		return fmt.Errorf("critical: failed to validate Prometheus API connection - autoscaling functionality requires Prometheus: %w", err)
 	}
 	logger.Log.Info("Prometheus client and API wrapper initialized and validated successfully")
+
+	// Initialize model metrics cache with 30-second TTL
+	// This prevents redundant Prometheus queries when multiple VAs use the same model
+	cacheTTL := 30 * time.Second
+	r.MetricsCache = collector.NewModelMetricsCache(cacheTTL)
+	logger.Log.Info("Model metrics cache initialized", "ttl", cacheTTL.String())
 
 	//logger.Log.Info("Prometheus client initialized (validation skipped)")
 

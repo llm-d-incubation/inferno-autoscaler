@@ -2,10 +2,24 @@ package controller
 
 import (
 	"math"
+	"os"
 	"testing"
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/logger"
 )
+
+func TestMain(m *testing.M) {
+	// Initialize logger for all interface tests
+	_, err := logger.InitLogger()
+	if err != nil {
+		panic("Failed to initialize logger: " + err.Error())
+	}
+
+	// Run all tests
+	code := m.Run()
+	os.Exit(code)
+}
 
 func TestNewVariantMetrics(t *testing.T) {
 	tests := []struct {

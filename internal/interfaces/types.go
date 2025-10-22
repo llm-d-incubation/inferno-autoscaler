@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/logger"
 	inferno "github.com/llm-d-incubation/workload-variant-autoscaler/pkg/core"
 )
 
@@ -146,12 +147,14 @@ func parseFloat32(value, fieldName string) (float32, error) {
 
 	f, err := strconv.ParseFloat(value, 32)
 	if err != nil {
-		// Log but don't fail - be resilient like original code
+		// Be resilient - log and default to 0 instead of failing
+		logger.Log.Debug("Failed to parse metric, defaulting to 0", "field", fieldName, "value", value, "error", err)
 		return 0, nil
 	}
 
 	// Check for NaN or Inf (matches original CheckValue behavior)
 	if math.IsNaN(f) || math.IsInf(f, 0) {
+		logger.Log.Debug("Invalid float value (NaN/Inf), defaulting to 0", "field", fieldName, "value", value)
 		return 0, nil
 	}
 
@@ -168,12 +171,14 @@ func parseFloat64(value, fieldName string) (float64, error) {
 
 	f, err := strconv.ParseFloat(value, 64)
 	if err != nil {
-		// Log but don't fail - be resilient like original code
+		// Be resilient - log and default to 0 instead of failing
+		logger.Log.Debug("Failed to parse metric, defaulting to 0", "field", fieldName, "value", value, "error", err)
 		return 0, nil
 	}
 
 	// Check for NaN or Inf (matches original CheckValue behavior)
 	if math.IsNaN(f) || math.IsInf(f, 0) {
+		logger.Log.Debug("Invalid float value (NaN/Inf), defaulting to 0", "field", fieldName, "value", value)
 		return 0, nil
 	}
 
