@@ -62,8 +62,8 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 			Name:      deployment,
 		}, va)
 		Expect(err).NotTo(HaveOccurred(), "Should be able to get VariantAutoscaling")
-		Expect(va.Status.DesiredOptimizedAllocs).NotTo(BeEmpty(), "DesiredOptimizedAllocs should not be empty")
-		initialOptimized = int32(va.Status.DesiredOptimizedAllocs[0].NumReplicas)
+		Expect(va.Status.DesiredOptimizedAlloc.VariantID).NotTo(BeEmpty(), "DesiredOptimizedAllocs should not be empty")
+		initialOptimized = int32(va.Status.DesiredOptimizedAlloc.NumReplicas)
 		_, _ = fmt.Fprintf(GinkgoWriter, "Initial optimized replicas: %d\n", initialOptimized)
 
 		By("verifying HPA exists and is configured correctly")
@@ -132,9 +132,9 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 			}, va)
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to get VariantAutoscaling")
 
-			g.Expect(va.Status.DesiredOptimizedAllocs).NotTo(BeEmpty(), "DesiredOptimizedAllocs should not be empty")
-			scaledOptimized = int32(va.Status.DesiredOptimizedAllocs[0].NumReplicas)
-			currentRateStr := va.Status.Load.ArrivalRate
+			g.Expect(va.Status.DesiredOptimizedAlloc.VariantID).NotTo(BeEmpty(), "DesiredOptimizedAllocs should not be empty")
+			scaledOptimized = int32(va.Status.DesiredOptimizedAlloc.NumReplicas)
+			currentRateStr := va.Status.CurrentAlloc.Load.ArrivalRate
 			_, _ = fmt.Fprintf(GinkgoWriter, "Current optimized replicas: %d (initial: %d), arrival rate: %s\n",
 				scaledOptimized, initialOptimized, currentRateStr)
 

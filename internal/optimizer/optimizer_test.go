@@ -294,10 +294,10 @@ var _ = Describe("Optimizer", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred(), "unable to collect allocation data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 				load, ttftAvg, itlAvg, err := collector.CollectAggregateMetrics(ctx, updateVA.Spec.ModelID, deploy.Namespace, &testutils.MockPromAPI{})
 				Expect(err).NotTo(HaveOccurred(), "unable to fetch aggregate metrics for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
-				updateVA.Status.CurrentAllocs = []llmdVariantAutoscalingV1alpha1.Allocation{currentAllocation}
-				updateVA.Status.Load = load
-				updateVA.Status.TTFTAverage = ttftAvg
-				updateVA.Status.ITLAverage = itlAvg
+				currentAllocation.Load = load
+				currentAllocation.TTFTAverage = ttftAvg
+				currentAllocation.ITLAverage = itlAvg
+				updateVA.Status.CurrentAlloc = currentAllocation
 
 				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className)
 				Expect(err).NotTo(HaveOccurred(), "failed to add server info to system data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
@@ -418,10 +418,10 @@ var _ = Describe("Optimizer", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred(), "unable to collect allocation data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 				load, ttftAvg, itlAvg, err := collector.CollectAggregateMetrics(ctx, updateVA.Spec.ModelID, deploy.Namespace, mockProm)
 				Expect(err).NotTo(HaveOccurred(), "unable to fetch aggregate metrics for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
-				updateVA.Status.CurrentAllocs = []llmdVariantAutoscalingV1alpha1.Allocation{currentAllocation}
-				updateVA.Status.Load = load
-				updateVA.Status.TTFTAverage = ttftAvg
-				updateVA.Status.ITLAverage = itlAvg
+				currentAllocation.Load = load
+				currentAllocation.TTFTAverage = ttftAvg
+				currentAllocation.ITLAverage = itlAvg
+				updateVA.Status.CurrentAlloc = currentAllocation
 
 				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className)
 				Expect(err).NotTo(HaveOccurred(), "failed to add server info to system data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)

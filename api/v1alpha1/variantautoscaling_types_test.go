@@ -43,29 +43,25 @@ func makeValidVA() *VariantAutoscaling {
 			},
 		},
 		Status: VariantAutoscalingStatus{
-			CurrentAllocs: []Allocation{
-				{
-					VariantID:   "model-123-A100-1",
-					Accelerator: "A100",
-					NumReplicas: 1,
-					MaxBatch:    8,
-					VariantCost: "1.23",
+			CurrentAlloc: Allocation{
+				VariantID:   "model-123-A100-1",
+				Accelerator: "A100",
+				NumReplicas: 1,
+				MaxBatch:    8,
+				VariantCost: "1.23",
+				ITLAverage:  "45.6",
+				TTFTAverage: "3.2",
+				Load: LoadProfile{
+					ArrivalRate:     "12 rps",
+					AvgOutputTokens: "2.5 s",
+					AvgInputTokens:  "2.5 s",
 				},
 			},
-			Load: LoadProfile{
-				ArrivalRate:     "12 rps",
-				AvgOutputTokens: "2.5 s",
-				AvgInputTokens:  "2.5 s",
-			},
-			ITLAverage:  "45.6",
-			TTFTAverage: "3.2",
-			DesiredOptimizedAllocs: []OptimizedAlloc{
-				{
-					LastRunTime: metav1.NewTime(time.Unix(1730000000, 0).UTC()),
-					VariantID:   "model-123-A100-1",
-					Accelerator: "A100",
-					NumReplicas: 2,
-				},
+			DesiredOptimizedAlloc: OptimizedAlloc{
+				LastRunTime: metav1.NewTime(time.Unix(1730000000, 0).UTC()),
+				VariantID:   "model-123-A100-1",
+				Accelerator: "A100",
+				NumReplicas: 2,
 			},
 			Actuation: ActuationStatus{
 				Applied: true,
@@ -104,7 +100,7 @@ func TestDeepCopyIndependence(t *testing.T) {
 	cp.Spec.ModelID = "model-456"
 	cp.Spec.SLOClassRef.Name = "slo-config-2"
 	cp.Spec.VariantProfile.MaxBatchSize = 16
-	cp.Status.Load.ArrivalRate = "20 rps"
+	cp.Status.CurrentAlloc.Load.ArrivalRate = "20 rps"
 
 	if orig.Spec.ModelID == cp.Spec.ModelID {
 		t.Errorf("DeepCopy did not create independent copy for Spec.ModelID")
@@ -115,8 +111,8 @@ func TestDeepCopyIndependence(t *testing.T) {
 	if orig.Spec.VariantProfile.MaxBatchSize == cp.Spec.VariantProfile.MaxBatchSize {
 		t.Errorf("DeepCopy did not create independent copy for VariantProfile.MaxBatchSize")
 	}
-	if orig.Status.Load.ArrivalRate == cp.Status.Load.ArrivalRate {
-		t.Errorf("DeepCopy did not create independent copy for nested Status.Load")
+	if orig.Status.CurrentAlloc.Load.ArrivalRate == cp.Status.CurrentAlloc.Load.ArrivalRate {
+		t.Errorf("DeepCopy did not create independent copy for nested Status.CurrentAlloc.Load")
 	}
 }
 
@@ -133,17 +129,17 @@ func TestJSONRoundTrip(t *testing.T) {
 		t.Fatalf("json.Unmarshal failed: %v", err)
 	}
 
-	if len(back.Status.DesiredOptimizedAlloc) == 0 {
-		t.Fatalf("DesiredOptimizedAllocs should not be empty after unmarshal")
+	if back.Status.DesiredOptimizedAlloc.VariantID == "" {
+		t.Fatalf("DesiredOptimizedAlloc should not be empty after unmarshal")
 	}
 
-	ot := orig.Status.DesiredOptimizedAlloc[0].LastRunTime.Time
-	bt := back.Status.DesiredOptimizedAlloc[0].LastRunTime.Time
+	ot := orig.Status.DesiredOptimizedAlloc.LastRunTime.Time
+	bt := back.Status.DesiredOptimizedAlloc.LastRunTime.Time
 	if !ot.Equal(bt) {
 		t.Fatalf("LastRunTime mismatch by instant: orig=%v back=%v", ot, bt)
 	}
 
-	back.Status.DesiredOptimizedAlloc[0].LastRunTime = orig.Status.DesiredOptimizedAlloc[0].LastRunTime
+	back.Status.DesiredOptimizedAlloc.LastRunTime = orig.Status.DesiredOptimizedAlloc.LastRunTime
 
 	if !reflect.DeepEqual(orig, &back) {
 		t.Errorf("round-trip mismatch:\norig=%#v\nback=%#v", orig, &back)
@@ -245,19 +241,16 @@ func TestOptimizedAllocLastRunTimeJSON(t *testing.T) {
 
 	type optimizedAllocs struct {
 		Status struct {
-			DesiredOptimizedAllocs []struct {
+			DesiredOptimizedAlloc struct {
 				LastRunTime string `json:"lastRunTime"`
-			} `json:"desiredOptimizedAllocs"`
+			} `json:"desiredOptimizedAlloc"`
 		} `json:"status"`
 	}
 	var probe optimizedAllocs
 	if err := json.Unmarshal(raw, &probe); err != nil {
 		t.Fatalf("unmarshal probe failed: %v", err)
 	}
-	if len(probe.Status.DesiredOptimizedAlloc) == 0 {
-		t.Fatalf("expected at least one desiredOptimizedAlloc")
-	}
-	if probe.Status.DesiredOptimizedAlloc[0].LastRunTime == "" {
+	if probe.Status.DesiredOptimizedAlloc.LastRunTime == "" {
 		t.Errorf("expected lastRunTime to be serialized, got empty")
 	}
 }

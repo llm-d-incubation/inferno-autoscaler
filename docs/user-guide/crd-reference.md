@@ -34,9 +34,7 @@ _Appears in:_
 
 
 
-Allocation describes the current resource allocation for a specific model variant.
-Each allocation represents a single deployment with a specific accelerator type.
-Aggregate metrics (Load, ITL, TTFT) are stored in VariantAutoscalingStatus.
+Allocation describes the current resource allocation for this variant.
 
 
 
@@ -45,11 +43,14 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `variantID` _string_ | VariantID identifies which variant this allocation belongs to.<br />Format: \{modelID\}-\{accelerator\}-\{acceleratorCount\} |  | MinLength: 1 <br /> |
+| `variantID` _string_ | VariantID identifies this variant.<br />Format: \{modelID\}-\{accelerator\}-\{acceleratorCount\} |  | MinLength: 1 <br /> |
 | `accelerator` _string_ | Accelerator is the type of accelerator currently allocated. |  | MinLength: 1 <br /> |
 | `numReplicas` _integer_ | NumReplicas is the number of replicas currently allocated. |  | Minimum: 0 <br /> |
 | `maxBatch` _integer_ | MaxBatch is the maximum batch size currently allocated. |  | Minimum: 0 <br /> |
-| `variantCost` _string_ | VariantCost is the cost associated with this specific variant allocation. |  | Pattern: `^\d+(\.\d+)?$` <br /> |
+| `variantCost` _string_ | VariantCost is the cost associated with this variant allocation. |  | Pattern: `^\d+(\.\d+)?$` <br /> |
+| `itlAverage` _string_ | ITLAverage is the average inter-token latency for this variant. |  | Pattern: `^\d+(\.\d+)?$` <br /> |
+| `ttftAverage` _string_ | TTFTAverage is the average time to first token for this variant. |  | Pattern: `^\d+(\.\d+)?$` <br /> |
+| `load` _[LoadProfile](#loadprofile)_ | Load describes the workload characteristics for this variant. |  |  |
 
 
 #### ConfigMapKeyRef
@@ -81,7 +82,7 @@ to allow flexible input formats.
 
 
 _Appears in:_
-- [VariantAutoscalingStatus](#variantautoscalingstatus)
+- [Allocation](#allocation)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -104,8 +105,8 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.32/#time-v1-meta)_ | LastRunTime is the timestamp of the last optimization run. |  |  |
-| `variantID` _string_ | VariantID identifies which variant this optimized allocation belongs to.<br />Format: \{modelID\}-\{accelerator\}-\{acceleratorCount\} |  | MinLength: 1 <br /> |
-| `accelerator` _string_ | Accelerator is the type of accelerator for the optimized allocation. |  | MinLength: 1 <br /> |
+| `variantID` _string_ | VariantID identifies which variant this optimized allocation is for.<br />Format: \{modelID\}-\{accelerator\}-\{acceleratorCount\} |  | MinLength: 1 <br /> |
+| `accelerator` _string_ | Accelerator is the type of accelerator for the optimized allocation. |  | MinLength: 2 <br /> |
 | `numReplicas` _integer_ | NumReplicas is the number of replicas for the optimized allocation. |  | Minimum: 0 <br /> |
 
 
@@ -194,8 +195,9 @@ _Appears in:_
 
 
 
-VariantAutoscalingStatus represents the current status of autoscaling for a variant,
-including aggregate load metrics, current allocations per variant, desired optimized allocations, and actuation status.
+VariantAutoscalingStatus represents the current status of autoscaling for this specific variant.
+Since each VariantAutoscaling CR represents a single variant, status contains singular allocation
+fields rather than arrays.
 
 
 
@@ -204,12 +206,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `load` _[LoadProfile](#loadprofile)_ | Load describes the aggregate workload characteristics across all variants for this model.<br />Metrics are collected and aggregated from Prometheus across all deployments serving this modelID. |  |  |
-| `itlAverage` _string_ | ITLAverage is the average inter-token latency aggregated across all variants. |  | Pattern: `^\d+(\.\d+)?$` <br /> |
-| `ttftAverage` _string_ | TTFTAverage is the average time to first token aggregated across all variants. |  | Pattern: `^\d+(\.\d+)?$` <br /> |
-| `primaryReplicas` _integer_ | PrimaryReplicas is a convenience field tracking replicas for the primary allocation.<br />This field enables safe kubectl output and prevents array index errors.<br />It mirrors CurrentAllocs[0].NumReplicas when available. |  |  |
-| `currentAllocs` _[Allocation](#allocation) array_ | CurrentAllocs specifies the current resource allocations for each variant (one per accelerator type). |  |  |
-| `desiredOptimizedAllocs` _[OptimizedAlloc](#optimizedalloc) array_ | DesiredOptimizedAllocs indicates the target optimized allocations based on autoscaling logic. |  |  |
+| `currentAlloc` _[Allocation](#allocation)_ | CurrentAlloc specifies the current resource allocation for this variant. |  |  |
+| `desiredOptimizedAlloc` _[OptimizedAlloc](#optimizedalloc)_ | DesiredOptimizedAlloc indicates the target optimized allocation based on autoscaling logic. |  |  |
 | `actuation` _[ActuationStatus](#actuationstatus)_ | Actuation provides details about the actuation process and its current status. |  |  |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.32/#condition-v1-meta) array_ | Conditions represent the latest available observations of the VariantAutoscaling's state |  |  |
 
