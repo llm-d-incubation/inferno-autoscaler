@@ -239,7 +239,8 @@ func AddVariantProfileToSystemData(
 func AddServerInfoToSystemData(
 	sd *infernoConfig.SystemData,
 	va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
-	className string) (err error) {
+	className string,
+	metrics *interfaces.VariantMetrics) (err error) {
 
 	// Get current allocation (single variant)
 	currentAlloc := va.Status.CurrentAlloc
@@ -247,33 +248,22 @@ func AddServerInfoToSystemData(
 		return fmt.Errorf("no current allocation found for variant %s", va.Name)
 	}
 
-	// server load statistics from allocation
-	var arrivalRate, avgOutputTokens, avgInputTokens, cost, itlAverage, ttftAverage float64
-	if arrivalRate, err = strconv.ParseFloat(currentAlloc.Load.ArrivalRate, 32); err != nil || !CheckValue(arrivalRate) {
-		arrivalRate = 0
-	}
-	if avgOutputTokens, err = strconv.ParseFloat(currentAlloc.Load.AvgOutputTokens, 32); err != nil || !CheckValue(avgOutputTokens) {
-		avgOutputTokens = 0
-	}
-	if avgInputTokens, err = strconv.ParseFloat(currentAlloc.Load.AvgInputTokens, 32); err != nil || !CheckValue(avgInputTokens) {
-		avgInputTokens = 0
+	// Validate metrics are provided
+	if metrics == nil {
+		return fmt.Errorf("metrics cannot be nil for variant %s", va.Name)
 	}
 
+	// Convert internal metrics to inferno config types
 	serverLoadSpec := &infernoConfig.ServerLoadSpec{
-		ArrivalRate:  float32(arrivalRate),
-		AvgInTokens:  int(avgInputTokens),
-		AvgOutTokens: int(avgOutputTokens),
+		ArrivalRate:  metrics.Load.ArrivalRate,
+		AvgInTokens:  metrics.Load.AvgInputTokens,
+		AvgOutTokens: metrics.Load.AvgOutputTokens,
 	}
 
-	// server allocation data
+	// Parse cost from allocation
+	var cost float64
 	if cost, err = strconv.ParseFloat(currentAlloc.VariantCost, 32); err != nil || !CheckValue(cost) {
 		cost = 0
-	}
-	if itlAverage, err = strconv.ParseFloat(currentAlloc.ITLAverage, 32); err != nil || !CheckValue(itlAverage) {
-		itlAverage = 0
-	}
-	if ttftAverage, err = strconv.ParseFloat(currentAlloc.TTFTAverage, 32); err != nil || !CheckValue(ttftAverage) {
-		ttftAverage = 0
 	}
 
 	AllocationData := &infernoConfig.AllocationData{
@@ -281,8 +271,8 @@ func AddServerInfoToSystemData(
 		NumReplicas: currentAlloc.NumReplicas,
 		MaxBatch:    currentAlloc.MaxBatch,
 		Cost:        float32(cost),
-		ITLAverage:  float32(itlAverage),
-		TTFTAverage: float32(ttftAverage),
+		ITLAverage:  metrics.ITLAverage,
+		TTFTAverage: metrics.TTFTAverage,
 		Load:        *serverLoadSpec,
 	}
 

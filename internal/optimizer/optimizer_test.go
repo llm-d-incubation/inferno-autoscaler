@@ -299,7 +299,11 @@ var _ = Describe("Optimizer", Ordered, func() {
 				currentAllocation.ITLAverage = itlAvg
 				updateVA.Status.CurrentAlloc = currentAllocation
 
-				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className)
+				// Extract metrics to internal structure
+				metrics, err := interfaces.NewVariantMetrics(currentAllocation)
+				Expect(err).NotTo(HaveOccurred(), "failed to parse variant metrics for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
+
+				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className, metrics)
 				Expect(err).NotTo(HaveOccurred(), "failed to add server info to system data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 
 				By("Updating system data with VariantAutoscaling info")
@@ -423,7 +427,11 @@ var _ = Describe("Optimizer", Ordered, func() {
 				currentAllocation.ITLAverage = itlAvg
 				updateVA.Status.CurrentAlloc = currentAllocation
 
-				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className)
+				// Extract metrics to internal structure
+				metrics, err := interfaces.NewVariantMetrics(currentAllocation)
+				Expect(err).NotTo(HaveOccurred(), "failed to parse variant metrics for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
+
+				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className, metrics)
 				Expect(err).NotTo(HaveOccurred(), "failed to add server info to system data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 
 				By("Updating system data with VariantAutoscaling info")

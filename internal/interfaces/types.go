@@ -1,6 +1,12 @@
 package controller
 
-import inferno "github.com/llm-d-incubation/workload-variant-autoscaler/pkg/core"
+import (
+	"fmt"
+	"strconv"
+
+	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
+	inferno "github.com/llm-d-incubation/workload-variant-autoscaler/pkg/core"
+)
 
 // Captures response from ModelAnalyzer(s) per model
 type ModelAnalyzeResponse struct {
@@ -27,6 +33,98 @@ type ServiceClass struct {
 	Name     string              `yaml:"name"`
 	Priority int                 `yaml:"priority"`
 	Data     []ServiceClassEntry `yaml:"data"`
+}
+
+// VariantMetrics represents the internal structure for load, TTFT, and ITL metrics
+// extracted from VariantAutoscaling CRD. All values are parsed and validated.
+type VariantMetrics struct {
+	// Load metrics
+	Load LoadMetrics
+
+	// Performance metrics
+	TTFTAverage float32 // Time to first token average in milliseconds
+	ITLAverage  float32 // Inter-token latency average in milliseconds
+}
+
+// LoadMetrics represents workload characteristics with typed values
+type LoadMetrics struct {
+	ArrivalRate     float32 // Rate of incoming requests (requests per minute)
+	AvgInputTokens  int     // Average number of input (prefill) tokens per request
+	AvgOutputTokens int     // Average number of output (decode) tokens per request
+}
+
+// NewVariantMetrics creates a new VariantMetrics from VariantAutoscaling CRD allocation
+func NewVariantMetrics(allocation llmdVariantAutoscalingV1alpha1.Allocation) (*VariantMetrics, error) {
+	metrics := &VariantMetrics{}
+
+	// Parse load metrics
+	loadMetrics, err := ParseLoadProfile(allocation.Load)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse load profile: %w", err)
+	}
+	metrics.Load = loadMetrics
+
+	// Parse TTFT average
+	ttft, err := parseFloat32(allocation.TTFTAverage, "TTFTAverage")
+	if err != nil {
+		return nil, err
+	}
+	metrics.TTFTAverage = ttft
+
+	// Parse ITL average
+	itl, err := parseFloat32(allocation.ITLAverage, "ITLAverage")
+	if err != nil {
+		return nil, err
+	}
+	metrics.ITLAverage = itl
+
+	return metrics, nil
+}
+
+// ParseLoadProfile converts VA CRD LoadProfile (string values) to internal LoadMetrics (typed values)
+func ParseLoadProfile(load llmdVariantAutoscalingV1alpha1.LoadProfile) (LoadMetrics, error) {
+	metrics := LoadMetrics{}
+
+	// Parse arrival rate
+	arrivalRate, err := parseFloat32(load.ArrivalRate, "ArrivalRate")
+	if err != nil {
+		return metrics, err
+	}
+	metrics.ArrivalRate = arrivalRate
+
+	// Parse average input tokens
+	avgInputTokens, err := parseFloat64(load.AvgInputTokens, "AvgInputTokens")
+	if err != nil {
+		return metrics, err
+	}
+	metrics.AvgInputTokens = int(avgInputTokens)
+
+	// Parse average output tokens
+	avgOutputTokens, err := parseFloat64(load.AvgOutputTokens, "AvgOutputTokens")
+	if err != nil {
+		return metrics, err
+	}
+	metrics.AvgOutputTokens = int(avgOutputTokens)
+
+	return metrics, nil
+}
+
+// Helper function to parse float32 from string
+func parseFloat32(value, fieldName string) (float32, error) {
+	f, err := strconv.ParseFloat(value, 32)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse %s: %w", fieldName, err)
+	}
+	return float32(f), nil
+}
+
+// Helper function to parse float64 from string
+func parseFloat64(value, fieldName string) (float64, error) {
+	f, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse %s: %w", fieldName, err)
+	}
+	return f, nil
 }
 
 // PrometheusConfig holds complete Prometheus client configuration including TLS settings

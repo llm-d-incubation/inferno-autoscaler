@@ -352,7 +352,14 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 		allocation.ITLAverage = itlAvg
 		updateVA.Status.CurrentAlloc = allocation
 
-		if err := utils.AddServerInfoToSystemData(systemData, &updateVA, className); err != nil {
+		// Extract metrics to internal structure
+		metrics, err := interfaces.NewVariantMetrics(allocation)
+		if err != nil {
+			logger.Log.Error(err, "failed to parse variant metrics, skipping optimization - ", "variantAutoscaling-name: ", updateVA.Name)
+			continue
+		}
+
+		if err := utils.AddServerInfoToSystemData(systemData, &updateVA, className, metrics); err != nil {
 			logger.Log.Info("variantAutoscaling bad deployment server data, skipping optimization - ", "variantAutoscaling-name: ", updateVA.Name)
 			continue
 		}
