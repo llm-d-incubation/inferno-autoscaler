@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
@@ -69,12 +70,20 @@ func NewVariantMetrics(allocation llmdVariantAutoscalingV1alpha1.Allocation) (*V
 	if err != nil {
 		return nil, err
 	}
+	// Validate non-negative (latency cannot be negative)
+	if ttft < 0 {
+		ttft = 0
+	}
 	metrics.TTFTAverage = ttft
 
 	// Parse ITL average
 	itl, err := parseFloat32(allocation.ITLAverage, "ITLAverage")
 	if err != nil {
 		return nil, err
+	}
+	// Validate non-negative (latency cannot be negative)
+	if itl < 0 {
+		itl = 0
 	}
 	metrics.ITLAverage = itl
 
@@ -90,12 +99,23 @@ func ParseLoadProfile(load llmdVariantAutoscalingV1alpha1.LoadProfile) (LoadMetr
 	if err != nil {
 		return metrics, err
 	}
+	// Validate non-negative (arrival rate cannot be negative)
+	if arrivalRate < 0 {
+		arrivalRate = 0
+	}
 	metrics.ArrivalRate = arrivalRate
 
 	// Parse average input tokens
 	avgInputTokens, err := parseFloat64(load.AvgInputTokens, "AvgInputTokens")
 	if err != nil {
 		return metrics, err
+	}
+	// Validate non-negative and within int bounds
+	if avgInputTokens < 0 {
+		avgInputTokens = 0
+	}
+	if avgInputTokens > float64(math.MaxInt32) {
+		avgInputTokens = float64(math.MaxInt32)
 	}
 	metrics.AvgInputTokens = int(avgInputTokens)
 
@@ -104,26 +124,59 @@ func ParseLoadProfile(load llmdVariantAutoscalingV1alpha1.LoadProfile) (LoadMetr
 	if err != nil {
 		return metrics, err
 	}
+	// Validate non-negative and within int bounds
+	if avgOutputTokens < 0 {
+		avgOutputTokens = 0
+	}
+	if avgOutputTokens > float64(math.MaxInt32) {
+		avgOutputTokens = float64(math.MaxInt32)
+	}
 	metrics.AvgOutputTokens = int(avgOutputTokens)
 
 	return metrics, nil
 }
 
-// Helper function to parse float32 from string
+// Helper function to parse float32 from string with validation
+// Returns 0 for empty strings, invalid values, NaN, or Inf (resilient behavior)
 func parseFloat32(value, fieldName string) (float32, error) {
+	// Handle empty string
+	if value == "" {
+		return 0, nil
+	}
+
 	f, err := strconv.ParseFloat(value, 32)
 	if err != nil {
-		return 0, fmt.Errorf("failed to parse %s: %w", fieldName, err)
+		// Log but don't fail - be resilient like original code
+		return 0, nil
 	}
+
+	// Check for NaN or Inf (matches original CheckValue behavior)
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0, nil
+	}
+
 	return float32(f), nil
 }
 
-// Helper function to parse float64 from string
+// Helper function to parse float64 from string with validation
+// Returns 0 for empty strings, invalid values, NaN, or Inf (resilient behavior)
 func parseFloat64(value, fieldName string) (float64, error) {
+	// Handle empty string
+	if value == "" {
+		return 0, nil
+	}
+
 	f, err := strconv.ParseFloat(value, 64)
 	if err != nil {
-		return 0, fmt.Errorf("failed to parse %s: %w", fieldName, err)
+		// Log but don't fail - be resilient like original code
+		return 0, nil
 	}
+
+	// Check for NaN or Inf (matches original CheckValue behavior)
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0, nil
+	}
+
 	return f, nil
 }
 
