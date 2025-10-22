@@ -26,43 +26,46 @@ func makeValidVA() *VariantAutoscaling {
 			},
 		},
 		Spec: VariantAutoscalingSpec{
-			ModelID: "model-123",
+			ModelID:          "model-123",
+			VariantID:        "model-123-A100-1",
+			Accelerator:      "A100",
+			AcceleratorCount: 1,
 			SLOClassRef: ConfigMapKeyRef{
 				Name: "slo-config",
 				Key:  "gold",
 			},
-			ModelProfile: ModelProfile{
-				Accelerators: []AcceleratorProfile{
-					{
-						Acc:      "nvidia.com/mig-1g.5gb",
-						AccCount: 1,
-						PerfParms: PerfParms{
-							DecodeParms:  map[string]string{"alpha": "0.8", "beta": "0.2"},
-							PrefillParms: map[string]string{"gamma": "0.8", "delta": "0.2"},
-						},
-						MaxBatchSize: 8,
-					},
+			VariantProfile: VariantProfile{
+				PerfParms: PerfParms{
+					DecodeParms:  map[string]string{"alpha": "0.8", "beta": "0.2"},
+					PrefillParms: map[string]string{"gamma": "0.8", "delta": "0.2"},
 				},
+				MaxBatchSize: 8,
 			},
 		},
 		Status: VariantAutoscalingStatus{
-			CurrentAlloc: Allocation{
-				Accelerator: "nvidia.com/mig-1g.5gb",
-				NumReplicas: 1,
-				MaxBatch:    8,
-				VariantCost: "1.23",
-				ITLAverage:  "45.6",
-				TTFTAverage: "3.2",
-				Load: LoadProfile{
-					ArrivalRate:     "12 rps",
-					AvgOutputTokens: "2.5 s",
-					AvgInputTokens:  "2.5 s",
+			CurrentAllocs: []Allocation{
+				{
+					VariantID:   "model-123-A100-1",
+					Accelerator: "A100",
+					NumReplicas: 1,
+					MaxBatch:    8,
+					VariantCost: "1.23",
 				},
 			},
-			DesiredOptimizedAlloc: OptimizedAlloc{
-				LastRunTime: metav1.NewTime(time.Unix(1730000000, 0).UTC()),
-				Accelerator: "nvidia.com/mig-1g.5gb",
-				NumReplicas: 2,
+			Load: LoadProfile{
+				ArrivalRate:     "12 rps",
+				AvgOutputTokens: "2.5 s",
+				AvgInputTokens:  "2.5 s",
+			},
+			ITLAverage:  "45.6",
+			TTFTAverage: "3.2",
+			DesiredOptimizedAllocs: []OptimizedAlloc{
+				{
+					LastRunTime: metav1.NewTime(time.Unix(1730000000, 0).UTC()),
+					VariantID:   "model-123-A100-1",
+					Accelerator: "A100",
+					NumReplicas: 2,
+				},
 			},
 			Actuation: ActuationStatus{
 				Applied: true,
@@ -100,8 +103,8 @@ func TestDeepCopyIndependence(t *testing.T) {
 
 	cp.Spec.ModelID = "model-456"
 	cp.Spec.SLOClassRef.Name = "slo-config-2"
-	cp.Spec.ModelProfile.Accelerators[0].Acc = "nvidia.com/mig-3g.20gb"
-	cp.Status.CurrentAlloc.Load.ArrivalRate = "20 rps"
+	cp.Spec.VariantProfile.MaxBatchSize = 16
+	cp.Status.Load.ArrivalRate = "20 rps"
 
 	if orig.Spec.ModelID == cp.Spec.ModelID {
 		t.Errorf("DeepCopy did not create independent copy for Spec.ModelID")
@@ -109,10 +112,10 @@ func TestDeepCopyIndependence(t *testing.T) {
 	if orig.Spec.SLOClassRef.Name == cp.Spec.SLOClassRef.Name {
 		t.Errorf("DeepCopy did not create independent copy for Spec.SLOClassRef.Name")
 	}
-	if orig.Spec.ModelProfile.Accelerators[0].Acc == cp.Spec.ModelProfile.Accelerators[0].Acc {
-		t.Errorf("DeepCopy did not create independent copy for nested Accelerators slice")
+	if orig.Spec.VariantProfile.MaxBatchSize == cp.Spec.VariantProfile.MaxBatchSize {
+		t.Errorf("DeepCopy did not create independent copy for VariantProfile.MaxBatchSize")
 	}
-	if orig.Status.CurrentAlloc.Load.ArrivalRate == cp.Status.CurrentAlloc.Load.ArrivalRate {
+	if orig.Status.Load.ArrivalRate == cp.Status.Load.ArrivalRate {
 		t.Errorf("DeepCopy did not create independent copy for nested Status.Load")
 	}
 }
@@ -130,13 +133,17 @@ func TestJSONRoundTrip(t *testing.T) {
 		t.Fatalf("json.Unmarshal failed: %v", err)
 	}
 
-	ot := orig.Status.DesiredOptimizedAlloc.LastRunTime.Time
-	bt := back.Status.DesiredOptimizedAlloc.LastRunTime.Time
+	if len(back.Status.DesiredOptimizedAlloc) == 0 {
+		t.Fatalf("DesiredOptimizedAllocs should not be empty after unmarshal")
+	}
+
+	ot := orig.Status.DesiredOptimizedAlloc[0].LastRunTime.Time
+	bt := back.Status.DesiredOptimizedAlloc[0].LastRunTime.Time
 	if !ot.Equal(bt) {
 		t.Fatalf("LastRunTime mismatch by instant: orig=%v back=%v", ot, bt)
 	}
 
-	back.Status.DesiredOptimizedAlloc.LastRunTime = orig.Status.DesiredOptimizedAlloc.LastRunTime
+	back.Status.DesiredOptimizedAlloc[0].LastRunTime = orig.Status.DesiredOptimizedAlloc[0].LastRunTime
 
 	if !reflect.DeepEqual(orig, &back) {
 		t.Errorf("round-trip mismatch:\norig=%#v\nback=%#v", orig, &back)
@@ -170,15 +177,20 @@ func TestStatusOmitEmpty(t *testing.T) {
 			Namespace: "default",
 		},
 		Spec: VariantAutoscalingSpec{
-			ModelID: "m",
+			ModelID:          "m",
+			VariantID:        "m-A100-1",
+			Accelerator:      "A100",
+			AcceleratorCount: 1,
 			SLOClassRef: ConfigMapKeyRef{
 				Name: "slo",
 				Key:  "bronze",
 			},
-			ModelProfile: ModelProfile{
-				Accelerators: []AcceleratorProfile{
-					{Acc: "gpu", AccCount: 1, PerfParms: PerfParms{DecodeParms: map[string]string{"alpha": "1", "beta": "1"}, PrefillParms: map[string]string{"gamma": "1", "delta": "1"}}, MaxBatchSize: 1},
+			VariantProfile: VariantProfile{
+				PerfParms: PerfParms{
+					DecodeParms:  map[string]string{"alpha": "1", "beta": "1"},
+					PrefillParms: map[string]string{"gamma": "1", "delta": "1"},
 				},
+				MaxBatchSize: 1,
 			},
 		},
 	}
@@ -195,13 +207,13 @@ func TestStatusOmitEmpty(t *testing.T) {
 	// Optional: sanity-check a couple of zero values inside status
 	var probe struct {
 		Status struct {
-			CurrentAlloc struct {
+			CurrentAllocs []struct {
 				Accelerator string `json:"accelerator"`
-			} `json:"currentAlloc"`
-			DesiredOptimizedAlloc struct {
+			} `json:"currentAllocs"`
+			DesiredOptimizedAllocs []struct {
 				LastRunTime *string `json:"lastRunTime"`
 				NumReplicas int     `json:"numReplicas"`
-			} `json:"desiredOptimizedAlloc"`
+			} `json:"desiredOptimizedAllocs"`
 			Actuation struct {
 				Applied bool `json:"applied"`
 			} `json:"actuation"`
@@ -210,9 +222,7 @@ func TestStatusOmitEmpty(t *testing.T) {
 	if err := json.Unmarshal(b, &probe); err != nil {
 		t.Fatalf("unmarshal probe failed: %v", err)
 	}
-	if probe.Status.CurrentAlloc.Accelerator != "" ||
-		probe.Status.DesiredOptimizedAlloc.NumReplicas != 0 ||
-		probe.Status.Actuation.Applied != false {
+	if probe.Status.Actuation.Applied != false {
 		t.Errorf("unexpected non-zero defaults in status: %+v", probe.Status)
 	}
 	empty.Status.Actuation.Applied = true
@@ -233,18 +243,21 @@ func TestOptimizedAllocLastRunTimeJSON(t *testing.T) {
 		t.Fatalf("marshal failed: %v", err)
 	}
 
-	type optimizedAlloc struct {
+	type optimizedAllocs struct {
 		Status struct {
-			DesiredOptimizedAlloc struct {
+			DesiredOptimizedAllocs []struct {
 				LastRunTime string `json:"lastRunTime"`
-			} `json:"desiredOptimizedAlloc"`
+			} `json:"desiredOptimizedAllocs"`
 		} `json:"status"`
 	}
-	var probe optimizedAlloc
+	var probe optimizedAllocs
 	if err := json.Unmarshal(raw, &probe); err != nil {
 		t.Fatalf("unmarshal probe failed: %v", err)
 	}
-	if probe.Status.DesiredOptimizedAlloc.LastRunTime == "" {
+	if len(probe.Status.DesiredOptimizedAlloc) == 0 {
+		t.Fatalf("expected at least one desiredOptimizedAlloc")
+	}
+	if probe.Status.DesiredOptimizedAlloc[0].LastRunTime == "" {
 		t.Errorf("expected lastRunTime to be serialized, got empty")
 	}
 }

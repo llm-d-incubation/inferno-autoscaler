@@ -188,19 +188,16 @@ var _ = Describe("Optimizer", Ordered, func() {
 						},
 					},
 					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
-						ModelID: "meta/llama0-70b",
-						ModelProfile: llmdVariantAutoscalingV1alpha1.ModelProfile{
-							Accelerators: []llmdVariantAutoscalingV1alpha1.AcceleratorProfile{
-								{
-									Acc:      "A100",
-									AccCount: 1,
-									PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
-										DecodeParms:  map[string]string{"alpha": "20.28", "beta": "0.72"},
-										PrefillParms: map[string]string{"gamma": "0", "delta": "0"},
-									},
-									MaxBatchSize: 4,
-								},
+						ModelID:          "meta/llama0-70b",
+						VariantID:        "meta/llama0-70b-A100-1",
+						Accelerator:      "A100",
+						AcceleratorCount: 1,
+						VariantProfile: llmdVariantAutoscalingV1alpha1.VariantProfile{
+							PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
+								DecodeParms:  map[string]string{"alpha": "20.28", "beta": "0.72"},
+								PrefillParms: map[string]string{"gamma": "0", "delta": "0"},
 							},
+							MaxBatchSize: 4,
 						},
 						SLOClassRef: llmdVariantAutoscalingV1alpha1.ConfigMapKeyRef{
 							Name: "premium",
@@ -273,10 +270,9 @@ var _ = Describe("Optimizer", Ordered, func() {
 				_, className, err := utils.FindModelSLO(serviceClassCm, modelName)
 				Expect(err).NotTo(HaveOccurred(), "failed to find model SLO for model - ", modelName, ", variantAutoscaling - ", va.Name)
 
-				for _, modelAcceleratorProfile := range va.Spec.ModelProfile.Accelerators {
-					err = utils.AddModelAcceleratorProfileToSystemData(systemData, modelName, &modelAcceleratorProfile)
-					Expect(err).NotTo(HaveOccurred(), "failed to add model accelerator profile to system data for model - ", modelName, ", variantAutoscaling - ", va.Name)
-				}
+				// Single-variant architecture: add the variant profile to system data
+				err = utils.AddVariantProfileToSystemData(systemData, modelName, va.Spec.Accelerator, va.Spec.AcceleratorCount, &va.Spec.VariantProfile)
+				Expect(err).NotTo(HaveOccurred(), "failed to add variant profile to system data for model - ", modelName, ", variantAutoscaling - ", va.Name)
 
 				accName := va.Labels["inference.optimization/acceleratorName"]
 				Expect(accName).NotTo(BeEmpty(), "variantAutoscaling missing acceleratorName label, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
@@ -293,9 +289,15 @@ var _ = Describe("Optimizer", Ordered, func() {
 				err = utils.GetVariantAutoscalingWithBackoff(ctx, k8sClient, deploy.Name, deploy.Namespace, &updateVA)
 				Expect(err).NotTo(HaveOccurred(), "failed to get variantAutoscaling for deployment - ", "deployment-name: ", deploy.Name)
 
-				currentAllocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, &testutils.MockPromAPI{})
-				Expect(err).NotTo(HaveOccurred(), "unable to fetch metrics and add to Optimizer status for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
-				updateVA.Status.CurrentAlloc = currentAllocation
+				// Collect allocation and metrics using new API
+				currentAllocation, err := collector.CollectAllocationForDeployment(updateVA.Spec.VariantID, updateVA.Spec.Accelerator, deploy, acceleratorCostValFloat)
+				Expect(err).NotTo(HaveOccurred(), "unable to collect allocation data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
+				load, ttftAvg, itlAvg, err := collector.CollectAggregateMetrics(ctx, updateVA.Spec.ModelID, deploy.Namespace, &testutils.MockPromAPI{})
+				Expect(err).NotTo(HaveOccurred(), "unable to fetch aggregate metrics for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
+				updateVA.Status.CurrentAllocs = []llmdVariantAutoscalingV1alpha1.Allocation{currentAllocation}
+				updateVA.Status.Load = load
+				updateVA.Status.TTFTAverage = ttftAvg
+				updateVA.Status.ITLAverage = itlAvg
 
 				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className)
 				Expect(err).NotTo(HaveOccurred(), "failed to add server info to system data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
@@ -371,10 +373,9 @@ var _ = Describe("Optimizer", Ordered, func() {
 				_, className, err := utils.FindModelSLO(serviceClassCm, modelName)
 				Expect(err).NotTo(HaveOccurred(), "failed to find model SLO for model - ", modelName, ", variantAutoscaling - ", va.Name)
 
-				for _, modelAcceleratorProfile := range va.Spec.ModelProfile.Accelerators {
-					err = utils.AddModelAcceleratorProfileToSystemData(systemData, modelName, &modelAcceleratorProfile)
-					Expect(err).NotTo(HaveOccurred(), "failed to add model accelerator profile to system data for model - ", modelName, ", variantAutoscaling - ", va.Name)
-				}
+				// Single-variant architecture: add the variant profile to system data
+				err = utils.AddVariantProfileToSystemData(systemData, modelName, va.Spec.Accelerator, va.Spec.AcceleratorCount, &va.Spec.VariantProfile)
+				Expect(err).NotTo(HaveOccurred(), "failed to add variant profile to system data for model - ", modelName, ", variantAutoscaling - ", va.Name)
 
 				accName := va.Labels["inference.optimization/acceleratorName"]
 				Expect(accName).NotTo(BeEmpty(), "variantAutoscaling missing acceleratorName label, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
@@ -412,9 +413,15 @@ var _ = Describe("Optimizer", Ordered, func() {
 					&model.Sample{Value: model.SampleValue(0.008)},
 				}
 
-				currentAllocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, mockProm)
-				Expect(err).NotTo(HaveOccurred(), "unable to fetch metrics and add to Optimizer status for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
-				updateVA.Status.CurrentAlloc = currentAllocation
+				// Collect allocation and metrics using new API
+				currentAllocation, err := collector.CollectAllocationForDeployment(updateVA.Spec.VariantID, updateVA.Spec.Accelerator, deploy, acceleratorCostValFloat)
+				Expect(err).NotTo(HaveOccurred(), "unable to collect allocation data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
+				load, ttftAvg, itlAvg, err := collector.CollectAggregateMetrics(ctx, updateVA.Spec.ModelID, deploy.Namespace, mockProm)
+				Expect(err).NotTo(HaveOccurred(), "unable to fetch aggregate metrics for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
+				updateVA.Status.CurrentAllocs = []llmdVariantAutoscalingV1alpha1.Allocation{currentAllocation}
+				updateVA.Status.Load = load
+				updateVA.Status.TTFTAverage = ttftAvg
+				updateVA.Status.ITLAverage = itlAvg
 
 				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className)
 				Expect(err).NotTo(HaveOccurred(), "failed to add server info to system data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)

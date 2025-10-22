@@ -127,22 +127,18 @@ func ValidateMetricsAvailability(ctx context.Context, promAPI promv1.API, modelN
 	}
 }
 
-func AddMetricsToOptStatus(ctx context.Context,
-	opt *llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
-	deployment appsv1.Deployment,
-	acceleratorCostVal float64,
-	promAPI promv1.API) (llmdVariantAutoscalingV1alpha1.Allocation, error) {
+// CollectAggregateMetrics collects aggregate metrics (Load, ITL, TTFT) for a modelID
+// across all deployments serving that model. These metrics are shared across all variants.
+func CollectAggregateMetrics(ctx context.Context,
+	modelName string,
+	namespace string,
+	promAPI promv1.API) (llmdVariantAutoscalingV1alpha1.LoadProfile, string, string, error) {
 
-	deployNamespace := deployment.Namespace
-	modelName := opt.Spec.ModelID
-
-	// Setup Prometheus client
-	// TODO: agree on using standard vllm metrics
 	// Query 1: Arrival rate (requests per minute)
 	arrivalQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m])) * 60`,
 		constants.VLLMRequestSuccessTotal,
 		constants.LabelModelName, modelName,
-		constants.LabelNamespace, deployNamespace)
+		constants.LabelNamespace, namespace)
 	arrivalVal := 0.0
 	if val, warn, err := promAPI.Query(ctx, arrivalQuery, time.Now()); err == nil && val.Type() == model.ValVector {
 		vec := val.(model.Vector)
@@ -153,7 +149,7 @@ func AddMetricsToOptStatus(ctx context.Context,
 			logger.Log.Warn("Prometheus warnings - ", "warnings: ", warn)
 		}
 	} else {
-		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
+		return llmdVariantAutoscalingV1alpha1.LoadProfile{}, "", "", err
 	}
 	FixValue(&arrivalVal)
 
@@ -165,10 +161,10 @@ func AddMetricsToOptStatus(ctx context.Context,
 	avgDecToksQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
 		constants.VLLMRequestGenerationTokensSum,
 		constants.LabelModelName, modelName,
-		constants.LabelNamespace, deployNamespace,
+		constants.LabelNamespace, namespace,
 		constants.VLLMRequestGenerationTokensCount,
 		constants.LabelModelName, modelName,
-		constants.LabelNamespace, deployNamespace)
+		constants.LabelNamespace, namespace)
 	avgOutputTokens := 0.0
 	if val, _, err := promAPI.Query(ctx, avgDecToksQuery, time.Now()); err == nil && val.Type() == model.ValVector {
 		vec := val.(model.Vector)
@@ -176,7 +172,7 @@ func AddMetricsToOptStatus(ctx context.Context,
 			avgOutputTokens = float64(vec[0].Value)
 		}
 	} else {
-		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
+		return llmdVariantAutoscalingV1alpha1.LoadProfile{}, "", "", err
 	}
 	FixValue(&avgOutputTokens)
 
@@ -186,10 +182,10 @@ func AddMetricsToOptStatus(ctx context.Context,
 	ttftQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
 		constants.VLLMRequestQueueTimeSecondsSum,
 		constants.LabelModelName, modelName,
-		constants.LabelNamespace, deployNamespace,
+		constants.LabelNamespace, namespace,
 		constants.VLLMRequestQueueTimeSecondsCount,
 		constants.LabelModelName, modelName,
-		constants.LabelNamespace, deployNamespace)
+		constants.LabelNamespace, namespace)
 	ttftAverageTime := 0.0
 	if val, _, err := promAPI.Query(ctx, ttftQuery, time.Now()); err == nil && val.Type() == model.ValVector {
 		vec := val.(model.Vector)
@@ -205,10 +201,10 @@ func AddMetricsToOptStatus(ctx context.Context,
 	itlQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
 		constants.VLLMTimePerOutputTokenSecondsSum,
 		constants.LabelModelName, modelName,
-		constants.LabelNamespace, deployNamespace,
+		constants.LabelNamespace, namespace,
 		constants.VLLMTimePerOutputTokenSecondsCount,
 		constants.LabelModelName, modelName,
-		constants.LabelNamespace, deployNamespace)
+		constants.LabelNamespace, namespace)
 	itlAverage := 0.0
 	if val, _, err := promAPI.Query(ctx, itlQuery, time.Now()); err == nil && val.Type() == model.ValVector {
 		vec := val.(model.Vector)
@@ -220,15 +216,30 @@ func AddMetricsToOptStatus(ctx context.Context,
 	}
 	FixValue(&itlAverage)
 
+	// Return aggregate metrics
+	load := llmdVariantAutoscalingV1alpha1.LoadProfile{
+		ArrivalRate:     strconv.FormatFloat(float64(arrivalVal), 'f', 2, 32),
+		AvgInputTokens:  strconv.FormatFloat(float64(avgInputTokens), 'f', 2, 32),
+		AvgOutputTokens: strconv.FormatFloat(float64(avgOutputTokens), 'f', 2, 32),
+	}
+	ttftAvg := strconv.FormatFloat(float64(ttftAverageTime), 'f', 2, 32)
+	itlAvg := strconv.FormatFloat(float64(itlAverage), 'f', 2, 32)
+
+	return load, ttftAvg, itlAvg, nil
+}
+
+// CollectAllocationForDeployment collects allocation information for a single deployment.
+// This includes replica count, accelerator type, cost, and max batch size.
+// Aggregate metrics (Load, ITL, TTFT) are collected separately via CollectAggregateMetrics.
+func CollectAllocationForDeployment(
+	variantID string,
+	accelerator string,
+	deployment appsv1.Deployment,
+	acceleratorCostVal float64,
+) (llmdVariantAutoscalingV1alpha1.Allocation, error) {
+
 	// number of replicas
 	numReplicas := int(*deployment.Spec.Replicas)
-
-	// accelerator type
-	acc := ""
-	var ok bool
-	if acc, ok = opt.Labels["inference.optimization/acceleratorName"]; !ok {
-		logger.Log.Warn("acceleratorName label not found on deployment - ", "deployment-name: ", deployment.Name)
-	}
 
 	// cost
 	discoveredCost := float64(*deployment.Spec.Replicas) * acceleratorCostVal
@@ -237,21 +248,15 @@ func AddMetricsToOptStatus(ctx context.Context,
 	// TODO: collect value from server
 	maxBatch := 256
 
-	// populate current alloc
-	currentAlloc := llmdVariantAutoscalingV1alpha1.Allocation{
-		Accelerator: acc,
+	// populate allocation (without aggregate metrics)
+	allocation := llmdVariantAutoscalingV1alpha1.Allocation{
+		VariantID:   variantID,
+		Accelerator: accelerator,
 		NumReplicas: numReplicas,
 		MaxBatch:    maxBatch,
 		VariantCost: strconv.FormatFloat(float64(discoveredCost), 'f', 2, 32),
-		TTFTAverage: strconv.FormatFloat(float64(ttftAverageTime), 'f', 2, 32),
-		ITLAverage:  strconv.FormatFloat(float64(itlAverage), 'f', 2, 32),
-		Load: llmdVariantAutoscalingV1alpha1.LoadProfile{
-			ArrivalRate:     strconv.FormatFloat(float64(arrivalVal), 'f', 2, 32),
-			AvgInputTokens:  strconv.FormatFloat(float64(avgInputTokens), 'f', 2, 32),
-			AvgOutputTokens: strconv.FormatFloat(float64(avgOutputTokens), 'f', 2, 32),
-		},
 	}
-	return currentAlloc, nil
+	return allocation, nil
 }
 
 // Helper to handle if a value is NaN or infinite

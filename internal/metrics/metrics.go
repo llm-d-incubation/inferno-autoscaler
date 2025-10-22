@@ -30,21 +30,21 @@ func InitMetrics(registry prometheus.Registerer) error {
 			Name: constants.InfernoDesiredReplicas,
 			Help: "Desired number of replicas for each variant",
 		},
-		[]string{constants.LabelVariantName, constants.LabelNamespace, constants.LabelAcceleratorType},
+		[]string{constants.LabelVariantName, constants.LabelNamespace, constants.LabelAcceleratorType, constants.LabelVariantID},
 	)
 	currentReplicas = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: constants.InfernoCurrentReplicas,
 			Help: "Current number of replicas for each variant",
 		},
-		[]string{constants.LabelVariantName, constants.LabelNamespace, constants.LabelAcceleratorType},
+		[]string{constants.LabelVariantName, constants.LabelNamespace, constants.LabelAcceleratorType, constants.LabelVariantID},
 	)
 	desiredRatio = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: constants.InfernoDesiredRatio,
 			Help: "Ratio of the desired number of replicas and the current number of replicas for each variant",
 		},
-		[]string{constants.LabelVariantName, constants.LabelNamespace, constants.LabelAcceleratorType},
+		[]string{constants.LabelVariantName, constants.LabelNamespace, constants.LabelAcceleratorType, constants.LabelVariantID},
 	)
 
 	// Register metrics with the registry
@@ -100,11 +100,12 @@ func (m *MetricsEmitter) EmitReplicaScalingMetrics(ctx context.Context, va *llmd
 }
 
 // EmitReplicaMetrics emits current and desired replica metrics
-func (m *MetricsEmitter) EmitReplicaMetrics(ctx context.Context, va *llmdOptv1alpha1.VariantAutoscaling, current, desired int32, acceleratorType string) error {
+func (m *MetricsEmitter) EmitReplicaMetrics(ctx context.Context, va *llmdOptv1alpha1.VariantAutoscaling, current, desired int32, acceleratorType, variantID string) error {
 	baseLabels := prometheus.Labels{
 		constants.LabelVariantName:     va.Name,
 		constants.LabelNamespace:       va.Namespace,
 		constants.LabelAcceleratorType: acceleratorType,
+		constants.LabelVariantID:       variantID,
 	}
 
 	// These operations are local and should never fail, but we handle errors for debugging

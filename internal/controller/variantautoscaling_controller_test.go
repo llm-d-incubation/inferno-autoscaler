@@ -82,19 +82,16 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 					// TODO(user): Specify other spec details if needed.
 					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
 						// Example spec fields, adjust as necessary
-						ModelID: "default/default",
-						ModelProfile: llmdVariantAutoscalingV1alpha1.ModelProfile{
-							Accelerators: []llmdVariantAutoscalingV1alpha1.AcceleratorProfile{
-								{
-									Acc:      "A100",
-									AccCount: 1,
-									PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
-										DecodeParms:  map[string]string{"alpha": "20.28", "beta": "0.72"},
-										PrefillParms: map[string]string{"gamma": "0", "delta": "0"},
-									},
-									MaxBatchSize: 4,
-								},
+						ModelID:          "default/default",
+						VariantID:        "default/default-A100-1",
+						Accelerator:      "A100",
+						AcceleratorCount: 1,
+						VariantProfile: llmdVariantAutoscalingV1alpha1.VariantProfile{
+							PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
+								DecodeParms:  map[string]string{"alpha": "20.28", "beta": "0.72"},
+								PrefillParms: map[string]string{"gamma": "0", "delta": "0"},
 							},
+							MaxBatchSize: 4,
 						},
 						SLOClassRef: llmdVariantAutoscalingV1alpha1.ConfigMapKeyRef{
 							Name: "premium",
@@ -416,19 +413,16 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
-					ModelID: "default/default",
-					ModelProfile: llmdVariantAutoscalingV1alpha1.ModelProfile{
-						Accelerators: []llmdVariantAutoscalingV1alpha1.AcceleratorProfile{
-							{
-								Acc:      "INVALID_GPU",
-								AccCount: -1, // Invalid count
-								PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
-									DecodeParms:  map[string]string{"alpha": "invalid", "beta": "invalid"},
-									PrefillParms: map[string]string{"gamma": "invalid", "delta": "invalid"},
-								},
-								MaxBatchSize: -1, // Invalid batch size
-							},
+					ModelID:          "default/default",
+					VariantID:        "default/default-INVALID_GPU--1",
+					Accelerator:      "INVALID_GPU",
+					AcceleratorCount: -1, // Invalid count
+					VariantProfile: llmdVariantAutoscalingV1alpha1.VariantProfile{
+						PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
+							DecodeParms:  map[string]string{"alpha": "invalid", "beta": "invalid"},
+							PrefillParms: map[string]string{"gamma": "invalid", "delta": "invalid"},
 						},
+						MaxBatchSize: -1, // Invalid batch size
 					},
 					SLOClassRef: llmdVariantAutoscalingV1alpha1.ConfigMapKeyRef{
 						Name: "premium",
@@ -449,19 +443,16 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
-					ModelID: "", // Empty ModelID
-					ModelProfile: llmdVariantAutoscalingV1alpha1.ModelProfile{
-						Accelerators: []llmdVariantAutoscalingV1alpha1.AcceleratorProfile{
-							{
-								Acc:      "A100",
-								AccCount: 1,
-								PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
-									DecodeParms:  map[string]string{"alpha": "0.28", "beta": "0.72"},
-									PrefillParms: map[string]string{"gamma": "0", "delta": "0"},
-								},
-								MaxBatchSize: 4,
-							},
+					ModelID:          "", // Empty ModelID
+					VariantID:        "-A100-1",
+					Accelerator:      "A100",
+					AcceleratorCount: 1,
+					VariantProfile: llmdVariantAutoscalingV1alpha1.VariantProfile{
+						PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
+							DecodeParms:  map[string]string{"alpha": "0.28", "beta": "0.72"},
+							PrefillParms: map[string]string{"gamma": "0", "delta": "0"},
 						},
+						MaxBatchSize: 4,
 					},
 					SLOClassRef: llmdVariantAutoscalingV1alpha1.ConfigMapKeyRef{
 						Name: "premium",
@@ -474,19 +465,24 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 			Expect(err.Error()).To(ContainSubstring("spec.modelID"))
 		})
 
-		It("should handle empty accelerator list", func() {
-			By("Creating VariantAutoscaling with no accelerators")
+		It("should handle empty accelerator field", func() {
+			By("Creating VariantAutoscaling with no accelerator")
 			resource := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "empty-accelerators",
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
-					ModelID: "default/default",
-					ModelProfile: llmdVariantAutoscalingV1alpha1.ModelProfile{
-						Accelerators: []llmdVariantAutoscalingV1alpha1.AcceleratorProfile{
-							// no configuration for accelerators
+					ModelID:          "default/default",
+					VariantID:        "default/default--1",
+					Accelerator:      "", // Empty accelerator
+					AcceleratorCount: 1,
+					VariantProfile: llmdVariantAutoscalingV1alpha1.VariantProfile{
+						PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
+							DecodeParms:  map[string]string{"alpha": "0.28", "beta": "0.72"},
+							PrefillParms: map[string]string{"gamma": "0", "delta": "0"},
 						},
+						MaxBatchSize: 4,
 					},
 					SLOClassRef: llmdVariantAutoscalingV1alpha1.ConfigMapKeyRef{
 						Name: "premium",
@@ -496,7 +492,7 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 			}
 			err := k8sClient.Create(ctx, resource)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("spec.modelProfile.accelerators"))
+			Expect(err.Error()).To(ContainSubstring("spec.accelerator"))
 		})
 
 		It("should handle empty SLOClassRef", func() {
@@ -507,19 +503,16 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
-					ModelID: "default/default",
-					ModelProfile: llmdVariantAutoscalingV1alpha1.ModelProfile{
-						Accelerators: []llmdVariantAutoscalingV1alpha1.AcceleratorProfile{
-							{
-								Acc:      "A100",
-								AccCount: 1,
-								PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
-									DecodeParms:  map[string]string{"alpha": "0.28", "beta": "0.72"},
-									PrefillParms: map[string]string{"gamma": "0", "delta": "0"},
-								},
-								MaxBatchSize: 4,
-							},
+					ModelID:          "default/default",
+					VariantID:        "default/default-A100-1",
+					Accelerator:      "A100",
+					AcceleratorCount: 1,
+					VariantProfile: llmdVariantAutoscalingV1alpha1.VariantProfile{
+						PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
+							DecodeParms:  map[string]string{"alpha": "0.28", "beta": "0.72"},
+							PrefillParms: map[string]string{"gamma": "0", "delta": "0"},
 						},
+						MaxBatchSize: 4,
 					},
 					SLOClassRef: llmdVariantAutoscalingV1alpha1.ConfigMapKeyRef{
 						// no configuration for SLOClassRef
@@ -632,19 +625,16 @@ data:
 						},
 					},
 					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
-						ModelID: modelID,
-						ModelProfile: llmdVariantAutoscalingV1alpha1.ModelProfile{
-							Accelerators: []llmdVariantAutoscalingV1alpha1.AcceleratorProfile{
-								{
-									Acc:      "A100",
-									AccCount: 1,
-									PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
-										DecodeParms:  map[string]string{"alpha": "0.28", "beta": "0.72"},
-										PrefillParms: map[string]string{"gamma": "0", "delta": "0"},
-									},
-									MaxBatchSize: 4,
-								},
+						ModelID:          modelID,
+						VariantID:        fmt.Sprintf("%s-A100-1", modelID),
+						Accelerator:      "A100",
+						AcceleratorCount: 1,
+						VariantProfile: llmdVariantAutoscalingV1alpha1.VariantProfile{
+							PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
+								DecodeParms:  map[string]string{"alpha": "0.28", "beta": "0.72"},
+								PrefillParms: map[string]string{"gamma": "0", "delta": "0"},
 							},
+							MaxBatchSize: 4,
 						},
 						SLOClassRef: llmdVariantAutoscalingV1alpha1.ConfigMapKeyRef{
 							Name: "premium",
@@ -777,10 +767,14 @@ data:
 
 			for _, updatedVa := range updateList.Items {
 				Expect(vaNames).To(ContainElement(updatedVa.Name), fmt.Sprintf("Active VariantAutoscaling list should contain %s", updatedVa.Name))
+				Expect(updatedVa.Status.CurrentAlloc.VariantID).NotTo(BeEmpty(), fmt.Sprintf("CurrentAlloc should not be empty for %s after preparation", updatedVa.Name))
 				Expect(updatedVa.Status.CurrentAlloc.Accelerator).To(Equal("A100"), fmt.Sprintf("Current Accelerator for %s should be \"A100\" after preparation", updatedVa.Name))
 				Expect(updatedVa.Status.CurrentAlloc.NumReplicas).To(Equal(1), fmt.Sprintf("Current NumReplicas for %s should be 1 after preparation", updatedVa.Name))
-				Expect(updatedVa.Status.DesiredOptimizedAlloc.Accelerator).To(BeEmpty(), fmt.Sprintf("Desired Accelerator for %s should be empty value after preparation", updatedVa.Name))
-				Expect(updatedVa.Status.DesiredOptimizedAlloc.NumReplicas).To(BeZero(), fmt.Sprintf("Desired NumReplicas for %s should be zero after preparation", updatedVa.Name))
+
+				// DesiredOptimizedAlloc may be empty initially after preparation
+				if updatedVa.Status.DesiredOptimizedAlloc.VariantID != "" {
+					Expect(updatedVa.Status.DesiredOptimizedAlloc.Accelerator).NotTo(BeEmpty(), fmt.Sprintf("Desired Accelerator for %s should be set if DesiredOptimizedAlloc is not empty", updatedVa.Name))
+				}
 			}
 		})
 

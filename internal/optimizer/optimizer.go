@@ -46,7 +46,8 @@ func (engine *VariantAutoscalingsEngine) Optimize(ctx context.Context,
 	for _, va := range vaList.Items {
 		vaName := va.Name
 		vaNamespace := va.Namespace
-		if optimizedAllocation, err := utils.CreateOptimizedAlloc(vaName, vaNamespace, allocationSolution); err == nil {
+		variantID := va.Spec.VariantID
+		if optimizedAllocation, err := utils.CreateOptimizedAlloc(vaName, vaNamespace, variantID, allocationSolution); err == nil {
 			optimizedAllocMap[vaName] = *optimizedAllocation
 		}
 	}

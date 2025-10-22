@@ -240,13 +240,11 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 		}
 		logger.Log.Info("Found SLO for model - ", "model: ", modelName, ", class: ", className, ", slo-tpot: ", entry.SLOTPOT, ", slo-ttft: ", entry.SLOTTFT)
 
-		if err := utils.AddVariantProfileToSystemData(systemData,
-			modelName,
-			va.Spec.Accelerator,
-			va.Spec.AcceleratorCount,
-			&va.Spec.VariantProfile); err != nil {
-			logger.Log.Error(err, "failed to add variant profile to system data", "variantAutoscaling", va.Name)
-			continue
+		for _, modelAcceleratorProfile := range va.Spec.ModelProfile.Accelerators {
+			if utils.AddModelAcceleratorProfileToSystemData(systemData, modelName, &modelAcceleratorProfile) != nil {
+				logger.Log.Error("variantAutoscaling bad model accelerator profile data, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
+				continue
+			}
 		}
 
 		accName := va.Labels["inference.optimization/acceleratorName"]
@@ -274,10 +272,6 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 			logger.Log.Error(err, "unable to get variantAutoscaling for deployment - ", "deployment-name: ", deploy.Name, ", namespace: ", deploy.Namespace)
 			continue
 		}
-
-		// Validate and log the relationship between variant_name and variant_id
-		// This helps users understand the dual-identifier pattern used in Prometheus metrics
-		utils.ValidateVariantAutoscalingName(&updateVA)
 
 		// Set ownerReference early, before metrics validation, to ensure it's always set
 		// This ensures the VA will be garbage collected when the Deployment is deleted
@@ -320,28 +314,13 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 			continue
 		}
 
-		// Collect allocation info for this variant's deployment
-		variantID := updateVA.Spec.VariantID
-		accelerator := updateVA.Spec.Accelerator
-		allocation, err := collector.CollectAllocationForDeployment(variantID, accelerator, deploy, acceleratorCostValFloat)
+		currentAllocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, r.PromAPI)
 		if err != nil {
-			logger.Log.Error(err, "unable to collect allocation data, skipping this variantAutoscaling loop")
-			continue
-		}
-
-		// Collect aggregate metrics (shared across all variants of this model)
-		load, ttftAvg, itlAvg, err := collector.CollectAggregateMetrics(ctx, modelName, deploy.Namespace, r.PromAPI)
-		if err != nil {
-			logger.Log.Error(err, "unable to fetch aggregate metrics, skipping this variantAutoscaling loop")
+			logger.Log.Error(err, "unable to fetch metrics, skipping this variantAutoscaling loop")
 			// Don't update status here - will be updated in next reconcile when metrics are available
 			continue
 		}
-
-		// Update status with collected data (single allocation for this variant)
-		allocation.Load = load
-		allocation.TTFTAverage = ttftAvg
-		allocation.ITLAverage = itlAvg
-		updateVA.Status.CurrentAlloc = allocation
+		updateVA.Status.CurrentAlloc = currentAllocation
 
 		if err := utils.AddServerInfoToSystemData(systemData, &updateVA, className); err != nil {
 			logger.Log.Info("variantAutoscaling bad deployment server data, skipping optimization - ", "variantAutoscaling-name: ", updateVA.Name)
@@ -391,14 +370,13 @@ func (r *VariantAutoscalingReconciler) applyOptimizedAllocations(
 		updateVa.Status.Conditions = va.Status.Conditions
 
 		// Set OptimizationReady condition to True on successful optimization
-		optimizedAlloc := updateVa.Status.DesiredOptimizedAlloc
 		llmdVariantAutoscalingV1alpha1.SetCondition(&updateVa,
 			llmdVariantAutoscalingV1alpha1.TypeOptimizationReady,
 			metav1.ConditionTrue,
 			llmdVariantAutoscalingV1alpha1.ReasonOptimizationSucceeded,
 			fmt.Sprintf("Optimization completed: %d replicas on %s",
-				optimizedAlloc.NumReplicas,
-				optimizedAlloc.Accelerator))
+				updateVa.Status.DesiredOptimizedAlloc.NumReplicas,
+				updateVa.Status.DesiredOptimizedAlloc.Accelerator))
 
 		act := actuator.NewActuator(r.Client)
 
