@@ -33,11 +33,13 @@ func (engine *VariantAutoscalingsEngine) Optimize(ctx context.Context,
 ) (map[string]llmdOptv1alpha1.OptimizedAlloc, error) {
 
 	if err := engine.manager.Optimize(); err != nil {
-		return nil, err
+		// Return empty map instead of nil to prevent panic in controller
+		return make(map[string]llmdOptv1alpha1.OptimizedAlloc), err
 	}
 	allocationSolution := engine.system.GenerateSolution()
 	if allocationSolution == nil || len(allocationSolution.Spec) == 0 {
-		return nil, fmt.Errorf("no feasible allocations found for all variants: ")
+		// Return empty map instead of nil to prevent panic in controller
+		return make(map[string]llmdOptv1alpha1.OptimizedAlloc), fmt.Errorf("no feasible allocations found for all variants")
 	}
 
 	logger.Log.Debug("Optimization solution - ", "system: ", engine.system)

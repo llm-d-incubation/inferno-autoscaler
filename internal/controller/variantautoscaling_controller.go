@@ -170,15 +170,24 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 		// Update OptimizationReady condition to False for all VAs in the update list
 		for i := range updateList.Items {
 			va := &updateList.Items[i]
-			llmdVariantAutoscalingV1alpha1.SetCondition(va,
+
+			// Fetch fresh copy to avoid status update conflicts
+			var freshVA llmdVariantAutoscalingV1alpha1.VariantAutoscaling
+			if err := r.Get(ctx, client.ObjectKeyFromObject(va), &freshVA); err != nil {
+				logger.Log.Error(err, "failed to fetch fresh VA for status update",
+					"name", va.Name, "namespace", va.Namespace)
+				continue
+			}
+
+			llmdVariantAutoscalingV1alpha1.SetCondition(&freshVA,
 				llmdVariantAutoscalingV1alpha1.TypeOptimizationReady,
 				metav1.ConditionFalse,
 				llmdVariantAutoscalingV1alpha1.ReasonOptimizationFailed,
 				fmt.Sprintf("Optimization failed: %v", err))
 
-			if statusErr := r.Status().Update(ctx, va); statusErr != nil {
+			if statusErr := r.Status().Update(ctx, &freshVA); statusErr != nil {
 				logger.Log.Error(statusErr, "failed to update status condition after optimization failure",
-					"variantAutoscaling", va.Name)
+					"variantAutoscaling", freshVA.Name)
 			}
 		}
 

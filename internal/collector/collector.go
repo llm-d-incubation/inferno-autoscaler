@@ -239,10 +239,13 @@ func CollectAllocationForDeployment(
 ) (llmdVariantAutoscalingV1alpha1.Allocation, error) {
 
 	// number of replicas
-	numReplicas := int(*deployment.Spec.Replicas)
+	numReplicas := 0 // Default to 0 if not specified
+	if deployment.Spec.Replicas != nil {
+		numReplicas = int(*deployment.Spec.Replicas)
+	}
 
 	// cost
-	discoveredCost := float64(*deployment.Spec.Replicas) * acceleratorCostVal
+	discoveredCost := float64(numReplicas) * acceleratorCostVal
 
 	// max batch size
 	// TODO: collect value from server
