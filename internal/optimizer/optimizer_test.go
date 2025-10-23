@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -293,7 +294,8 @@ var _ = Describe("Optimizer", Ordered, func() {
 				err = utils.GetVariantAutoscalingWithBackoff(ctx, k8sClient, deploy.Name, deploy.Namespace, &updateVA)
 				Expect(err).NotTo(HaveOccurred(), "failed to get variantAutoscaling for deployment - ", "deployment-name: ", deploy.Name)
 
-				currentAllocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, &testutils.MockPromAPI{})
+				testMetricsCache := collector.NewModelMetricsCache()
+			currentAllocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, &testutils.MockPromAPI{}, testMetricsCache, 10*time.Minute)
 				Expect(err).NotTo(HaveOccurred(), "unable to fetch metrics and add to Optimizer status for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 				updateVA.Status.CurrentAlloc = currentAllocation
 
@@ -327,7 +329,9 @@ var _ = Describe("Optimizer", Ordered, func() {
 			}
 
 			By("Performing optimization")
-			optimizedAllocs, err := engine.Optimize(ctx, updateList, allAnalyzerResponses)
+			scaleToZeroConfigData := make(utils.ScaleToZeroConfigData)
+			metricsCache := collector.NewModelMetricsCache()
+			optimizedAllocs, err := engine.Optimize(ctx, updateList, allAnalyzerResponses, &scaleToZeroConfigData, metricsCache)
 			Expect(err).NotTo(HaveOccurred(), "unable to perform model optimization")
 			Expect(len(optimizedAllocs)).To(Equal(len(updateList.Items)), "Expected optimized allocations for all VariantAutoscalings")
 			for key, value := range optimizedAllocs {
@@ -414,7 +418,8 @@ var _ = Describe("Optimizer", Ordered, func() {
 					&model.Sample{Value: model.SampleValue(0.008)},
 				}
 
-				currentAllocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, mockProm)
+				testMetricsCache := collector.NewModelMetricsCache()
+			currentAllocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, mockProm, testMetricsCache, 10*time.Minute)
 				Expect(err).NotTo(HaveOccurred(), "unable to fetch metrics and add to Optimizer status for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 				updateVA.Status.CurrentAlloc = currentAllocation
 
@@ -448,7 +453,9 @@ var _ = Describe("Optimizer", Ordered, func() {
 			}
 
 			By("Performing optimization")
-			optimizedAllocs, err := engine.Optimize(ctx, updateList, allAnalyzerResponses)
+			scaleToZeroConfigData := make(utils.ScaleToZeroConfigData)
+			metricsCache := collector.NewModelMetricsCache()
+			optimizedAllocs, err := engine.Optimize(ctx, updateList, allAnalyzerResponses, &scaleToZeroConfigData, metricsCache)
 			Expect(err).NotTo(HaveOccurred(), "unable to perform model optimization")
 			Expect(len(optimizedAllocs)).To(Equal(len(updateList.Items)), "Expected optimized allocations for all VariantAutoscalings")
 			for key, value := range optimizedAllocs {
