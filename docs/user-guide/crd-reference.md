@@ -35,6 +35,8 @@ _Appears in:_
 
 
 Allocation describes the current resource allocation for this variant.
+Note: In single-variant architecture, variantID, accelerator, maxBatch, and variantCost
+are not needed here as they are already defined in the parent VariantAutoscaling spec.
 
 
 
@@ -43,11 +45,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `variantID` _string_ | VariantID identifies this variant.<br />Format: \{modelID\}-\{accelerator\}-\{acceleratorCount\} |  | MinLength: 1 <br /> |
-| `accelerator` _string_ | Accelerator is the type of accelerator currently allocated. |  | MinLength: 1 <br /> |
 | `numReplicas` _integer_ | NumReplicas is the number of replicas currently allocated. |  | Minimum: 0 <br /> |
-| `maxBatch` _integer_ | MaxBatch is the maximum batch size currently allocated. |  | Minimum: 0 <br /> |
-| `variantCost` _string_ | VariantCost is the cost associated with this variant allocation. |  | Pattern: `^\d+(\.\d+)?$` <br /> |
 
 
 #### ConfigMapKeyRef
@@ -72,6 +70,8 @@ _Appears in:_
 
 
 OptimizedAlloc describes the target optimized allocation for a model variant.
+Note: In single-variant architecture, variantID and accelerator are not needed here
+as they are already defined in the parent VariantAutoscaling spec.
 
 
 
@@ -81,8 +81,6 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.32/#time-v1-meta)_ | LastRunTime is the timestamp of the last optimization run. |  |  |
-| `variantID` _string_ | VariantID identifies which variant this optimized allocation is for.<br />Format: \{modelID\}-\{accelerator\}-\{acceleratorCount\} |  | MinLength: 1 <br /> |
-| `accelerator` _string_ | Accelerator is the type of accelerator for the optimized allocation. |  | MinLength: 2 <br /> |
 | `numReplicas` _integer_ | NumReplicas is the number of replicas for the optimized allocation. |  | Minimum: 0 <br /> |
 
 
@@ -165,6 +163,7 @@ _Appears in:_
 | `acceleratorCount` _integer_ | AcceleratorCount specifies the number of accelerator units per replica. |  | Minimum: 1 <br />Required: \{\} <br /> |
 | `sloClassRef` _[ConfigMapKeyRef](#configmapkeyref)_ | SLOClassRef references the ConfigMap key containing Service Level Objective (SLO) configuration. |  | Required: \{\} <br /> |
 | `variantProfile` _[VariantProfile](#variantprofile)_ | VariantProfile provides performance characteristics for this variant. |  | Required: \{\} <br /> |
+| `variantCost` _string_ | VariantCost specifies the cost per replica for this variant configuration.<br />This is a static characteristic of the variant (cost rate), not runtime cost.<br />Total cost can be calculated as: VariantCost * NumReplicas |  | Pattern: `^\d+(\.\d+)?$` <br />Required: \{\} <br /> |
 
 
 #### VariantAutoscalingStatus

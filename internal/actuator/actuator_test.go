@@ -220,16 +220,13 @@ var _ = Describe("Actuator", func() {
 				},
 				Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
 					CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{
-						VariantID:   "test-model/variant-1-A100-1",
+						// Note: In single-variant architecture, variantID, accelerator, maxBatch, and variantCost
+						// are in the parent VA spec, not in Allocation status
 						NumReplicas: 2,
-						Accelerator: "A100",
-						MaxBatch:    32,
-						VariantCost: "10.5",
 					},
 					DesiredOptimizedAlloc: llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
-						VariantID:   "test-model/variant-1-A100-1",
+						// Note: In single-variant architecture, variantID and accelerator are in the parent VA spec
 						NumReplicas: 4,
-						Accelerator: "A100",
 					},
 				},
 			}
@@ -276,10 +273,9 @@ var _ = Describe("Actuator", func() {
 					Namespace: namespace,
 				}, &dep)
 			}).Should(HaveOccurred())
-			replicas := 0
-			if va.Status.DesiredOptimizedAlloc.VariantID != "" {
-				replicas = va.Status.DesiredOptimizedAlloc.NumReplicas
-			}
+			// Note: In single-variant architecture, VariantID is in spec, not in OptimizedAlloc
+			// Check NumReplicas to determine if there's a valid allocation
+			replicas := va.Status.DesiredOptimizedAlloc.NumReplicas
 			fmt.Printf("Emitting metrics for variantAutoscaling - name: %s\n numReplicas: %d\n", va.Name, replicas)
 			err := actuator.EmitMetrics(ctx, va)
 			Expect(err).NotTo(HaveOccurred())
@@ -292,10 +288,8 @@ var _ = Describe("Actuator", func() {
 			// This test verifies that metrics emission errors don't fail the method
 			// We can't easily simulate a metrics emission error without mocking,
 			// but we can verify the error handling logic exists
-			replicas := 0
-			if va.Status.DesiredOptimizedAlloc.VariantID != "" {
-				replicas = va.Status.DesiredOptimizedAlloc.NumReplicas
-			}
+			// Note: In single-variant architecture, VariantID is in spec, not in OptimizedAlloc
+			replicas := va.Status.DesiredOptimizedAlloc.NumReplicas
 			fmt.Printf("Emitting metrics for variantAutoscaling - name: %s\n numReplicas: %d\n", va.Name, replicas)
 			err := actuator.EmitMetrics(ctx, va)
 			Expect(err).NotTo(HaveOccurred())
@@ -310,10 +304,9 @@ var _ = Describe("Actuator", func() {
 
 		It("should skip allocation when NumReplicas is negative", func() {
 			// Test skipping negative replicas
+			// Note: In single-variant architecture, variantID and accelerator are in the parent VA spec
 			va.Status.DesiredOptimizedAlloc = llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
-				VariantID:   "test-model/variant-1-A100-1",
 				NumReplicas: -1,
-				Accelerator: "A100",
 			}
 			err := actuator.EmitMetrics(ctx, va)
 			Expect(err).NotTo(HaveOccurred())
@@ -321,15 +314,12 @@ var _ = Describe("Actuator", func() {
 
 		It("should emit metrics for single allocation", func() {
 			// Test metrics emission for single variant allocation
+			// Note: In single-variant architecture, variantID and accelerator are in the parent VA spec
 			va.Status.DesiredOptimizedAlloc = llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
-				VariantID:   "test-model/variant-1-A100-1",
 				NumReplicas: 2,
-				Accelerator: "A100",
 			}
 			va.Status.CurrentAlloc = llmdVariantAutoscalingV1alpha1.Allocation{
-				VariantID:   "test-model/variant-1-A100-1",
 				NumReplicas: 2,
-				Accelerator: "A100",
 			}
 			err := actuator.EmitMetrics(ctx, va)
 			Expect(err).NotTo(HaveOccurred())
@@ -346,16 +336,13 @@ var _ = Describe("Actuator", func() {
 				}, &dep)
 			}).Should(HaveOccurred())
 
-			// Set up matching CurrentAlloc by variantID
+			// Set up matching CurrentAlloc
+			// Note: In single-variant architecture, variantID and accelerator are in the parent VA spec
 			va.Status.DesiredOptimizedAlloc = llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
-				VariantID:   "test-model/variant-1-A100-1",
 				NumReplicas: 5,
-				Accelerator: "A100",
 			}
 			va.Status.CurrentAlloc = llmdVariantAutoscalingV1alpha1.Allocation{
-				VariantID:   "test-model/variant-1-A100-1",
 				NumReplicas: 3,
-				Accelerator: "A100",
 			}
 
 			err := actuator.EmitMetrics(ctx, va)
@@ -374,16 +361,13 @@ var _ = Describe("Actuator", func() {
 				}, &dep)
 			}).Should(HaveOccurred())
 
-			// DesiredAlloc with non-matching CurrentAlloc VariantID
+			// DesiredAlloc with different CurrentAlloc (testing fallback)
+			// Note: In single-variant architecture, variantID and accelerator are in the parent VA spec
 			va.Status.DesiredOptimizedAlloc = llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
-				VariantID:   "test-model/new-variant-A100-1",
 				NumReplicas: 5,
-				Accelerator: "A100",
 			}
 			va.Status.CurrentAlloc = llmdVariantAutoscalingV1alpha1.Allocation{
-				VariantID:   "test-model/different-variant-A100-1",
 				NumReplicas: 3,
-				Accelerator: "A100",
 			}
 
 			err := actuator.EmitMetrics(ctx, va)
@@ -393,15 +377,12 @@ var _ = Describe("Actuator", func() {
 
 		It("should emit metrics for valid allocation with zero replicas", func() {
 			// Test with zero replicas (valid but should be skipped)
+			// Note: In single-variant architecture, variantID and accelerator are in the parent VA spec
 			va.Status.DesiredOptimizedAlloc = llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
-				VariantID:   "test-model/valid-variant",
 				NumReplicas: 0,
-				Accelerator: "A100",
 			}
 			va.Status.CurrentAlloc = llmdVariantAutoscalingV1alpha1.Allocation{
-				VariantID:   "test-model/valid-variant",
 				NumReplicas: 0,
-				Accelerator: "A100",
 			}
 
 			err := actuator.EmitMetrics(ctx, va)
@@ -477,16 +458,13 @@ var _ = Describe("Actuator", func() {
 				},
 				Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
 					CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{
-						VariantID:   "test-model/metrics-test-A100-1",
+						// Note: In single-variant architecture, variantID, accelerator, maxBatch, and variantCost
+						// are in the parent VA spec, not in Allocation status
 						NumReplicas: 1,
-						Accelerator: "A100",
-						MaxBatch:    32,
-						VariantCost: "5.0",
 					},
 					DesiredOptimizedAlloc: llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
-						VariantID:   "test-model/metrics-test-A100-1",
+						// Note: In single-variant architecture, variantID and accelerator are in the parent VA spec
 						NumReplicas: 3,
-						Accelerator: "A100",
 					},
 				},
 			}
@@ -503,20 +481,16 @@ var _ = Describe("Actuator", func() {
 		})
 
 		It("should verify that metrics emitter can emit scaling metrics", func() {
-			replicas := 0
-			if va.Status.DesiredOptimizedAlloc.VariantID != "" {
-				replicas = va.Status.DesiredOptimizedAlloc.NumReplicas
-			}
+			// In single-variant architecture, just use NumReplicas directly
+			replicas := va.Status.DesiredOptimizedAlloc.NumReplicas
 			fmt.Printf("Emitting scaling metrics for variantAutoscaling - name: %s\n numReplicas: %d\n", va.Name, replicas)
 			err := actuator.MetricsEmitter.EmitReplicaScalingMetrics(ctx, va, "up", "optimization")
 			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("should verify that metrics emitter can emit replica metrics", func() {
-			replicas := 0
-			if va.Status.DesiredOptimizedAlloc.VariantID != "" {
-				replicas = va.Status.DesiredOptimizedAlloc.NumReplicas
-			}
+			// In single-variant architecture, just use NumReplicas directly
+			replicas := va.Status.DesiredOptimizedAlloc.NumReplicas
 			fmt.Printf("Emitting replica metrics for variantAutoscaling - name: %s\n numReplicas: %d\n", va.Name, replicas)
 			err := actuator.MetricsEmitter.EmitReplicaMetrics(ctx, va, 1, 3, "A100", "test-model-A100-1")
 			Expect(err).NotTo(HaveOccurred())
@@ -524,10 +498,8 @@ var _ = Describe("Actuator", func() {
 
 		It("should verify full metric emission workflow", func() {
 			// Test the complete workflow
-			replicas := 0
-			if va.Status.DesiredOptimizedAlloc.VariantID != "" {
-				replicas = va.Status.DesiredOptimizedAlloc.NumReplicas
-			}
+			// In single-variant architecture, just use NumReplicas directly
+			replicas := va.Status.DesiredOptimizedAlloc.NumReplicas
 			fmt.Printf("Emitting metrics for variantAutoscaling - name: %s\n numReplicas: %d\n", va.Name, replicas)
 			err := actuator.EmitMetrics(ctx, va)
 			Expect(err).NotTo(HaveOccurred())
@@ -579,10 +551,8 @@ var _ = Describe("Actuator", func() {
 			defer func() {
 				Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, va))).To(Succeed())
 			}()
-			replicas := 0
-			if va.Status.DesiredOptimizedAlloc.VariantID != "" {
-				replicas = va.Status.DesiredOptimizedAlloc.NumReplicas
-			}
+			// In single-variant architecture, just use NumReplicas directly
+			replicas := va.Status.DesiredOptimizedAlloc.NumReplicas
 			fmt.Printf("Emitting metrics for variantAutoscaling - name: %s\n numReplicas: %d\n", va.Name, replicas)
 			err := actuator.EmitMetrics(ctx, va)
 			Expect(err).NotTo(HaveOccurred()) // Should skip metrics emission due to 0 replicas
@@ -657,16 +627,13 @@ var _ = Describe("Actuator", func() {
 				},
 				Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
 					CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{
-						VariantID:   "test-model/validation-test-A100-1",
+						// Note: In single-variant architecture, variantID, accelerator, maxBatch, and variantCost
+						// are in the parent VA spec, not in Allocation status
 						NumReplicas: 2,
-						Accelerator: "A100",
-						MaxBatch:    32,
-						VariantCost: "10.0",
 					},
 					DesiredOptimizedAlloc: llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
-						VariantID:   "test-model/validation-test-A100-1",
+						// Note: In single-variant architecture, variantID and accelerator are in the parent VA spec
 						NumReplicas: 5,
-						Accelerator: "A100",
 					},
 				},
 			}

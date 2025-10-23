@@ -46,6 +46,13 @@ type VariantAutoscalingSpec struct {
 	// VariantProfile provides performance characteristics for this variant.
 	// +kubebuilder:validation:Required
 	VariantProfile VariantProfile `json:"variantProfile"`
+
+	// VariantCost specifies the cost per replica for this variant configuration.
+	// This is a static characteristic of the variant (cost rate), not runtime cost.
+	// Total cost can be calculated as: VariantCost * NumReplicas
+	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
+	// +kubebuilder:validation:Required
+	VariantCost string `json:"variantCost"`
 }
 
 // ConfigMapKeyRef references a specific key within a ConfigMap.
@@ -107,20 +114,12 @@ type VariantAutoscalingStatus struct {
 }
 
 // Allocation describes the current resource allocation for this variant.
-// Note: In single-variant architecture, variantID and accelerator are not needed here
-// as they are already defined in the parent VariantAutoscaling spec.
+// Note: In single-variant architecture, variantID, accelerator, maxBatch, and variantCost
+// are not needed here as they are already defined in the parent VariantAutoscaling spec.
 type Allocation struct {
 	// NumReplicas is the number of replicas currently allocated.
 	// +kubebuilder:validation:Minimum=0
 	NumReplicas int `json:"numReplicas"`
-
-	// MaxBatch is the maximum batch size currently allocated.
-	// +kubebuilder:validation:Minimum=0
-	MaxBatch int `json:"maxBatch"`
-
-	// VariantCost is the cost associated with this variant allocation.
-	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
-	VariantCost string `json:"variantCost"`
 }
 
 // OptimizedAlloc describes the target optimized allocation for a model variant.

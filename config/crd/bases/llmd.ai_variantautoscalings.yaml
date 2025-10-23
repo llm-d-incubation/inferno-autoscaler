@@ -97,6 +97,13 @@ spec:
                 - key
                 - name
                 type: object
+              variantCost:
+                description: |-
+                  VariantCost specifies the cost per replica for this variant configuration.
+                  This is a static characteristic of the variant (cost rate), not runtime cost.
+                  Total cost can be calculated as: VariantCost * NumReplicas
+                pattern: ^\d+(\.\d+)?$
+                type: string
               variantID:
                 description: |-
                   VariantID uniquely identifies this variant (model + accelerator + acceleratorCount combination).
@@ -156,6 +163,7 @@ spec:
             - acceleratorCount
             - modelID
             - sloClassRef
+            - variantCost
             - variantID
             - variantProfile
             type: object
@@ -239,23 +247,12 @@ spec:
                 description: CurrentAlloc specifies the current resource allocation
                   for this variant.
                 properties:
-                  maxBatch:
-                    description: MaxBatch is the maximum batch size currently allocated.
-                    minimum: 0
-                    type: integer
                   numReplicas:
                     description: NumReplicas is the number of replicas currently allocated.
                     minimum: 0
                     type: integer
-                  variantCost:
-                    description: VariantCost is the cost associated with this variant
-                      allocation.
-                    pattern: ^\d+(\.\d+)?$
-                    type: string
                 required:
-                - maxBatch
                 - numReplicas
-                - variantCost
                 type: object
               desiredOptimizedAlloc:
                 description: DesiredOptimizedAlloc indicates the target optimized

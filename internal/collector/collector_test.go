@@ -238,7 +238,6 @@ var _ = Describe("Collector", func() {
 			testNamespace string
 			variantID     string
 			accelerator   string
-			accCost       float64
 			mockProm      *utils.MockPromAPI
 		)
 
@@ -247,7 +246,6 @@ var _ = Describe("Collector", func() {
 			testNamespace = "test-namespace"
 			variantID = "test-model-A100-1"
 			accelerator = "A100"
-			accCost = 40.0
 
 			replicas := int32(2)
 			deployment = appsv1.Deployment{
@@ -287,13 +285,11 @@ var _ = Describe("Collector", func() {
 			}
 
 			// Test new API - CollectAllocationForDeployment
-			allocation, err := CollectAllocationForDeployment(variantID, accelerator, deployment, accCost)
+			allocation, err := CollectAllocationForDeployment(variantID, accelerator, deployment)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(allocation.Accelerator).To(Equal("A100"))
-			Expect(allocation.VariantID).To(Equal(variantID))
+			// Note: In single-variant architecture, Accelerator, VariantID, MaxBatch, and VariantCost
+			// are in the VA spec, not in the Allocation status
 			Expect(allocation.NumReplicas).To(Equal(2))
-			Expect(allocation.MaxBatch).To(Equal(256))
-			Expect(allocation.VariantCost).To(Equal("80.00")) // 2 replicas * 40.0 acc cost
 
 			// Test new API - CollectAggregateMetrics
 			load, ttftAvg, itlAvg, err := CollectAggregateMetrics(ctx, modelID, testNamespace, mockProm)
@@ -306,9 +302,9 @@ var _ = Describe("Collector", func() {
 
 		It("should handle empty accelerator gracefully", func() {
 			// Test with empty accelerator string
-			allocation, err := CollectAllocationForDeployment(variantID, "", deployment, accCost)
+			allocation, err := CollectAllocationForDeployment(variantID, "", deployment)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(allocation.Accelerator).To(Equal("")) // Empty accelerator is valid
+			// Note: In single-variant architecture, Accelerator is in the VA spec, not Allocation status
 			Expect(allocation.NumReplicas).To(Equal(2))
 		})
 

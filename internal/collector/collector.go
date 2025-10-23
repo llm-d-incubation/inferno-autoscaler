@@ -261,13 +261,12 @@ func CollectAggregateMetrics(ctx context.Context,
 }
 
 // CollectAllocationForDeployment collects allocation information for a single deployment.
-// This includes replica count, accelerator type, cost, and max batch size.
+// This includes replica count. Other allocation details (cost, max batch) are in the VA spec.
 // Aggregate metrics (Load, ITL, TTFT) are collected separately via CollectAggregateMetrics.
 func CollectAllocationForDeployment(
 	variantID string,
 	accelerator string,
 	deployment appsv1.Deployment,
-	acceleratorCostVal float64,
 ) (llmdVariantAutoscalingV1alpha1.Allocation, error) {
 
 	// number of replicas
@@ -276,19 +275,11 @@ func CollectAllocationForDeployment(
 		numReplicas = int(*deployment.Spec.Replicas)
 	}
 
-	// cost
-	discoveredCost := float64(numReplicas) * acceleratorCostVal
-
-	// max batch size
-	// TODO: collect value from server
-	maxBatch := 256
-
 	// populate allocation (without aggregate metrics)
-	// Note: VariantID and Accelerator are not included as they're in the parent VA spec
+	// Note: In single-variant architecture, variantID, accelerator, maxBatch, and variantCost
+	// are not needed here as they are already defined in the parent VariantAutoscaling spec.
 	allocation := llmdVariantAutoscalingV1alpha1.Allocation{
 		NumReplicas: numReplicas,
-		MaxBatch:    maxBatch,
-		VariantCost: strconv.FormatFloat(float64(discoveredCost), 'f', 2, 32),
 	}
 	return allocation, nil
 }
@@ -305,7 +296,6 @@ func FixValue(x *float64) {
 func AddMetricsToOptStatus(ctx context.Context,
 	opt *llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
 	deployment appsv1.Deployment,
-	acceleratorCostVal float64,
 	promAPI promv1.API,
 	metricsCache *ScaleToZeroMetricsCache,
 	retentionPeriod time.Duration) (llmdVariantAutoscalingV1alpha1.Allocation, error) {
@@ -428,19 +418,11 @@ func AddMetricsToOptStatus(ctx context.Context,
 	// number of replicas
 	numReplicas := int(*deployment.Spec.Replicas)
 
-	// cost
-	discoveredCost := float64(*deployment.Spec.Replicas) * acceleratorCostVal
-
-	// max batch size
-	// TODO: collect value from server
-	maxBatch := 256
-
 	// populate current alloc (refactored: metrics are passed separately, not stored in allocation)
-	// Note: VariantID and Accelerator are not included as they're in the parent VA spec
+	// Note: In single-variant architecture, variantID, accelerator, maxBatch, and variantCost
+	// are not needed here as they are already defined in the parent VariantAutoscaling spec.
 	currentAlloc := llmdVariantAutoscalingV1alpha1.Allocation{
 		NumReplicas: numReplicas,
-		MaxBatch:    maxBatch,
-		VariantCost: strconv.FormatFloat(float64(discoveredCost), 'f', 2, 32),
 	}
 	return currentAlloc, nil
 }

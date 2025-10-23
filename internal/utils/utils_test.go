@@ -346,16 +346,10 @@ func TestCreateOptimizedAlloc(t *testing.T) {
 				return
 			}
 
-			// Verify VariantID is set correctly (this is the critical fix being tested)
-			if result.VariantID != tt.variantID {
-				t.Errorf("VariantID mismatch: got %q, expected %q", result.VariantID, tt.variantID)
-			}
+			// Note: In single-variant architecture, VariantID and Accelerator are in the VA spec,
+			// not in OptimizedAlloc. These assertions have been removed.
 
-			// Verify other fields
-			if result.Accelerator != tt.accelerator {
-				t.Errorf("Accelerator mismatch: got %q, expected %q", result.Accelerator, tt.accelerator)
-			}
-
+			// Verify NumReplicas
 			if result.NumReplicas != tt.numReplicas {
 				t.Errorf("NumReplicas mismatch: got %d, expected %d", result.NumReplicas, tt.numReplicas)
 			}
@@ -370,8 +364,8 @@ func TestCreateOptimizedAlloc(t *testing.T) {
 				t.Errorf("LastRunTime seems too old: %v ago", timeSinceCreation)
 			}
 
-			t.Logf("Success: Created OptimizedAlloc with variant_id=%q, accelerator=%q, replicas=%d",
-				result.VariantID, result.Accelerator, result.NumReplicas)
+			t.Logf("Success: Created OptimizedAlloc for variant_id=%q, accelerator=%q, replicas=%d",
+				tt.variantID, tt.accelerator, result.NumReplicas)
 		})
 	}
 }

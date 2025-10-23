@@ -411,16 +411,16 @@ func AddServerInfoToSystemData(
 		AvgOutTokens: metrics.Load.AvgOutputTokens,
 	}
 
-	// Parse cost from allocation
+	// Parse cost from spec (cost per replica)
 	var cost float64
-	if cost, err = strconv.ParseFloat(currentAlloc.VariantCost, 32); err != nil || !CheckValue(cost) {
+	if cost, err = strconv.ParseFloat(va.Spec.VariantCost, 32); err != nil || !CheckValue(cost) {
 		cost = 0
 	}
 
 	AllocationData := &infernoConfig.AllocationData{
-		Accelerator: va.Spec.Accelerator, // Use spec field (single-variant architecture)
+		Accelerator: va.Spec.Accelerator,                 // Use spec field (single-variant architecture)
 		NumReplicas: currentAlloc.NumReplicas,
-		MaxBatch:    currentAlloc.MaxBatch,
+		MaxBatch:    va.Spec.VariantProfile.MaxBatchSize, // Use spec field (single-variant architecture)
 		Cost:        float32(cost),
 		ITLAverage:  metrics.ITLAverage,
 		TTFTAverage: metrics.TTFTAverage,

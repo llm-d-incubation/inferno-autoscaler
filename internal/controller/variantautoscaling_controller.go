@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -271,18 +270,6 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 			continue
 		}
 
-		accName := va.Labels["inference.optimization/acceleratorName"]
-		acceleratorCostVal, ok := acceleratorCm[accName]["cost"]
-		if !ok {
-			logger.Log.Error("variantAutoscaling missing accelerator cost in configMap, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
-			continue
-		}
-		acceleratorCostValFloat, err := strconv.ParseFloat(acceleratorCostVal, 32)
-		if err != nil {
-			logger.Log.Error("variantAutoscaling unable to parse accelerator cost in configMap, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
-			continue
-		}
-
 		var deploy appsv1.Deployment
 		err = utils.GetDeploymentWithBackoff(ctx, r.Client, va.Name, va.Namespace, &deploy)
 		if err != nil {
@@ -346,7 +333,7 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 		retentionPeriod := utils.GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, modelName)
 
 		// Collect allocation and scale-to-zero metrics for this variant
-		allocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, r.PromAPI, r.ScaleToZeroMetricsCache, retentionPeriod)
+		allocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, r.PromAPI, r.ScaleToZeroMetricsCache, retentionPeriod)
 		if err != nil {
 			logger.Log.Error(err, "unable to collect allocation data, skipping this variantAutoscaling loop")
 			continue

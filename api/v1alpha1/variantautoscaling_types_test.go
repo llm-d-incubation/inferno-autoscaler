@@ -44,16 +44,13 @@ func makeValidVA() *VariantAutoscaling {
 		},
 		Status: VariantAutoscalingStatus{
 			CurrentAlloc: Allocation{
-				VariantID:   "model-123-A100-1",
-				Accelerator: "A100",
+				// Note: In single-variant architecture, variantID, accelerator, maxBatch, and variantCost
+				// are in the parent VA spec, not in Allocation status
 				NumReplicas: 1,
-				MaxBatch:    8,
-				VariantCost: "1.23",
 			},
 			DesiredOptimizedAlloc: OptimizedAlloc{
 				LastRunTime: metav1.NewTime(time.Unix(1730000000, 0).UTC()),
-				VariantID:   "model-123-A100-1",
-				Accelerator: "A100",
+				// Note: In single-variant architecture, variantID and accelerator are in the parent VA spec
 				NumReplicas: 2,
 			},
 			Actuation: ActuationStatus{
@@ -118,8 +115,10 @@ func TestJSONRoundTrip(t *testing.T) {
 		t.Fatalf("json.Unmarshal failed: %v", err)
 	}
 
-	if back.Status.DesiredOptimizedAlloc.VariantID == "" {
-		t.Fatalf("DesiredOptimizedAlloc should not be empty after unmarshal")
+	// Note: In single-variant architecture, VariantID is in spec, not in OptimizedAlloc
+	// Check NumReplicas instead to ensure unmarshal worked
+	if back.Status.DesiredOptimizedAlloc.NumReplicas != orig.Status.DesiredOptimizedAlloc.NumReplicas {
+		t.Fatalf("DesiredOptimizedAlloc.NumReplicas mismatch after unmarshal")
 	}
 
 	ot := orig.Status.DesiredOptimizedAlloc.LastRunTime.Time
