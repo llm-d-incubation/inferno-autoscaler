@@ -154,3 +154,89 @@ func (c *ModelMetricsCache) Cleanup() int {
 
 	return removed
 }
+
+// ================================================================================
+// Scale-to-Zero Metrics Cache
+// ================================================================================
+
+// ScaleToZeroMetrics holds internal metrics for scale-to-zero decisions.
+// These metrics are NOT exposed in the CRD but used internally by the controller.
+type ScaleToZeroMetrics struct {
+	// TotalRequestsOverRetentionPeriod is the total number of requests received over
+	// the scale-to-zero retention period. This is used for scale-to-zero decisions.
+	TotalRequestsOverRetentionPeriod float64
+
+	// RetentionPeriod is the configured retention period for this model
+	RetentionPeriod time.Duration
+
+	// LastUpdated is the timestamp when these metrics were last updated
+	LastUpdated time.Time
+}
+
+// ScaleToZeroMetricsCache is a thread-safe cache for storing per-model scale-to-zero metrics.
+// This is separate from ModelMetricsCache which stores Prometheus metrics for the optimizer.
+type ScaleToZeroMetricsCache struct {
+	mu      sync.RWMutex
+	metrics map[string]*ScaleToZeroMetrics // modelID -> metrics
+}
+
+// NewScaleToZeroMetricsCache creates a new ScaleToZeroMetricsCache
+func NewScaleToZeroMetricsCache() *ScaleToZeroMetricsCache {
+	return &ScaleToZeroMetricsCache{
+		metrics: make(map[string]*ScaleToZeroMetrics),
+	}
+}
+
+// Set stores or updates scale-to-zero metrics for a model
+func (c *ScaleToZeroMetricsCache) Set(modelID string, metrics *ScaleToZeroMetrics) {
+	if metrics == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// Create a copy to avoid side effects on caller's struct
+	metricsCopy := *metrics
+	metricsCopy.LastUpdated = time.Now()
+	c.metrics[modelID] = &metricsCopy
+}
+
+// Get retrieves a copy of scale-to-zero metrics for a model
+func (c *ScaleToZeroMetricsCache) Get(modelID string) (*ScaleToZeroMetrics, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	metrics, exists := c.metrics[modelID]
+	if !exists {
+		return nil, false
+	}
+	// Return a copy to prevent race conditions
+	metricsCopy := *metrics
+	return &metricsCopy, true
+}
+
+// GetAll returns a copy of all scale-to-zero metrics
+func (c *ScaleToZeroMetricsCache) GetAll() map[string]*ScaleToZeroMetrics {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	result := make(map[string]*ScaleToZeroMetrics, len(c.metrics))
+	for k, v := range c.metrics {
+		// Create a copy to avoid race conditions
+		metricsCopy := *v
+		result[k] = &metricsCopy
+	}
+	return result
+}
+
+// Delete removes scale-to-zero metrics for a model
+func (c *ScaleToZeroMetricsCache) Delete(modelID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.metrics, modelID)
+}
+
+// Clear removes all cached scale-to-zero metrics
+func (c *ScaleToZeroMetricsCache) Clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.metrics = make(map[string]*ScaleToZeroMetrics)
+}

@@ -1,0 +1,105 @@
+# ConfigMap for per-model scale-to-zero configuration
+#
+# This ConfigMap defines scale-to-zero behavior for specific models using a prefixed-key
+# format that supports any model ID without character restrictions or collision risks,
+# while allowing independent editing of each model's configuration.
+#
+# Key Format:
+#   - Global defaults: "__defaults__" (special key)
+#   - Per-model configs: "model.<safe-key>" where safe-key uses dots instead of slashes/colons
+#   - Each value is JSON containing the original modelID and configuration
+#
+# Benefits of this approach:
+#   Independently editable - Change one model without touching others
+#   Easy kubectl operations - Add/update/remove individual models
+#   Better Git diffs - Only changed models show in version control
+#   No collision risk - Original modelID preserved in JSON value
+#   Semi-human-readable - Keys like "model.meta.llama-3.1-8b" are recognizable
+#
+# Configuration fields:
+#   - modelID (string): Original model ID with any characters (/, :, @, etc.)
+#   - enableScaleToZero (boolean): Enables scale-to-zero for this model
+#   - retentionPeriod (string): Duration after last request before scaling to zero
+#                                (e.g., "5m", "1h", "30s"). Optional, defaults to 10 minutes.
+#
+# All VariantAutoscaling resources with the same modelID share the configuration
+# defined here, regardless of accelerator.
+#
+# Configuration priority (highest to lowest):
+#   1. Per-model configuration (specific modelID in "model.*" key)
+#   2. Global defaults in this ConfigMap (key: "__defaults__")
+#   3. WVA_SCALE_TO_ZERO environment variable
+#   4. System default (disabled, 10-minute retention)
+#
+# Easy Operations:
+#   # Update a single model (use YAML format):
+#   kubectl patch configmap model-scale-to-zero-config -n workload-variant-autoscaler-system \
+#     --type merge -p $'{"data":{"model.meta.llama-3.1-8b":"modelID: \\"meta/llama-3.1-8b\\"\\nretentionPeriod: \\"3m\\"\\n"}}'
+#
+#   # Or use kubectl edit for easier YAML editing:
+#   kubectl edit configmap model-scale-to-zero-config -n workload-variant-autoscaler-system
+#
+#   # Remove a model:
+#   kubectl patch configmap model-scale-to-zero-config -n workload-variant-autoscaler-system \
+#     --type json -p '[{"op":"remove","path":"/data/model.meta.llama-3.1-8b"}]'
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: model-scale-to-zero-config
+  namespace: workload-variant-autoscaler-system
+data:
+  # Global defaults for all models (special key)
+  __defaults__: |
+    enableScaleToZero: true
+    retentionPeriod: "15m"
+
+  # Example 1: PARTIAL OVERRIDE
+  # Only override retentionPeriod, inherit enableScaleToZero from defaults
+  # Result: scale-to-zero ENABLED (from defaults) with 5-minute retention
+  # Key uses dots for slashes, but value preserves original model ID
+  model.meta.llama-3.1-8b: |
+    modelID: "meta/llama-3.1-8b"
+    retentionPeriod: "5m"
+
+  # Example 2: DISABLE SCALE-TO-ZERO
+  # Explicitly disable scale-to-zero for this model
+  # Result: minimum 1 replica maintained at all times
+  model.meta.llama-3.1-70b: |
+    modelID: "meta/llama-3.1-70b"
+    enableScaleToZero: false
+
+  # Example 3: FULL OVERRIDE
+  # Specify both fields explicitly
+  # Result: scale-to-zero ENABLED with 15-minute retention
+  model.mistralai.Mistral-7B-v0.1: |
+    modelID: "mistralai/Mistral-7B-v0.1"
+    enableScaleToZero: true
+    retentionPeriod: "15m"
+
+  # Example 4: ENABLE WITH DEFAULT RETENTION
+  # Only enable scale-to-zero, inherit retention from defaults
+  # Result: scale-to-zero ENABLED with 15m retention (from defaults)
+  model.meta.llama-2-7b: |
+    modelID: "meta/llama-2-7b"
+    enableScaleToZero: true
+
+  # Example 5: MODEL ID WITH COLON (vllm prefix)
+  # Demonstrates that any characters are supported
+  # Key uses dots, but value preserves colon and slash
+  model.vllm.meta.llama-3.1-8b: |
+    modelID: "vllm:meta/llama-3.1-8b"
+    enableScaleToZero: true
+    retentionPeriod: "3m"
+
+  # Example 6: NO COLLISION RISK
+  # This model ID differs from "meta/llama-3.1-8b" by having underscore instead of slash
+  # Both can coexist without collision because original IDs are preserved in value
+  model.meta_llama-3.1-8b: |
+    modelID: "meta_llama-3.1-8b"
+    enableScaleToZero: false
+    retentionPeriod: "10m"
+
+# Note: Models not explicitly listed (e.g., "meta/llama-3.1-13b") will inherit
+# settings from "__defaults__". If "__defaults__" is not specified, models fall back to
+# the WVA_SCALE_TO_ZERO environment variable.

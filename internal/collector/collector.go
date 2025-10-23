@@ -300,3 +300,174 @@ func FixValue(x *float64) {
 		*x = 0
 	}
 }
+
+// AddMetricsToOptStatus collects allocation and scale-to-zero metrics for a variant.
+// This function combines allocation collection with scale-to-zero request tracking.
+func AddMetricsToOptStatus(ctx context.Context,
+	opt *llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
+	deployment appsv1.Deployment,
+	acceleratorCostVal float64,
+	promAPI promv1.API,
+	metricsCache *ScaleToZeroMetricsCache,
+	retentionPeriod time.Duration) (llmdVariantAutoscalingV1alpha1.Allocation, error) {
+
+	deployNamespace := deployment.Namespace
+	modelName := opt.Spec.ModelID
+
+	// Setup Prometheus client
+	// TODO: agree on using standard vllm metrics
+	// Query 1: Arrival rate (requests per minute)
+	arrivalQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m])) * 60`,
+		constants.VLLMRequestSuccessTotal,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, deployNamespace)
+	arrivalVal := 0.0
+	if val, warn, err := promAPI.Query(ctx, arrivalQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+		vec := val.(model.Vector)
+		if len(vec) > 0 {
+			arrivalVal = float64(vec[0].Value)
+		}
+		if warn != nil {
+			logger.Log.Warn("Prometheus warnings - ", "warnings: ", warn)
+		}
+	} else {
+		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
+	}
+	FixValue(&arrivalVal)
+
+	// TODO: add query to get prompt tokens (avgInputTokens not yet collected - will be needed later)
+
+	// Query 2: Average token length
+	// TODO: split composite query to individual queries
+	avgDecToksQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
+		constants.VLLMRequestGenerationTokensSum,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, deployNamespace,
+		constants.VLLMRequestGenerationTokensCount,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, deployNamespace)
+	avgOutputTokens := 0.0
+	if val, _, err := promAPI.Query(ctx, avgDecToksQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+		vec := val.(model.Vector)
+		if len(vec) > 0 {
+			avgOutputTokens = float64(vec[0].Value)
+		}
+	} else {
+		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
+	}
+	FixValue(&avgOutputTokens)
+
+	// TODO: change waiting time to TTFT
+
+	// Query 3: Average waiting time
+	ttftQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
+		constants.VLLMRequestQueueTimeSecondsSum,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, deployNamespace,
+		constants.VLLMRequestQueueTimeSecondsCount,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, deployNamespace)
+	ttftAverageTime := 0.0
+	if val, _, err := promAPI.Query(ctx, ttftQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+		vec := val.(model.Vector)
+		if len(vec) > 0 {
+			ttftAverageTime = float64(vec[0].Value) * 1000 //msec
+		}
+	} else {
+		logger.Log.Warn("failed to get avg wait time, using 0: ", "model: ", modelName)
+	}
+	FixValue(&ttftAverageTime)
+
+	// Query 4: Average ITL
+	itlQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
+		constants.VLLMTimePerOutputTokenSecondsSum,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, deployNamespace,
+		constants.VLLMTimePerOutputTokenSecondsCount,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, deployNamespace)
+	itlAverage := 0.0
+	if val, _, err := promAPI.Query(ctx, itlQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+		vec := val.(model.Vector)
+		if len(vec) > 0 {
+			itlAverage = float64(vec[0].Value) * 1000 //msec
+		}
+	} else {
+		logger.Log.Warn("failed to get avg itl time, using 0: ", "model: ", modelName)
+	}
+	FixValue(&itlAverage)
+
+	// Query 5: Total requests over retention period (stored in internal cache only)
+	// Convert retention period to Prometheus duration format (e.g., "10m", "1h", "30s")
+	retentionPeriodStr := formatPrometheusDuration(retentionPeriod)
+	totalRequestsQuery := fmt.Sprintf(`sum(increase(%s{%s="%s",%s="%s"}[%s]))`,
+		constants.VLLMRequestSuccessTotal,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, deployNamespace,
+		retentionPeriodStr)
+	totalRequestsOverRetention := 0.0
+	if val, _, err := promAPI.Query(ctx, totalRequestsQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+		vec := val.(model.Vector)
+		if len(vec) > 0 {
+			totalRequestsOverRetention = float64(vec[0].Value)
+		}
+	} else {
+		logger.Log.Warn("failed to get total requests over retention period, using 0: ",
+			"model: ", modelName,
+			"retentionPeriod: ", retentionPeriodStr)
+	}
+	FixValue(&totalRequestsOverRetention)
+
+	// Store total requests in internal metrics cache
+	if metricsCache != nil {
+		metricsCache.Set(modelName, &ScaleToZeroMetrics{
+			TotalRequestsOverRetentionPeriod: totalRequestsOverRetention,
+			RetentionPeriod:                  retentionPeriod,
+		})
+	}
+
+	// number of replicas
+	numReplicas := int(*deployment.Spec.Replicas)
+
+	// accelerator type
+	acc := ""
+	var ok bool
+	if acc, ok = opt.Labels["inference.optimization/acceleratorName"]; !ok {
+		logger.Log.Warn("acceleratorName label not found on deployment - ", "deployment-name: ", deployment.Name)
+	}
+
+	// cost
+	discoveredCost := float64(*deployment.Spec.Replicas) * acceleratorCostVal
+
+	// max batch size
+	// TODO: collect value from server
+	maxBatch := 256
+
+	// Get variant ID from spec
+	variantID := opt.Spec.VariantID
+
+	// populate current alloc (refactored: metrics are passed separately, not stored in allocation)
+	currentAlloc := llmdVariantAutoscalingV1alpha1.Allocation{
+		VariantID:   variantID,
+		Accelerator: acc,
+		NumReplicas: numReplicas,
+		MaxBatch:    maxBatch,
+		VariantCost: strconv.FormatFloat(float64(discoveredCost), 'f', 2, 32),
+	}
+	return currentAlloc, nil
+}
+
+// formatPrometheusDuration converts a Go time.Duration to Prometheus duration format
+// Examples: 30s, 5m, 1h, 90s (not 1.5m)
+func formatPrometheusDuration(d time.Duration) string {
+	// Try to express in whole hours first
+	if d >= time.Hour && d%time.Hour == 0 {
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	// Try to express in whole minutes
+	if d >= time.Minute && d%time.Minute == 0 {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	// Express in seconds
+	return fmt.Sprintf("%ds", int(d.Seconds()))
+}

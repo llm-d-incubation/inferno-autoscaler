@@ -1,0 +1,133 @@
+# Scale-to-zero configuration is managed per-model.
+# Multiple variants with different accelerators for the same model
+# share the same scale-to-zero configuration.
+#
+# Configure scale-to-zero for specific models by creating a ConfigMap named
+# "model-scale-to-zero-config" in the workload-variant-autoscaler-system namespace.
+# See model-scale-to-zero-config.yaml for an example ConfigMap.
+#
+# If no ConfigMap is provided, the global WVA_SCALE_TO_ZERO environment variable
+# determines scale-to-zero behavior.
+
+---
+apiVersion: llmd.ai/v1alpha1
+kind: VariantAutoscaling
+metadata:
+  name: llama-8b-a100
+  namespace: default
+  labels:
+    inference.optimization/acceleratorName: "A100"
+spec:
+  # This variant uses model "meta/llama-3.1-8b"
+  # Scale-to-zero configuration for this model is defined in the
+  # model-scale-to-zero-config ConfigMap
+  modelID: "meta/llama-3.1-8b"
+
+  sloClassRef:
+    name: service-classes-config
+    key: premium.yaml
+
+  modelProfile:
+    accelerators:
+      - acc: "A100"
+        accCount: 1
+        perfParms:
+          decodeParms:
+            alpha: "20.58"
+            beta: "0.41"
+          prefillParms:
+            gamma: "5.2"
+            delta: "0.1"
+        maxBatchSize: 4
+
+---
+apiVersion: llmd.ai/v1alpha1
+kind: VariantAutoscaling
+metadata:
+  name: llama-8b-l40s
+  namespace: default
+  labels:
+    inference.optimization/acceleratorName: "L40S"
+spec:
+  # This variant also uses model "meta/llama-3.1-8b" but with a different accelerator.
+  # Both variants will share the same scale-to-zero configuration defined in the ConfigMap.
+  modelID: "meta/llama-3.1-8b"
+
+  sloClassRef:
+    name: service-classes-config
+    key: premium.yaml
+
+  modelProfile:
+    accelerators:
+      - acc: "L40S"
+        accCount: 1
+        perfParms:
+          decodeParms:
+            alpha: "19.2"
+            beta: "0.38"
+          prefillParms:
+            gamma: "4.9"
+            delta: "0.09"
+        maxBatchSize: 6
+
+---
+apiVersion: llmd.ai/v1alpha1
+kind: VariantAutoscaling
+metadata:
+  name: llama-70b-a100
+  namespace: default
+  labels:
+    inference.optimization/acceleratorName: "A100"
+spec:
+  # This variant uses model "meta/llama-3.1-70b"
+  # Scale-to-zero configuration for this model is defined in the
+  # model-scale-to-zero-config ConfigMap
+  modelID: "meta/llama-3.1-70b"
+
+  sloClassRef:
+    name: service-classes-config
+    key: premium.yaml
+
+  modelProfile:
+    accelerators:
+      - acc: "A100"
+        accCount: 1
+        perfParms:
+          decodeParms:
+            alpha: "18.5"
+            beta: "0.35"
+          prefillParms:
+            gamma: "4.8"
+            delta: "0.08"
+        maxBatchSize: 8
+
+---
+apiVersion: llmd.ai/v1alpha1
+kind: VariantAutoscaling
+metadata:
+  name: llama-13b-a100
+  namespace: default
+  labels:
+    inference.optimization/acceleratorName: "A100"
+spec:
+  # This variant uses model "meta/llama-3.1-13b"
+  # No scale-to-zero configuration is defined for this model in the ConfigMap,
+  # so it will use the global WVA_SCALE_TO_ZERO environment variable setting
+  modelID: "meta/llama-3.1-13b"
+
+  sloClassRef:
+    name: service-classes-config
+    key: premium.yaml
+
+  modelProfile:
+    accelerators:
+      - acc: "A100"
+        accCount: 1
+        perfParms:
+          decodeParms:
+            alpha: "20.0"
+            beta: "0.40"
+          prefillParms:
+            gamma: "5.0"
+            delta: "0.09"
+        maxBatchSize: 6
