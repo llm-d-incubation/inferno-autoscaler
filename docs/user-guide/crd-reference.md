@@ -48,9 +48,6 @@ _Appears in:_
 | `numReplicas` _integer_ | NumReplicas is the number of replicas currently allocated. |  | Minimum: 0 <br /> |
 | `maxBatch` _integer_ | MaxBatch is the maximum batch size currently allocated. |  | Minimum: 0 <br /> |
 | `variantCost` _string_ | VariantCost is the cost associated with this variant allocation. |  | Pattern: `^\d+(\.\d+)?$` <br /> |
-| `itlAverage` _string_ | ITLAverage is the average inter-token latency for this variant. |  | Pattern: `^\d+(\.\d+)?$` <br /> |
-| `ttftAverage` _string_ | TTFTAverage is the average time to first token for this variant. |  | Pattern: `^\d+(\.\d+)?$` <br /> |
-| `load` _[LoadProfile](#loadprofile)_ | Load describes the workload characteristics for this variant. |  |  |
 
 
 #### ConfigMapKeyRef
@@ -68,27 +65,6 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `name` _string_ | Name is the name of the ConfigMap. |  | MinLength: 1 <br /> |
 | `key` _string_ | Key is the key within the ConfigMap. |  | MinLength: 1 <br /> |
-
-
-#### LoadProfile
-
-
-
-LoadProfile represents the configuration for workload characteristics,
-including the rate of incoming requests (ArrivalRate) and the average
-length of each request (AvgLength). Both fields are specified as strings
-to allow flexible input formats.
-
-
-
-_Appears in:_
-- [Allocation](#allocation)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `arrivalRate` _string_ | ArrivalRate is the rate of incoming requests in inference server. |  |  |
-| `avgInputTokens` _string_ | AvgInputTokens is the average number of input(prefill) tokens per request in inference server. |  |  |
-| `avgOutputTokens` _string_ | AvgOutputTokens is the average number of output(decode) tokens per request in inference server. |  |  |
 
 
 #### OptimizedAlloc
