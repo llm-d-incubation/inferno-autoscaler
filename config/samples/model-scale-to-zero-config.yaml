@@ -14,7 +14,7 @@
 #   Easy kubectl operations - Add/update/remove individual models
 #   Better Git diffs - Only changed models show in version control
 #   No collision risk - Original modelID preserved in JSON value
-#   ✅ Semi-human-readable - Keys like "model.meta.llama-3.1-8b" are recognizable
+#   Semi-human-readable - Keys like "model.meta.llama-3.1-8b" are recognizable
 #
 # Configuration fields:
 #   - modelID (string): Original model ID with any characters (/, :, @, etc.)
