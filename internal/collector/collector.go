@@ -284,9 +284,8 @@ func CollectAllocationForDeployment(
 	maxBatch := 256
 
 	// populate allocation (without aggregate metrics)
+	// Note: VariantID and Accelerator are not included as they're in the parent VA spec
 	allocation := llmdVariantAutoscalingV1alpha1.Allocation{
-		VariantID:   variantID,
-		Accelerator: accelerator,
 		NumReplicas: numReplicas,
 		MaxBatch:    maxBatch,
 		VariantCost: strconv.FormatFloat(float64(discoveredCost), 'f', 2, 32),
@@ -429,13 +428,6 @@ func AddMetricsToOptStatus(ctx context.Context,
 	// number of replicas
 	numReplicas := int(*deployment.Spec.Replicas)
 
-	// accelerator type
-	acc := ""
-	var ok bool
-	if acc, ok = opt.Labels["inference.optimization/acceleratorName"]; !ok {
-		logger.Log.Warn("acceleratorName label not found on deployment - ", "deployment-name: ", deployment.Name)
-	}
-
 	// cost
 	discoveredCost := float64(*deployment.Spec.Replicas) * acceleratorCostVal
 
@@ -443,13 +435,9 @@ func AddMetricsToOptStatus(ctx context.Context,
 	// TODO: collect value from server
 	maxBatch := 256
 
-	// Get variant ID from spec
-	variantID := opt.Spec.VariantID
-
 	// populate current alloc (refactored: metrics are passed separately, not stored in allocation)
+	// Note: VariantID and Accelerator are not included as they're in the parent VA spec
 	currentAlloc := llmdVariantAutoscalingV1alpha1.Allocation{
-		VariantID:   variantID,
-		Accelerator: acc,
 		NumReplicas: numReplicas,
 		MaxBatch:    maxBatch,
 		VariantCost: strconv.FormatFloat(float64(discoveredCost), 'f', 2, 32),

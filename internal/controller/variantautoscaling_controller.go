@@ -428,7 +428,7 @@ func (r *VariantAutoscalingReconciler) applyOptimizedAllocations(
 			llmdVariantAutoscalingV1alpha1.ReasonOptimizationSucceeded,
 			fmt.Sprintf("Optimization completed: %d replicas on %s",
 				optimizedAlloc.NumReplicas,
-				optimizedAlloc.Accelerator))
+				updateVa.Spec.Accelerator)) // Use spec field (single-variant architecture)
 
 		act := actuator.NewActuator(r.Client)
 

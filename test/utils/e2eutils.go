@@ -713,11 +713,13 @@ func LogVariantAutoscalingStatus(ctx context.Context, vaName, namespace string, 
 	}
 	// Load profile is no longer stored in VA status - it's collected separately from Prometheus
 
-	if variantAutoscaling.Status.DesiredOptimizedAlloc.VariantID != "" {
-		fmt.Printf("Desired Optimized Allocation for VA: %s - Replicas: %d, Accelerator: %s\n",
+	// In single-variant architecture, check if optimization has run by checking NumReplicas >= 0
+	// VariantID and Accelerator are in spec, not in OptimizedAlloc
+	if variantAutoscaling.Status.DesiredOptimizedAlloc.NumReplicas >= 0 {
+		fmt.Printf("Desired Optimized Allocation for VA: %s - Replicas: %d, Accelerator: %s (from spec)\n",
 			variantAutoscaling.Name,
 			variantAutoscaling.Status.DesiredOptimizedAlloc.NumReplicas,
-			variantAutoscaling.Status.DesiredOptimizedAlloc.Accelerator)
+			variantAutoscaling.Spec.Accelerator)
 	}
 	return nil
 }

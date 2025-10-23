@@ -239,11 +239,6 @@ spec:
                 description: CurrentAlloc specifies the current resource allocation
                   for this variant.
                 properties:
-                  accelerator:
-                    description: Accelerator is the type of accelerator currently
-                      allocated.
-                    minLength: 1
-                    type: string
                   maxBatch:
                     description: MaxBatch is the maximum batch size currently allocated.
                     minimum: 0
@@ -257,28 +252,15 @@ spec:
                       allocation.
                     pattern: ^\d+(\.\d+)?$
                     type: string
-                  variantID:
-                    description: |-
-                      VariantID identifies this variant.
-                      Format: {modelID}-{accelerator}-{acceleratorCount}
-                    minLength: 1
-                    type: string
                 required:
-                - accelerator
                 - maxBatch
                 - numReplicas
                 - variantCost
-                - variantID
                 type: object
               desiredOptimizedAlloc:
                 description: DesiredOptimizedAlloc indicates the target optimized
                   allocation based on autoscaling logic.
                 properties:
-                  accelerator:
-                    description: Accelerator is the type of accelerator for the optimized
-                      allocation.
-                    minLength: 2
-                    type: string
                   lastRunTime:
                     description: LastRunTime is the timestamp of the last optimization
                       run.
@@ -289,16 +271,8 @@ spec:
                       allocation.
                     minimum: 0
                     type: integer
-                  variantID:
-                    description: |-
-                      VariantID identifies which variant this optimized allocation is for.
-                      Format: {modelID}-{accelerator}-{acceleratorCount}
-                    minLength: 1
-                    type: string
                 required:
-                - accelerator
                 - numReplicas
-                - variantID
                 type: object
             type: object
         type: object

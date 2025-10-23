@@ -107,16 +107,9 @@ type VariantAutoscalingStatus struct {
 }
 
 // Allocation describes the current resource allocation for this variant.
+// Note: In single-variant architecture, variantID and accelerator are not needed here
+// as they are already defined in the parent VariantAutoscaling spec.
 type Allocation struct {
-	// VariantID identifies this variant.
-	// Format: {modelID}-{accelerator}-{acceleratorCount}
-	// +kubebuilder:validation:MinLength=1
-	VariantID string `json:"variantID"`
-
-	// Accelerator is the type of accelerator currently allocated.
-	// +kubebuilder:validation:MinLength=1
-	Accelerator string `json:"accelerator"`
-
 	// NumReplicas is the number of replicas currently allocated.
 	// +kubebuilder:validation:Minimum=0
 	NumReplicas int `json:"numReplicas"`
@@ -131,18 +124,11 @@ type Allocation struct {
 }
 
 // OptimizedAlloc describes the target optimized allocation for a model variant.
+// Note: In single-variant architecture, variantID and accelerator are not needed here
+// as they are already defined in the parent VariantAutoscaling spec.
 type OptimizedAlloc struct {
 	// LastRunTime is the timestamp of the last optimization run.
 	LastRunTime metav1.Time `json:"lastRunTime,omitempty"`
-
-	// VariantID identifies which variant this optimized allocation is for.
-	// Format: {modelID}-{accelerator}-{acceleratorCount}
-	// +kubebuilder:validation:MinLength=1
-	VariantID string `json:"variantID"`
-
-	// Accelerator is the type of accelerator for the optimized allocation.
-	// +kubebuilder:validation:MinLength=2
-	Accelerator string `json:"accelerator"`
 
 	// NumReplicas is the number of replicas for the optimized allocation.
 	// +kubebuilder:validation:Minimum=0

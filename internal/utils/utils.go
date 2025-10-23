@@ -393,8 +393,10 @@ func AddServerInfoToSystemData(
 
 	// Get current allocation (single variant)
 	currentAlloc := va.Status.CurrentAlloc
-	if currentAlloc.VariantID == "" {
-		return fmt.Errorf("no current allocation found for variant %s", va.Name)
+
+	// Validate VA has required spec fields (single-variant architecture)
+	if va.Spec.VariantID == "" || va.Spec.Accelerator == "" {
+		return fmt.Errorf("variant spec incomplete for %s", va.Name)
 	}
 
 	// Validate metrics are provided
@@ -416,7 +418,7 @@ func AddServerInfoToSystemData(
 	}
 
 	AllocationData := &infernoConfig.AllocationData{
-		Accelerator: currentAlloc.Accelerator,
+		Accelerator: va.Spec.Accelerator, // Use spec field (single-variant architecture)
 		NumReplicas: currentAlloc.NumReplicas,
 		MaxBatch:    currentAlloc.MaxBatch,
 		Cost:        float32(cost),
@@ -461,7 +463,7 @@ func AddServerInfoToSystemData(
 // Adapter from inferno alloc solution to optimized alloc
 func CreateOptimizedAlloc(name string,
 	namespace string,
-	variantID string,
+	variantID string, // Still needed for logging/debugging
 	allocationSolution *infernoConfig.AllocationSolution) (*llmdVariantAutoscalingV1alpha1.OptimizedAlloc, error) {
 
 	serverName := FullName(name, namespace)
@@ -474,10 +476,9 @@ func CreateOptimizedAlloc(name string,
 		"variant-id", variantID,
 		"accelerator", allocationData.Accelerator,
 		"num-replicas", allocationData.NumReplicas)
+	// Note: VariantID and Accelerator are not included as they're in the parent VA spec
 	optimizedAlloc := &llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 		LastRunTime: metav1.NewTime(time.Now()),
-		VariantID:   variantID,
-		Accelerator: allocationData.Accelerator,
 		NumReplicas: allocationData.NumReplicas,
 	}
 	return optimizedAlloc, nil
