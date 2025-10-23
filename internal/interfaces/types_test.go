@@ -5,7 +5,6 @@ import (
 	"os"
 	"testing"
 
-	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/logger"
 )
 
@@ -24,22 +23,21 @@ func TestMain(m *testing.M) {
 func TestNewVariantMetrics(t *testing.T) {
 	tests := []struct {
 		name        string
-		allocation  llmdVariantAutoscalingV1alpha1.Allocation
 		load        LoadProfile
+		ttft        string
+		itl         string
 		expectError bool
 		validate    func(*testing.T, *VariantMetrics)
 	}{
 		{
 			name: "valid metrics",
-			allocation: llmdVariantAutoscalingV1alpha1.Allocation{
-				TTFTAverage: "50.0",
-				ITLAverage:  "25.5",
-			},
 			load: LoadProfile{
 				ArrivalRate:     "10.5",
 				AvgInputTokens:  "100",
 				AvgOutputTokens: "200",
 			},
+			ttft:        "50.0",
+			itl:         "25.5",
 			expectError: false,
 			validate: func(t *testing.T, m *VariantMetrics) {
 				if m.Load.ArrivalRate != 10.5 {
@@ -61,15 +59,13 @@ func TestNewVariantMetrics(t *testing.T) {
 		},
 		{
 			name: "empty strings default to zero",
-			allocation: llmdVariantAutoscalingV1alpha1.Allocation{
-				TTFTAverage: "",
-				ITLAverage:  "",
-			},
 			load: LoadProfile{
 				ArrivalRate:     "",
 				AvgInputTokens:  "",
 				AvgOutputTokens: "",
 			},
+			ttft:        "",
+			itl:         "",
 			expectError: false,
 			validate: func(t *testing.T, m *VariantMetrics) {
 				if m.Load.ArrivalRate != 0 {
@@ -85,15 +81,13 @@ func TestNewVariantMetrics(t *testing.T) {
 		},
 		{
 			name: "invalid values default to zero (resilient behavior)",
-			allocation: llmdVariantAutoscalingV1alpha1.Allocation{
-				TTFTAverage: "bad-value",
-				ITLAverage:  "also-bad",
-			},
 			load: LoadProfile{
 				ArrivalRate:     "invalid",
 				AvgInputTokens:  "not-a-number",
 				AvgOutputTokens: "xyz",
 			},
+			ttft:        "bad-value",
+			itl:         "also-bad",
 			expectError: false,
 			validate: func(t *testing.T, m *VariantMetrics) {
 				if m.Load.ArrivalRate != 0 {
@@ -109,15 +103,13 @@ func TestNewVariantMetrics(t *testing.T) {
 		},
 		{
 			name: "negative values clamped to zero",
-			allocation: llmdVariantAutoscalingV1alpha1.Allocation{
-				TTFTAverage: "-50.0",
-				ITLAverage:  "-25.5",
-			},
 			load: LoadProfile{
 				ArrivalRate:     "-10.5",
 				AvgInputTokens:  "-100",
 				AvgOutputTokens: "-200",
 			},
+			ttft:        "-50.0",
+			itl:         "-25.5",
 			expectError: false,
 			validate: func(t *testing.T, m *VariantMetrics) {
 				if m.Load.ArrivalRate != 0 {
@@ -133,15 +125,13 @@ func TestNewVariantMetrics(t *testing.T) {
 		},
 		{
 			name: "very large token values clamped to MaxInt32",
-			allocation: llmdVariantAutoscalingV1alpha1.Allocation{
-				TTFTAverage: "50.0",
-				ITLAverage:  "25.0",
-			},
 			load: LoadProfile{
 				ArrivalRate:     "100.0",
 				AvgInputTokens:  "99999999999999",
 				AvgOutputTokens: "99999999999999",
 			},
+			ttft:        "50.0",
+			itl:         "25.0",
 			expectError: false,
 			validate: func(t *testing.T, m *VariantMetrics) {
 				if m.Load.AvgInputTokens != math.MaxInt32 {
@@ -156,7 +146,7 @@ func TestNewVariantMetrics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			metrics, err := NewVariantMetrics(tt.allocation, tt.load)
+			metrics, err := NewVariantMetrics(tt.load, tt.ttft, tt.itl)
 
 			if tt.expectError && err == nil {
 				t.Error("Expected error but got nil")

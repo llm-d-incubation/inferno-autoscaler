@@ -128,14 +128,6 @@ type Allocation struct {
 	// VariantCost is the cost associated with this variant allocation.
 	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
 	VariantCost string `json:"variantCost"`
-
-	// ITLAverage is the average inter-token latency for this variant.
-	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
-	ITLAverage string `json:"itlAverage"`
-
-	// TTFTAverage is the average time to first token for this variant.
-	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
-	TTFTAverage string `json:"ttftAverage"`
 }
 
 // OptimizedAlloc describes the target optimized allocation for a model variant.

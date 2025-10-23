@@ -5,7 +5,6 @@ import (
 	"math"
 	"strconv"
 
-	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/logger"
 	inferno "github.com/llm-d-incubation/workload-variant-autoscaler/pkg/core"
 )
@@ -68,8 +67,9 @@ type LoadProfile struct {
 	AvgOutputTokens string `json:"avgOutputTokens"`
 }
 
-// NewVariantMetrics creates a new VariantMetrics from allocation and collected load metrics
-func NewVariantMetrics(allocation llmdVariantAutoscalingV1alpha1.Allocation, load LoadProfile) (*VariantMetrics, error) {
+// NewVariantMetrics creates a new VariantMetrics from collected metrics (load, TTFT, ITL)
+// All metrics are collected from Prometheus and passed separately, not stored in VA status
+func NewVariantMetrics(load LoadProfile, ttftAverage, itlAverage string) (*VariantMetrics, error) {
 	metrics := &VariantMetrics{}
 
 	// Parse load metrics
@@ -80,7 +80,7 @@ func NewVariantMetrics(allocation llmdVariantAutoscalingV1alpha1.Allocation, loa
 	metrics.Load = loadMetrics
 
 	// Parse TTFT average
-	ttft, err := parseFloat32(allocation.TTFTAverage, "TTFTAverage")
+	ttft, err := parseFloat32(ttftAverage, "TTFTAverage")
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func NewVariantMetrics(allocation llmdVariantAutoscalingV1alpha1.Allocation, loa
 	metrics.TTFTAverage = ttft
 
 	// Parse ITL average
-	itl, err := parseFloat32(allocation.ITLAverage, "ITLAverage")
+	itl, err := parseFloat32(itlAverage, "ITLAverage")
 	if err != nil {
 		return nil, err
 	}

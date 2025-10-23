@@ -49,8 +49,6 @@ func makeValidVA() *VariantAutoscaling {
 				NumReplicas: 1,
 				MaxBatch:    8,
 				VariantCost: "1.23",
-				ITLAverage:  "45.6",
-				TTFTAverage: "3.2",
 			},
 			DesiredOptimizedAlloc: OptimizedAlloc{
 				LastRunTime: metav1.NewTime(time.Unix(1730000000, 0).UTC()),
@@ -95,7 +93,6 @@ func TestDeepCopyIndependence(t *testing.T) {
 	cp.Spec.ModelID = "model-456"
 	cp.Spec.SLOClassRef.Name = "slo-config-2"
 	cp.Spec.VariantProfile.MaxBatchSize = 16
-	cp.Status.CurrentAlloc.ITLAverage = "99.9"
 
 	if orig.Spec.ModelID == cp.Spec.ModelID {
 		t.Errorf("DeepCopy did not create independent copy for Spec.ModelID")
@@ -105,9 +102,6 @@ func TestDeepCopyIndependence(t *testing.T) {
 	}
 	if orig.Spec.VariantProfile.MaxBatchSize == cp.Spec.VariantProfile.MaxBatchSize {
 		t.Errorf("DeepCopy did not create independent copy for VariantProfile.MaxBatchSize")
-	}
-	if orig.Status.CurrentAlloc.ITLAverage == cp.Status.CurrentAlloc.ITLAverage {
-		t.Errorf("DeepCopy did not create independent copy for nested Status.CurrentAlloc.ITLAverage")
 	}
 }
 

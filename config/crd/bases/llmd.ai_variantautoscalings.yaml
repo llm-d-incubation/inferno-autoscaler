@@ -244,11 +244,6 @@ spec:
                       allocated.
                     minLength: 1
                     type: string
-                  itlAverage:
-                    description: ITLAverage is the average inter-token latency for
-                      this variant.
-                    pattern: ^\d+(\.\d+)?$
-                    type: string
                   maxBatch:
                     description: MaxBatch is the maximum batch size currently allocated.
                     minimum: 0
@@ -257,11 +252,6 @@ spec:
                     description: NumReplicas is the number of replicas currently allocated.
                     minimum: 0
                     type: integer
-                  ttftAverage:
-                    description: TTFTAverage is the average time to first token for
-                      this variant.
-                    pattern: ^\d+(\.\d+)?$
-                    type: string
                   variantCost:
                     description: VariantCost is the cost associated with this variant
                       allocation.
@@ -275,10 +265,8 @@ spec:
                     type: string
                 required:
                 - accelerator
-                - itlAverage
                 - maxBatch
                 - numReplicas
-                - ttftAverage
                 - variantCost
                 - variantID
                 type: object

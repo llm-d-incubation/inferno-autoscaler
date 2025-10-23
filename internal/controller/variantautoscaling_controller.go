@@ -349,13 +349,11 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 		}
 
 		// Update status with collected data (single allocation for this variant)
-		// Note: Load is no longer stored in VA status, it's passed separately
-		allocation.TTFTAverage = ttftAvg
-		allocation.ITLAverage = itlAvg
+		// Note: Load, TTFT, and ITL are no longer stored in VA status - they're passed internally
 		updateVA.Status.CurrentAlloc = allocation
 
-		// Extract metrics to internal structure (load passed separately)
-		metrics, err := interfaces.NewVariantMetrics(allocation, load)
+		// Extract metrics to internal structure (all metrics passed separately from Prometheus)
+		metrics, err := interfaces.NewVariantMetrics(load, ttftAvg, itlAvg)
 		if err != nil {
 			logger.Log.Error(err, "failed to parse variant metrics, skipping optimization - ", "variantAutoscaling-name: ", updateVA.Name)
 			continue
