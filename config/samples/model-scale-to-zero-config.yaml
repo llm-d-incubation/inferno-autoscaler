@@ -10,7 +10,7 @@
 #   - Each value is JSON containing the original modelID and configuration
 #
 # Benefits of this approach:
-#   ✅ Independently editable - Change one model without touching others
+#   Independently editable - Change one model without touching others
 #   ✅ Easy kubectl operations - Add/update/remove individual models
 #   ✅ Better Git diffs - Only changed models show in version control
 #   ✅ No collision risk - Original modelID preserved in JSON value
