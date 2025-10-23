@@ -200,6 +200,7 @@ var _ = Describe("Actuator", func() {
 					VariantID:        "test-model/variant-1-A100-1",
 					Accelerator:      "A100",
 					AcceleratorCount: 1,
+					VariantCost:      "10.5",
 					SLOClassRef: llmdVariantAutoscalingV1alpha1.ConfigMapKeyRef{
 						Name: "test-slo-config",
 						Key:  "test-slo-key",
@@ -438,6 +439,7 @@ var _ = Describe("Actuator", func() {
 					VariantID:        "test-model/metrics-test-A100-1",
 					Accelerator:      "A100",
 					AcceleratorCount: 1,
+					VariantCost:      "10.5",
 					SLOClassRef: llmdVariantAutoscalingV1alpha1.ConfigMapKeyRef{
 						Name: "test-slo-config",
 						Key:  "metrics-slo-key",
@@ -523,6 +525,7 @@ var _ = Describe("Actuator", func() {
 					VariantID:        "test-model/incomplete-A100-1",
 					Accelerator:      "A100",
 					AcceleratorCount: 1,
+					VariantCost:      "10.5",
 					SLOClassRef: llmdVariantAutoscalingV1alpha1.ConfigMapKeyRef{
 						Name: "test-slo-config",
 						Key:  "test-slo-key",
@@ -607,6 +610,7 @@ var _ = Describe("Actuator", func() {
 					VariantID:        "test-model/validation-test-A100-1",
 					Accelerator:      "A100",
 					AcceleratorCount: 1,
+					VariantCost:      "10.5",
 					SLOClassRef: llmdVariantAutoscalingV1alpha1.ConfigMapKeyRef{
 						Name: "test-slo-config",
 						Key:  "validation-slo-key",

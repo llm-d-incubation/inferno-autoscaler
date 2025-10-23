@@ -418,7 +418,7 @@ func AddServerInfoToSystemData(
 	}
 
 	AllocationData := &infernoConfig.AllocationData{
-		Accelerator: va.Spec.Accelerator,                 // Use spec field (single-variant architecture)
+		Accelerator: va.Spec.Accelerator, // Use spec field (single-variant architecture)
 		NumReplicas: currentAlloc.NumReplicas,
 		MaxBatch:    va.Spec.VariantProfile.MaxBatchSize, // Use spec field (single-variant architecture)
 		Cost:        float32(cost),

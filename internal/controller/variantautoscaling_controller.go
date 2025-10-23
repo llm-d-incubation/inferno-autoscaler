@@ -62,9 +62,9 @@ type VariantAutoscalingReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 
-	PromAPI                  promv1.API
-	MetricsCache             *collector.ModelMetricsCache         // Cache for model-level Prometheus metrics
-	ScaleToZeroMetricsCache  *collector.ScaleToZeroMetricsCache   // Cache for scale-to-zero internal metrics
+	PromAPI                 promv1.API
+	MetricsCache            *collector.ModelMetricsCache       // Cache for model-level Prometheus metrics
+	ScaleToZeroMetricsCache *collector.ScaleToZeroMetricsCache // Cache for scale-to-zero internal metrics
 }
 
 // +kubebuilder:rbac:groups=llmd.ai,resources=variantautoscalings,verbs=get;list;watch;create;update;patch;delete
@@ -699,19 +699,20 @@ func (r *VariantAutoscalingReconciler) readOptimizationConfig(ctx context.Contex
 // Format: Keys prefixed with "model.", values are YAML
 //
 // Example:
-//    model.meta.llama-3.1-8b: |
-//      modelID: "meta/llama-3.1-8b"
-//      enableScaleToZero: true
-//      retentionPeriod: "5m"
-//    __defaults__: |
-//      enableScaleToZero: true
-//      retentionPeriod: "15m"
+//
+//	model.meta.llama-3.1-8b: |
+//	  modelID: "meta/llama-3.1-8b"
+//	  enableScaleToZero: true
+//	  retentionPeriod: "5m"
+//	__defaults__: |
+//	  enableScaleToZero: true
+//	  retentionPeriod: "15m"
 //
 // Benefits:
-//    - Independently editable (kubectl patch single model)
-//    - Original modelID preserved in YAML value (no collision risk)
-//    - Better Git diffs (only changed models shown)
-//    - Human-readable YAML format
+//   - Independently editable (kubectl patch single model)
+//   - Original modelID preserved in YAML value (no collision risk)
+//   - Better Git diffs (only changed models shown)
+//   - Human-readable YAML format
 //
 // The function returns an empty map if the ConfigMap is not found (it's optional).
 func (r *VariantAutoscalingReconciler) readScaleToZeroConfig(ctx context.Context, cmName, cmNamespace string) (utils.ScaleToZeroConfigData, error) {

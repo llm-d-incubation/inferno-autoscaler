@@ -64,8 +64,8 @@ func (a *Actuator) EmitMetrics(ctx context.Context, VariantAutoscaling *llmdOptv
 			VariantAutoscaling,
 			currentReplicas, // Real current from Deployment
 			int32(VariantAutoscaling.Status.DesiredOptimizedAlloc.NumReplicas), // Inferno's optimization target
-			VariantAutoscaling.Spec.Accelerator,   // Use spec field (single-variant architecture)
-			VariantAutoscaling.Spec.VariantID,     // Use spec field (single-variant architecture)
+			VariantAutoscaling.Spec.Accelerator,                                // Use spec field (single-variant architecture)
+			VariantAutoscaling.Spec.VariantID,                                  // Use spec field (single-variant architecture)
 		); err != nil {
 			logger.Log.Error(err, "Failed to emit optimization signals for variantAutoscaling - ",
 				"variantAutoscaling-name: ", VariantAutoscaling.Name)

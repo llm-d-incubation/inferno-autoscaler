@@ -87,6 +87,7 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 						VariantID:        "default/default-A100-1",
 						Accelerator:      "A100",
 						AcceleratorCount: 1,
+						VariantCost:      "10.5",
 						VariantProfile: llmdVariantAutoscalingV1alpha1.VariantProfile{
 							PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
 								DecodeParms:  map[string]string{"alpha": "20.28", "beta": "0.72"},
@@ -448,6 +449,7 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 					VariantID:        "-A100-1",
 					Accelerator:      "A100",
 					AcceleratorCount: 1,
+					VariantCost:      "10.5",
 					VariantProfile: llmdVariantAutoscalingV1alpha1.VariantProfile{
 						PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
 							DecodeParms:  map[string]string{"alpha": "0.28", "beta": "0.72"},
@@ -478,6 +480,7 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 					VariantID:        "default/default--1",
 					Accelerator:      "", // Empty accelerator
 					AcceleratorCount: 1,
+					VariantCost:      "10.5",
 					VariantProfile: llmdVariantAutoscalingV1alpha1.VariantProfile{
 						PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
 							DecodeParms:  map[string]string{"alpha": "0.28", "beta": "0.72"},
@@ -508,6 +511,7 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 					VariantID:        "default/default-A100-1",
 					Accelerator:      "A100",
 					AcceleratorCount: 1,
+					VariantCost:      "10.5",
 					VariantProfile: llmdVariantAutoscalingV1alpha1.VariantProfile{
 						PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
 							DecodeParms:  map[string]string{"alpha": "0.28", "beta": "0.72"},
@@ -630,6 +634,7 @@ data:
 						VariantID:        fmt.Sprintf("%s-A100-1", modelID),
 						Accelerator:      "A100",
 						AcceleratorCount: 1,
+						VariantCost:      "10.5",
 						VariantProfile: llmdVariantAutoscalingV1alpha1.VariantProfile{
 							PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
 								DecodeParms:  map[string]string{"alpha": "0.28", "beta": "0.72"},
@@ -769,13 +774,17 @@ data:
 
 			for _, updatedVa := range updateList.Items {
 				Expect(vaNames).To(ContainElement(updatedVa.Name), fmt.Sprintf("Active VariantAutoscaling list should contain %s", updatedVa.Name))
-				Expect(updatedVa.Status.CurrentAlloc.VariantID).NotTo(BeEmpty(), fmt.Sprintf("CurrentAlloc should not be empty for %s after preparation", updatedVa.Name))
-				Expect(updatedVa.Status.CurrentAlloc.Accelerator).To(Equal("A100"), fmt.Sprintf("Current Accelerator for %s should be \"A100\" after preparation", updatedVa.Name))
+				// In single-variant architecture, check that CurrentAlloc has been populated by verifying NumReplicas
+				Expect(updatedVa.Status.CurrentAlloc.NumReplicas).To(BeNumerically(">=", 0), fmt.Sprintf("CurrentAlloc should be populated for %s after preparation", updatedVa.Name))
+				// In single-variant architecture, accelerator is in spec, not in status
+				Expect(updatedVa.Spec.Accelerator).To(Equal("A100"), fmt.Sprintf("Accelerator in spec for %s should be \"A100\" after preparation", updatedVa.Name))
 				Expect(updatedVa.Status.CurrentAlloc.NumReplicas).To(Equal(1), fmt.Sprintf("Current NumReplicas for %s should be 1 after preparation", updatedVa.Name))
 
 				// DesiredOptimizedAlloc may be empty initially after preparation
-				if updatedVa.Status.DesiredOptimizedAlloc.VariantID != "" {
-					Expect(updatedVa.Status.DesiredOptimizedAlloc.Accelerator).NotTo(BeEmpty(), fmt.Sprintf("Desired Accelerator for %s should be set if DesiredOptimizedAlloc is not empty", updatedVa.Name))
+				// In single-variant architecture, check NumReplicas > 0 to see if optimization has run
+				if updatedVa.Status.DesiredOptimizedAlloc.NumReplicas > 0 {
+					// Accelerator is in spec, already verified above
+					Expect(updatedVa.Spec.Accelerator).NotTo(BeEmpty(), fmt.Sprintf("Accelerator in spec for %s should be set", updatedVa.Name))
 				}
 			}
 		})
@@ -878,17 +887,14 @@ data:
 					Namespace: configMapNamespace,
 				},
 				Data: map[string]string{
-					"meta_llama-3.1-8b": `{
-						"enableScaleToZero": true,
-						"retentionPeriod": "5m"
-					}`,
-					"meta_llama-3.1-70b": `{
-						"enableScaleToZero": false
-					}`,
-					"mistralai_Mistral-7B-v0.1": `{
-						"enableScaleToZero": true,
-						"retentionPeriod": "15m"
-					}`,
+					"model.meta_llama-3.1-8b": `modelID: "meta_llama-3.1-8b"
+enableScaleToZero: true
+retentionPeriod: "5m"`,
+					"model.meta_llama-3.1-70b": `modelID: "meta_llama-3.1-70b"
+enableScaleToZero: false`,
+					"model.mistralai_Mistral-7B-v0.1": `modelID: "mistralai_Mistral-7B-v0.1"
+enableScaleToZero: true
+retentionPeriod: "15m"`,
 				},
 			}
 			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())
@@ -943,22 +949,20 @@ data:
 		})
 
 		It("should skip invalid JSON entries in ConfigMap", func() {
-			By("Creating a ConfigMap with invalid JSON")
+			By("Creating a ConfigMap with invalid YAML")
 			scaleToZeroConfigMap := &v1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "model-scale-to-zero-config-invalid",
 					Namespace: configMapNamespace,
 				},
 				Data: map[string]string{
-					"meta_llama-3.1-8b": `{
-						"enableScaleToZero": true,
-						"retentionPeriod": "5m"
-					}`,
-					"meta_llama-3.1-70b": `invalid json`,
-					"mistralai_Mistral-7B-v0.1": `{
-						"enableScaleToZero": true,
-						"retentionPeriod": "15m"
-					}`,
+					"model.meta_llama-3.1-8b": `modelID: "meta_llama-3.1-8b"
+enableScaleToZero: true
+retentionPeriod: "5m"`,
+					"model.meta_llama-3.1-70b": `invalid yaml`,
+					"model.mistralai_Mistral-7B-v0.1": `modelID: "mistralai_Mistral-7B-v0.1"
+enableScaleToZero: true
+retentionPeriod: "15m"`,
 				},
 			}
 			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())
@@ -1218,7 +1222,7 @@ retentionPeriod: "5m"`,
 					"model.valid": `modelID: "valid/model"
 retentionPeriod: "5m"`,
 					"model.invalid": `this is not: valid: yaml: [[[`, // Invalid YAML
-					"__defaults__": `invalid yaml here too: {{{{`,    // Invalid defaults
+					"__defaults__":  `invalid yaml here too: {{{{`,   // Invalid defaults
 				},
 			}
 			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())

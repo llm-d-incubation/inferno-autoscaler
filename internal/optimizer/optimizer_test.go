@@ -19,7 +19,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -192,6 +191,7 @@ var _ = Describe("Optimizer", Ordered, func() {
 						VariantID:        "meta/llama0-70b-A100-1",
 						Accelerator:      "A100",
 						AcceleratorCount: 1,
+						VariantCost:      "10.5",
 						VariantProfile: llmdVariantAutoscalingV1alpha1.VariantProfile{
 							PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
 								DecodeParms:  map[string]string{"alpha": "20.28", "beta": "0.72"},
@@ -274,13 +274,7 @@ var _ = Describe("Optimizer", Ordered, func() {
 				err = utils.AddVariantProfileToSystemData(systemData, modelName, va.Spec.Accelerator, va.Spec.AcceleratorCount, &va.Spec.VariantProfile)
 				Expect(err).NotTo(HaveOccurred(), "failed to add variant profile to system data for model - ", modelName, ", variantAutoscaling - ", va.Name)
 
-				accName := va.Labels["inference.optimization/acceleratorName"]
-				Expect(accName).NotTo(BeEmpty(), "variantAutoscaling missing acceleratorName label, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
-				acceleratorCostVal, ok := acceleratorCm[accName]["cost"]
-				Expect(ok).NotTo(BeFalse(), "variantAutoscaling missing accelerator cost in configMap, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
-				acceleratorCostValFloat, err := strconv.ParseFloat(acceleratorCostVal, 32)
-				Expect(err).NotTo(HaveOccurred(), "failed to parse accelerator cost value to float for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
-
+				// In single-variant architecture, cost is in spec, not extracted from ConfigMap
 				var deploy appsv1.Deployment
 				err = utils.GetDeploymentWithBackoff(ctx, k8sClient, va.Name, va.Namespace, &deploy)
 				Expect(err).NotTo(HaveOccurred(), "failed to get deployment for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
@@ -290,7 +284,8 @@ var _ = Describe("Optimizer", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred(), "failed to get variantAutoscaling for deployment - ", "deployment-name: ", deploy.Name)
 
 				// Collect allocation and metrics using new API
-				currentAllocation, err := collector.CollectAllocationForDeployment(updateVA.Spec.VariantID, updateVA.Spec.Accelerator, deploy, acceleratorCostValFloat)
+				// In single-variant architecture, cost is in spec, not passed to collector
+				currentAllocation, err := collector.CollectAllocationForDeployment(updateVA.Spec.VariantID, updateVA.Spec.Accelerator, deploy)
 				Expect(err).NotTo(HaveOccurred(), "unable to collect allocation data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 				load, ttftAvg, itlAvg, err := collector.CollectAggregateMetrics(ctx, updateVA.Spec.ModelID, deploy.Namespace, &testutils.MockPromAPI{})
 				Expect(err).NotTo(HaveOccurred(), "unable to fetch aggregate metrics for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
@@ -300,7 +295,8 @@ var _ = Describe("Optimizer", Ordered, func() {
 				metrics, err := interfaces.NewVariantMetrics(load, ttftAvg, itlAvg)
 				Expect(err).NotTo(HaveOccurred(), "failed to parse variant metrics for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 
-				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className, metrics)
+				// Pass empty scale-to-zero config for this test
+				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className, metrics, utils.ScaleToZeroConfigData{})
 				Expect(err).NotTo(HaveOccurred(), "failed to add server info to system data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 
 				By("Updating system data with VariantAutoscaling info")
@@ -378,13 +374,7 @@ var _ = Describe("Optimizer", Ordered, func() {
 				err = utils.AddVariantProfileToSystemData(systemData, modelName, va.Spec.Accelerator, va.Spec.AcceleratorCount, &va.Spec.VariantProfile)
 				Expect(err).NotTo(HaveOccurred(), "failed to add variant profile to system data for model - ", modelName, ", variantAutoscaling - ", va.Name)
 
-				accName := va.Labels["inference.optimization/acceleratorName"]
-				Expect(accName).NotTo(BeEmpty(), "variantAutoscaling missing acceleratorName label, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
-				acceleratorCostVal, ok := acceleratorCm[accName]["cost"]
-				Expect(ok).NotTo(BeFalse(), "variantAutoscaling missing accelerator cost in configMap, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
-				acceleratorCostValFloat, err := strconv.ParseFloat(acceleratorCostVal, 32)
-				Expect(err).NotTo(HaveOccurred(), "failed to parse accelerator cost value to float for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
-
+				// In single-variant architecture, cost is in spec, not extracted from ConfigMap
 				var deploy appsv1.Deployment
 				err = utils.GetDeploymentWithBackoff(ctx, k8sClient, va.Name, va.Namespace, &deploy)
 				Expect(err).NotTo(HaveOccurred(), "failed to get deployment for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
@@ -415,7 +405,8 @@ var _ = Describe("Optimizer", Ordered, func() {
 				}
 
 				// Collect allocation and metrics using new API
-				currentAllocation, err := collector.CollectAllocationForDeployment(updateVA.Spec.VariantID, updateVA.Spec.Accelerator, deploy, acceleratorCostValFloat)
+				// In single-variant architecture, cost is in spec, not passed to collector
+				currentAllocation, err := collector.CollectAllocationForDeployment(updateVA.Spec.VariantID, updateVA.Spec.Accelerator, deploy)
 				Expect(err).NotTo(HaveOccurred(), "unable to collect allocation data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 				load, ttftAvg, itlAvg, err := collector.CollectAggregateMetrics(ctx, updateVA.Spec.ModelID, deploy.Namespace, mockProm)
 				Expect(err).NotTo(HaveOccurred(), "unable to fetch aggregate metrics for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
@@ -425,7 +416,8 @@ var _ = Describe("Optimizer", Ordered, func() {
 				metrics, err := interfaces.NewVariantMetrics(load, ttftAvg, itlAvg)
 				Expect(err).NotTo(HaveOccurred(), "failed to parse variant metrics for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 
-				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className, metrics)
+				// Pass empty scale-to-zero config for this test
+				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className, metrics, utils.ScaleToZeroConfigData{})
 				Expect(err).NotTo(HaveOccurred(), "failed to add server info to system data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 
 				By("Updating system data with VariantAutoscaling info")
