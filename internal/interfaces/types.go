@@ -55,12 +55,25 @@ type LoadMetrics struct {
 	AvgOutputTokens int     // Average number of output (decode) tokens per request
 }
 
-// NewVariantMetrics creates a new VariantMetrics from VariantAutoscaling CRD allocation
-func NewVariantMetrics(allocation llmdVariantAutoscalingV1alpha1.Allocation) (*VariantMetrics, error) {
+// LoadProfile represents workload characteristics as collected from Prometheus.
+// This is an internal type used for metrics collection and parsing.
+type LoadProfile struct {
+	// ArrivalRate is the rate of incoming requests in inference server.
+	ArrivalRate string `json:"arrivalRate"`
+
+	// AvgInputTokens is the average number of input(prefill) tokens per request in inference server.
+	AvgInputTokens string `json:"avgInputTokens"`
+
+	// AvgOutputTokens is the average number of output(decode) tokens per request in inference server.
+	AvgOutputTokens string `json:"avgOutputTokens"`
+}
+
+// NewVariantMetrics creates a new VariantMetrics from allocation and collected load metrics
+func NewVariantMetrics(allocation llmdVariantAutoscalingV1alpha1.Allocation, load LoadProfile) (*VariantMetrics, error) {
 	metrics := &VariantMetrics{}
 
 	// Parse load metrics
-	loadMetrics, err := ParseLoadProfile(allocation.Load)
+	loadMetrics, err := ParseLoadProfile(load)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse load profile: %w", err)
 	}
@@ -91,8 +104,8 @@ func NewVariantMetrics(allocation llmdVariantAutoscalingV1alpha1.Allocation) (*V
 	return metrics, nil
 }
 
-// ParseLoadProfile converts VA CRD LoadProfile (string values) to internal LoadMetrics (typed values)
-func ParseLoadProfile(load llmdVariantAutoscalingV1alpha1.LoadProfile) (LoadMetrics, error) {
+// ParseLoadProfile converts LoadProfile (string values) to internal LoadMetrics (typed values)
+func ParseLoadProfile(load LoadProfile) (LoadMetrics, error) {
 	metrics := LoadMetrics{}
 
 	// Parse arrival rate

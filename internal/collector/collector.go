@@ -9,6 +9,7 @@ import (
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/constants"
+	interfaces "github.com/llm-d-incubation/workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/logger"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
@@ -134,7 +135,7 @@ func CollectAggregateMetricsWithCache(ctx context.Context,
 	modelName string,
 	namespace string,
 	promAPI promv1.API,
-	cache *ModelMetricsCache) (llmdVariantAutoscalingV1alpha1.LoadProfile, string, string, error) {
+	cache *ModelMetricsCache) (interfaces.LoadProfile, string, string, error) {
 
 	// Check cache first if available
 	if cache != nil {
@@ -163,7 +164,7 @@ func CollectAggregateMetricsWithCache(ctx context.Context,
 func CollectAggregateMetrics(ctx context.Context,
 	modelName string,
 	namespace string,
-	promAPI promv1.API) (llmdVariantAutoscalingV1alpha1.LoadProfile, string, string, error) {
+	promAPI promv1.API) (interfaces.LoadProfile, string, string, error) {
 
 	// Query 1: Arrival rate (requests per minute)
 	arrivalQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m])) * 60`,
@@ -180,7 +181,7 @@ func CollectAggregateMetrics(ctx context.Context,
 			logger.Log.Warn("Prometheus warnings - ", "warnings: ", warn)
 		}
 	} else {
-		return llmdVariantAutoscalingV1alpha1.LoadProfile{}, "", "", err
+		return interfaces.LoadProfile{}, "", "", err
 	}
 	FixValue(&arrivalVal)
 
@@ -203,7 +204,7 @@ func CollectAggregateMetrics(ctx context.Context,
 			avgOutputTokens = float64(vec[0].Value)
 		}
 	} else {
-		return llmdVariantAutoscalingV1alpha1.LoadProfile{}, "", "", err
+		return interfaces.LoadProfile{}, "", "", err
 	}
 	FixValue(&avgOutputTokens)
 
@@ -248,7 +249,7 @@ func CollectAggregateMetrics(ctx context.Context,
 	FixValue(&itlAverage)
 
 	// Return aggregate metrics
-	load := llmdVariantAutoscalingV1alpha1.LoadProfile{
+	load := interfaces.LoadProfile{
 		ArrivalRate:     strconv.FormatFloat(float64(arrivalVal), 'f', 2, 32),
 		AvgInputTokens:  strconv.FormatFloat(float64(avgInputTokens), 'f', 2, 32),
 		AvgOutputTokens: strconv.FormatFloat(float64(avgOutputTokens), 'f', 2, 32),

@@ -349,13 +349,13 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 		}
 
 		// Update status with collected data (single allocation for this variant)
-		allocation.Load = load
+		// Note: Load is no longer stored in VA status, it's passed separately
 		allocation.TTFTAverage = ttftAvg
 		allocation.ITLAverage = itlAvg
 		updateVA.Status.CurrentAlloc = allocation
 
-		// Extract metrics to internal structure
-		metrics, err := interfaces.NewVariantMetrics(allocation)
+		// Extract metrics to internal structure (load passed separately)
+		metrics, err := interfaces.NewVariantMetrics(allocation, load)
 		if err != nil {
 			logger.Log.Error(err, "failed to parse variant metrics, skipping optimization - ", "variantAutoscaling-name: ", updateVA.Name)
 			continue

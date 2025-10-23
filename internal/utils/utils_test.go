@@ -176,7 +176,7 @@ func TestDNS1123Compliance(t *testing.T) {
 
 			// Check that result only contains valid characters
 			for _, c := range result {
-				if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+				if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
 					t.Errorf("SuggestResourceNameFromVariantID(%q) = %q contains invalid character %q",
 						tt.variantID, result, string(c))
 				}
@@ -229,7 +229,7 @@ func TestRealWorldExamples(t *testing.T) {
 			if suggested != "" {
 				// Must be lowercase alphanumeric with hyphens
 				for _, c := range suggested {
-					if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+					if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
 						t.Errorf("Suggested name %q contains invalid character %q", suggested, string(c))
 					}
 				}

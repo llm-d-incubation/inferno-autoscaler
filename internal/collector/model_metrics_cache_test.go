@@ -1,11 +1,10 @@
 package collector
 
 import (
+	interfaces "github.com/llm-d-incubation/workload-variant-autoscaler/internal/interfaces"
 	"sync"
 	"testing"
 	"time"
-
-	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
 )
 
 func TestNewModelMetricsCache(t *testing.T) {
@@ -32,7 +31,7 @@ func TestNewModelMetricsCache(t *testing.T) {
 func TestModelMetricsCache_SetAndGet(t *testing.T) {
 	cache := NewModelMetricsCache(10 * time.Second)
 
-	load := llmdVariantAutoscalingV1alpha1.LoadProfile{
+	load := interfaces.LoadProfile{
 		ArrivalRate:     "10.5",
 		AvgInputTokens:  "100",
 		AvgOutputTokens: "200",
@@ -85,7 +84,7 @@ func TestModelMetricsCache_TTLExpiration(t *testing.T) {
 	// Use very short TTL for testing
 	cache := NewModelMetricsCache(100 * time.Millisecond)
 
-	load := llmdVariantAutoscalingV1alpha1.LoadProfile{
+	load := interfaces.LoadProfile{
 		ArrivalRate:     "10.5",
 		AvgInputTokens:  "100",
 		AvgOutputTokens: "200",
@@ -112,7 +111,7 @@ func TestModelMetricsCache_TTLExpiration(t *testing.T) {
 func TestModelMetricsCache_Invalidate(t *testing.T) {
 	cache := NewModelMetricsCache(10 * time.Second)
 
-	load := llmdVariantAutoscalingV1alpha1.LoadProfile{
+	load := interfaces.LoadProfile{
 		ArrivalRate:     "10.5",
 		AvgInputTokens:  "100",
 		AvgOutputTokens: "200",
@@ -139,7 +138,7 @@ func TestModelMetricsCache_Invalidate(t *testing.T) {
 func TestModelMetricsCache_Clear(t *testing.T) {
 	cache := NewModelMetricsCache(10 * time.Second)
 
-	load := llmdVariantAutoscalingV1alpha1.LoadProfile{
+	load := interfaces.LoadProfile{
 		ArrivalRate:     "10.5",
 		AvgInputTokens:  "100",
 		AvgOutputTokens: "200",
@@ -171,7 +170,7 @@ func TestModelMetricsCache_Clear(t *testing.T) {
 func TestModelMetricsCache_Size(t *testing.T) {
 	cache := NewModelMetricsCache(10 * time.Second)
 
-	load := llmdVariantAutoscalingV1alpha1.LoadProfile{
+	load := interfaces.LoadProfile{
 		ArrivalRate:     "10.5",
 		AvgInputTokens:  "100",
 		AvgOutputTokens: "200",
@@ -201,13 +200,13 @@ func TestModelMetricsCache_Size(t *testing.T) {
 func TestModelMetricsCache_GetAll(t *testing.T) {
 	cache := NewModelMetricsCache(10 * time.Second)
 
-	load1 := llmdVariantAutoscalingV1alpha1.LoadProfile{
+	load1 := interfaces.LoadProfile{
 		ArrivalRate:     "10.5",
 		AvgInputTokens:  "100",
 		AvgOutputTokens: "200",
 	}
 
-	load2 := llmdVariantAutoscalingV1alpha1.LoadProfile{
+	load2 := interfaces.LoadProfile{
 		ArrivalRate:     "20.5",
 		AvgInputTokens:  "150",
 		AvgOutputTokens: "250",
@@ -245,7 +244,7 @@ func TestModelMetricsCache_Cleanup(t *testing.T) {
 	// Use very short TTL
 	cache := NewModelMetricsCache(50 * time.Millisecond)
 
-	load := llmdVariantAutoscalingV1alpha1.LoadProfile{
+	load := interfaces.LoadProfile{
 		ArrivalRate:     "10.5",
 		AvgInputTokens:  "100",
 		AvgOutputTokens: "200",
@@ -278,7 +277,7 @@ func TestModelMetricsCache_Cleanup(t *testing.T) {
 func TestModelMetricsCache_ConcurrentAccess(t *testing.T) {
 	cache := NewModelMetricsCache(10 * time.Second)
 
-	load := llmdVariantAutoscalingV1alpha1.LoadProfile{
+	load := interfaces.LoadProfile{
 		ArrivalRate:     "10.5",
 		AvgInputTokens:  "100",
 		AvgOutputTokens: "200",
@@ -317,7 +316,7 @@ func TestModelMetricsCache_ConcurrentAccess(t *testing.T) {
 func TestModelMetricsCache_InvalidMetrics(t *testing.T) {
 	cache := NewModelMetricsCache(10 * time.Second)
 
-	load := llmdVariantAutoscalingV1alpha1.LoadProfile{
+	load := interfaces.LoadProfile{
 		ArrivalRate:     "10.5",
 		AvgInputTokens:  "100",
 		AvgOutputTokens: "200",
@@ -339,13 +338,13 @@ func TestModelMetricsCache_InvalidMetrics(t *testing.T) {
 func TestModelMetricsCache_NamespaceIsolation(t *testing.T) {
 	cache := NewModelMetricsCache(10 * time.Second)
 
-	load1 := llmdVariantAutoscalingV1alpha1.LoadProfile{
+	load1 := interfaces.LoadProfile{
 		ArrivalRate:     "10.5",
 		AvgInputTokens:  "100",
 		AvgOutputTokens: "200",
 	}
 
-	load2 := llmdVariantAutoscalingV1alpha1.LoadProfile{
+	load2 := interfaces.LoadProfile{
 		ArrivalRate:     "20.5",
 		AvgInputTokens:  "150",
 		AvgOutputTokens: "250",

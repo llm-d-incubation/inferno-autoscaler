@@ -25,19 +25,20 @@ func TestNewVariantMetrics(t *testing.T) {
 	tests := []struct {
 		name        string
 		allocation  llmdVariantAutoscalingV1alpha1.Allocation
+		load        LoadProfile
 		expectError bool
 		validate    func(*testing.T, *VariantMetrics)
 	}{
 		{
 			name: "valid metrics",
 			allocation: llmdVariantAutoscalingV1alpha1.Allocation{
-				Load: llmdVariantAutoscalingV1alpha1.LoadProfile{
-					ArrivalRate:     "10.5",
-					AvgInputTokens:  "100",
-					AvgOutputTokens: "200",
-				},
 				TTFTAverage: "50.0",
 				ITLAverage:  "25.5",
+			},
+			load: LoadProfile{
+				ArrivalRate:     "10.5",
+				AvgInputTokens:  "100",
+				AvgOutputTokens: "200",
 			},
 			expectError: false,
 			validate: func(t *testing.T, m *VariantMetrics) {
@@ -61,13 +62,13 @@ func TestNewVariantMetrics(t *testing.T) {
 		{
 			name: "empty strings default to zero",
 			allocation: llmdVariantAutoscalingV1alpha1.Allocation{
-				Load: llmdVariantAutoscalingV1alpha1.LoadProfile{
-					ArrivalRate:     "",
-					AvgInputTokens:  "",
-					AvgOutputTokens: "",
-				},
 				TTFTAverage: "",
 				ITLAverage:  "",
+			},
+			load: LoadProfile{
+				ArrivalRate:     "",
+				AvgInputTokens:  "",
+				AvgOutputTokens: "",
 			},
 			expectError: false,
 			validate: func(t *testing.T, m *VariantMetrics) {
@@ -85,13 +86,13 @@ func TestNewVariantMetrics(t *testing.T) {
 		{
 			name: "invalid values default to zero (resilient behavior)",
 			allocation: llmdVariantAutoscalingV1alpha1.Allocation{
-				Load: llmdVariantAutoscalingV1alpha1.LoadProfile{
-					ArrivalRate:     "invalid",
-					AvgInputTokens:  "not-a-number",
-					AvgOutputTokens: "xyz",
-				},
 				TTFTAverage: "bad-value",
 				ITLAverage:  "also-bad",
+			},
+			load: LoadProfile{
+				ArrivalRate:     "invalid",
+				AvgInputTokens:  "not-a-number",
+				AvgOutputTokens: "xyz",
 			},
 			expectError: false,
 			validate: func(t *testing.T, m *VariantMetrics) {
@@ -109,13 +110,13 @@ func TestNewVariantMetrics(t *testing.T) {
 		{
 			name: "negative values clamped to zero",
 			allocation: llmdVariantAutoscalingV1alpha1.Allocation{
-				Load: llmdVariantAutoscalingV1alpha1.LoadProfile{
-					ArrivalRate:     "-10.5",
-					AvgInputTokens:  "-100",
-					AvgOutputTokens: "-200",
-				},
 				TTFTAverage: "-50.0",
 				ITLAverage:  "-25.5",
+			},
+			load: LoadProfile{
+				ArrivalRate:     "-10.5",
+				AvgInputTokens:  "-100",
+				AvgOutputTokens: "-200",
 			},
 			expectError: false,
 			validate: func(t *testing.T, m *VariantMetrics) {
@@ -133,13 +134,13 @@ func TestNewVariantMetrics(t *testing.T) {
 		{
 			name: "very large token values clamped to MaxInt32",
 			allocation: llmdVariantAutoscalingV1alpha1.Allocation{
-				Load: llmdVariantAutoscalingV1alpha1.LoadProfile{
-					ArrivalRate:     "100.0",
-					AvgInputTokens:  "99999999999999",
-					AvgOutputTokens: "99999999999999",
-				},
 				TTFTAverage: "50.0",
 				ITLAverage:  "25.0",
+			},
+			load: LoadProfile{
+				ArrivalRate:     "100.0",
+				AvgInputTokens:  "99999999999999",
+				AvgOutputTokens: "99999999999999",
 			},
 			expectError: false,
 			validate: func(t *testing.T, m *VariantMetrics) {
@@ -155,7 +156,7 @@ func TestNewVariantMetrics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			metrics, err := NewVariantMetrics(tt.allocation)
+			metrics, err := NewVariantMetrics(tt.allocation, tt.load)
 
 			if tt.expectError && err == nil {
 				t.Error("Expected error but got nil")
@@ -182,12 +183,12 @@ func TestNewVariantMetrics(t *testing.T) {
 func TestParseLoadProfile(t *testing.T) {
 	tests := []struct {
 		name     string
-		load     llmdVariantAutoscalingV1alpha1.LoadProfile
+		load     LoadProfile
 		validate func(*testing.T, LoadMetrics)
 	}{
 		{
 			name: "valid load profile",
-			load: llmdVariantAutoscalingV1alpha1.LoadProfile{
+			load: LoadProfile{
 				ArrivalRate:     "15.5",
 				AvgInputTokens:  "512",
 				AvgOutputTokens: "1024",
@@ -206,7 +207,7 @@ func TestParseLoadProfile(t *testing.T) {
 		},
 		{
 			name: "zero values",
-			load: llmdVariantAutoscalingV1alpha1.LoadProfile{
+			load: LoadProfile{
 				ArrivalRate:     "0",
 				AvgInputTokens:  "0",
 				AvgOutputTokens: "0",
@@ -222,7 +223,7 @@ func TestParseLoadProfile(t *testing.T) {
 		},
 		{
 			name: "fractional tokens rounded down",
-			load: llmdVariantAutoscalingV1alpha1.LoadProfile{
+			load: LoadProfile{
 				ArrivalRate:     "10.0",
 				AvgInputTokens:  "100.7",
 				AvgOutputTokens: "200.9",

@@ -294,13 +294,12 @@ var _ = Describe("Optimizer", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred(), "unable to collect allocation data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 				load, ttftAvg, itlAvg, err := collector.CollectAggregateMetrics(ctx, updateVA.Spec.ModelID, deploy.Namespace, &testutils.MockPromAPI{})
 				Expect(err).NotTo(HaveOccurred(), "unable to fetch aggregate metrics for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
-				currentAllocation.Load = load
 				currentAllocation.TTFTAverage = ttftAvg
 				currentAllocation.ITLAverage = itlAvg
 				updateVA.Status.CurrentAlloc = currentAllocation
 
 				// Extract metrics to internal structure
-				metrics, err := interfaces.NewVariantMetrics(currentAllocation)
+				metrics, err := interfaces.NewVariantMetrics(currentAllocation, load)
 				Expect(err).NotTo(HaveOccurred(), "failed to parse variant metrics for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 
 				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className, metrics)
@@ -422,13 +421,12 @@ var _ = Describe("Optimizer", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred(), "unable to collect allocation data for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 				load, ttftAvg, itlAvg, err := collector.CollectAggregateMetrics(ctx, updateVA.Spec.ModelID, deploy.Namespace, mockProm)
 				Expect(err).NotTo(HaveOccurred(), "unable to fetch aggregate metrics for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
-				currentAllocation.Load = load
 				currentAllocation.TTFTAverage = ttftAvg
 				currentAllocation.ITLAverage = itlAvg
 				updateVA.Status.CurrentAlloc = currentAllocation
 
 				// Extract metrics to internal structure
-				metrics, err := interfaces.NewVariantMetrics(currentAllocation)
+				metrics, err := interfaces.NewVariantMetrics(currentAllocation, load)
 				Expect(err).NotTo(HaveOccurred(), "failed to parse variant metrics for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 
 				err = utils.AddServerInfoToSystemData(systemData, &updateVA, className, metrics)

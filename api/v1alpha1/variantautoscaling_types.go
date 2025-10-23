@@ -136,24 +136,6 @@ type Allocation struct {
 	// TTFTAverage is the average time to first token for this variant.
 	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
 	TTFTAverage string `json:"ttftAverage"`
-
-	// Load describes the workload characteristics for this variant.
-	Load LoadProfile `json:"load"`
-}
-
-// LoadProfile represents the configuration for workload characteristics,
-// including the rate of incoming requests (ArrivalRate) and the average
-// length of each request (AvgLength). Both fields are specified as strings
-// to allow flexible input formats.
-type LoadProfile struct {
-	// ArrivalRate is the rate of incoming requests in inference server.
-	ArrivalRate string `json:"arrivalRate"`
-
-	// AvgInputTokens is the average number of input(prefill) tokens per request in inference server.
-	AvgInputTokens string `json:"avgInputTokens"`
-
-	// AvgOutputTokens is the average number of output(decode) tokens per request in inference server.
-	AvgOutputTokens string `json:"avgOutputTokens"`
 }
 
 // OptimizedAlloc describes the target optimized allocation for a model variant.

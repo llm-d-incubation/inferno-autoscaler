@@ -249,27 +249,6 @@ spec:
                       this variant.
                     pattern: ^\d+(\.\d+)?$
                     type: string
-                  load:
-                    description: Load describes the workload characteristics for this
-                      variant.
-                    properties:
-                      arrivalRate:
-                        description: ArrivalRate is the rate of incoming requests
-                          in inference server.
-                        type: string
-                      avgInputTokens:
-                        description: AvgInputTokens is the average number of input(prefill)
-                          tokens per request in inference server.
-                        type: string
-                      avgOutputTokens:
-                        description: AvgOutputTokens is the average number of output(decode)
-                          tokens per request in inference server.
-                        type: string
-                    required:
-                    - arrivalRate
-                    - avgInputTokens
-                    - avgOutputTokens
-                    type: object
                   maxBatch:
                     description: MaxBatch is the maximum batch size currently allocated.
                     minimum: 0
@@ -297,7 +276,6 @@ spec:
                 required:
                 - accelerator
                 - itlAverage
-                - load
                 - maxBatch
                 - numReplicas
                 - ttftAverage

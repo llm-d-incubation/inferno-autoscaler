@@ -227,9 +227,6 @@ var _ = Describe("Actuator", func() {
 						VariantCost: "10.5",
 						ITLAverage:  "100.0",
 						TTFTAverage: "50.0",
-						Load: llmdVariantAutoscalingV1alpha1.LoadProfile{
-							ArrivalRate: "10.0",
-						},
 					},
 					DesiredOptimizedAlloc: llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 						VariantID:   "test-model/variant-1-A100-1",
@@ -488,9 +485,6 @@ var _ = Describe("Actuator", func() {
 						MaxBatch:    32,
 						VariantCost: "5.0",
 						ITLAverage:  "80.0",
-						Load: llmdVariantAutoscalingV1alpha1.LoadProfile{
-							ArrivalRate: "5.0",
-						},
 					},
 					DesiredOptimizedAlloc: llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 						VariantID:   "test-model/metrics-test-A100-1",
@@ -672,9 +666,6 @@ var _ = Describe("Actuator", func() {
 						MaxBatch:    32,
 						VariantCost: "10.0",
 						ITLAverage:  "90.0",
-						Load: llmdVariantAutoscalingV1alpha1.LoadProfile{
-							ArrivalRate: "8.0",
-						},
 					},
 					DesiredOptimizedAlloc: llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 						VariantID:   "test-model/validation-test-A100-1",

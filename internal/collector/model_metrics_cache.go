@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
+	interfaces "github.com/llm-d-incubation/workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/logger"
 )
 
@@ -12,13 +12,13 @@ import (
 // These metrics are collected from Prometheus and represent model-level
 // aggregations across all deployments serving that model.
 type ModelMetrics struct {
-	ModelID     string                                     // Unique identifier for the model
-	Namespace   string                                     // Kubernetes namespace
-	Load        llmdVariantAutoscalingV1alpha1.LoadProfile // Workload characteristics (arrival rate, tokens)
-	TTFTAverage string                                     // Average time to first token (milliseconds)
-	ITLAverage  string                                     // Average inter-token latency (milliseconds)
-	LastUpdated time.Time                                  // Timestamp when metrics were last collected
-	Valid       bool                                       // Whether metrics are valid (query succeeded)
+	ModelID     string                 // Unique identifier for the model
+	Namespace   string                 // Kubernetes namespace
+	Load        interfaces.LoadProfile // Workload characteristics (arrival rate, tokens)
+	TTFTAverage string                 // Average time to first token (milliseconds)
+	ITLAverage  string                 // Average inter-token latency (milliseconds)
+	LastUpdated time.Time              // Timestamp when metrics were last collected
+	Valid       bool                   // Whether metrics are valid (query succeeded)
 }
 
 // ModelMetricsCache provides thread-safe caching of model-level metrics.
@@ -77,7 +77,7 @@ func (c *ModelMetricsCache) Get(modelID, namespace string) (*ModelMetrics, bool)
 
 // Set stores or updates metrics for a model in the cache.
 // Automatically sets LastUpdated to current time.
-func (c *ModelMetricsCache) Set(modelID, namespace string, load llmdVariantAutoscalingV1alpha1.LoadProfile, ttftAvg, itlAvg string, valid bool) {
+func (c *ModelMetricsCache) Set(modelID, namespace string, load interfaces.LoadProfile, ttftAvg, itlAvg string, valid bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
