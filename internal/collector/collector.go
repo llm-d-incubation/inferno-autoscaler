@@ -131,7 +131,9 @@ func AddMetricsToOptStatus(ctx context.Context,
 	opt *llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
 	deployment appsv1.Deployment,
 	acceleratorCostVal float64,
-	promAPI promv1.API) (llmdVariantAutoscalingV1alpha1.Allocation, error) {
+	promAPI promv1.API,
+	metricsCache *ModelMetricsCache,
+	retentionPeriod time.Duration) (llmdVariantAutoscalingV1alpha1.Allocation, error) {
 
 	deployNamespace := deployment.Namespace
 	modelName := opt.Spec.ModelID
@@ -219,6 +221,35 @@ func AddMetricsToOptStatus(ctx context.Context,
 		logger.Log.Warn("failed to get avg itl time, using 0: ", "model: ", modelName)
 	}
 	FixValue(&itlAverage)
+
+	// Query 5: Total requests over retention period (stored in internal cache only)
+	// Convert retention period to Prometheus duration format (e.g., "10m", "1h")
+	retentionPeriodStr := fmt.Sprintf("%.0fm", retentionPeriod.Minutes())
+	totalRequestsQuery := fmt.Sprintf(`sum(increase(%s{%s="%s",%s="%s"}[%s]))`,
+		constants.VLLMRequestSuccessTotal,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, deployNamespace,
+		retentionPeriodStr)
+	totalRequestsOverRetention := 0.0
+	if val, _, err := promAPI.Query(ctx, totalRequestsQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+		vec := val.(model.Vector)
+		if len(vec) > 0 {
+			totalRequestsOverRetention = float64(vec[0].Value)
+		}
+	} else {
+		logger.Log.Warn("failed to get total requests over retention period, using 0: ",
+			"model: ", modelName,
+			"retentionPeriod: ", retentionPeriodStr)
+	}
+	FixValue(&totalRequestsOverRetention)
+
+	// Store total requests in internal metrics cache
+	if metricsCache != nil {
+		metricsCache.Set(modelName, &ModelMetrics{
+			TotalRequestsOverRetentionPeriod: totalRequestsOverRetention,
+			RetentionPeriod:                  retentionPeriod,
+		})
+	}
 
 	// number of replicas
 	numReplicas := int(*deployment.Spec.Replicas)

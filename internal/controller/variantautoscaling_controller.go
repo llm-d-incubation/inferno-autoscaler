@@ -63,7 +63,8 @@ type VariantAutoscalingReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 
-	PromAPI promv1.API
+	PromAPI           promv1.API
+	ModelMetricsCache *collector.ModelMetricsCache
 }
 
 // +kubebuilder:rbac:groups=llmd.ai,resources=variantautoscalings,verbs=get;list;watch;create;update;patch;delete
@@ -325,7 +326,10 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 			continue
 		}
 
-		currentAllocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, r.PromAPI)
+		// Get retention period for this model from scale-to-zero config
+		retentionPeriod := utils.GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, modelName)
+
+		currentAllocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, r.PromAPI, r.ModelMetricsCache, retentionPeriod)
 		if err != nil {
 			logger.Log.Error(err, "unable to fetch metrics, skipping this variantAutoscaling loop")
 			// Don't update status here - will be updated in next reconcile when metrics are available
@@ -454,6 +458,10 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	}
 
 	r.PromAPI = promv1.NewAPI(promClient)
+
+	// Initialize model metrics cache for storing internal per-model metrics
+	r.ModelMetricsCache = collector.NewModelMetricsCache()
+	logger.Log.Info("Model metrics cache initialized")
 
 	// Validate that the API is working by testing a simple query with retry logic
 	if err := utils.ValidatePrometheusAPI(context.Background(), r.PromAPI); err != nil {
