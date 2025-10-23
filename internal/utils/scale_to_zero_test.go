@@ -599,14 +599,14 @@ func TestScaleToZeroConfigDataType(t *testing.T) {
 		assert.NotNil(t, configData)
 		assert.Equal(t, 0, len(configData))
 
-		// Add model config
+		// Add model config (using sanitized key as it would be in a ConfigMap)
 		configData["meta/llama-3.1-8b"] = ModelScaleToZeroConfig{
 			EnableScaleToZero: boolPtr(true),
 			RetentionPeriod:   "5m",
 		}
 		assert.Equal(t, 1, len(configData))
 
-		// Retrieve and verify
+		// Retrieve and verify using original model ID
 		config, exists := configData["meta/llama-3.1-8b"]
 		assert.True(t, exists)
 		assert.True(t, *config.EnableScaleToZero)
@@ -634,7 +634,7 @@ func TestScaleToZeroConfigDataType(t *testing.T) {
 
 		assert.Equal(t, 3, len(configData))
 
-		// Verify each model
+		// Verify each model using original model IDs (new YAML format supports any characters)
 		assert.True(t, *configData["meta/llama-3.1-8b"].EnableScaleToZero)
 		assert.Equal(t, "5m", configData["meta/llama-3.1-8b"].RetentionPeriod)
 
@@ -742,3 +742,4 @@ func TestScaleToZeroIntegration(t *testing.T) {
 		assert.Equal(t, 0, minReplicas)
 	})
 }
+

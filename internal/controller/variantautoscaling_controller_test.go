@@ -1081,5 +1081,328 @@ data:
 			By("Cleaning up ConfigMap")
 			Expect(k8sClient.Delete(ctx, scaleToZeroConfigMap)).To(Succeed())
 		})
+
+		// NEW TESTS FOR PREFIXED-KEY FORMAT WITH YAML VALUES
+
+		It("should parse prefixed-key format with YAML values", func() {
+			By("Creating a ConfigMap with prefixed-key format and YAML values")
+			scaleToZeroConfigMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "model-scale-to-zero-config-yaml",
+					Namespace: configMapNamespace,
+				},
+				Data: map[string]string{
+					"__defaults__": `enableScaleToZero: true
+retentionPeriod: "15m"`,
+					"model.meta.llama-3.1-8b": `modelID: "meta/llama-3.1-8b"
+retentionPeriod: "5m"`,
+					"model.vllm.meta.llama-3.1-8b": `modelID: "vllm:meta/llama-3.1-8b"
+enableScaleToZero: true
+retentionPeriod: "3m"`,
+				},
+			}
+			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())
+
+			By("Reading the ConfigMap")
+			controllerReconciler := &VariantAutoscalingReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			configData, err := controllerReconciler.readScaleToZeroConfig(ctx, "model-scale-to-zero-config-yaml", configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying parsed data")
+			Expect(len(configData)).To(Equal(3)) // __defaults__ + 2 models
+
+			// Check defaults
+			defaults, exists := configData["__defaults__"]
+			Expect(exists).To(BeTrue())
+			Expect(defaults.EnableScaleToZero).NotTo(BeNil())
+			Expect(*defaults.EnableScaleToZero).To(BeTrue())
+			Expect(defaults.RetentionPeriod).To(Equal("15m"))
+
+			// Check model with slash in ID
+			model1, exists := configData["meta/llama-3.1-8b"]
+			Expect(exists).To(BeTrue())
+			Expect(model1.ModelID).To(Equal("meta/llama-3.1-8b"))
+			Expect(model1.RetentionPeriod).To(Equal("5m"))
+			Expect(model1.EnableScaleToZero).To(BeNil()) // Not set, inherits from defaults
+
+			// Check model with colon in ID
+			model2, exists := configData["vllm:meta/llama-3.1-8b"]
+			Expect(exists).To(BeTrue())
+			Expect(model2.ModelID).To(Equal("vllm:meta/llama-3.1-8b"))
+			Expect(model2.EnableScaleToZero).NotTo(BeNil())
+			Expect(*model2.EnableScaleToZero).To(BeTrue())
+			Expect(model2.RetentionPeriod).To(Equal("3m"))
+
+			By("Cleaning up ConfigMap")
+			Expect(k8sClient.Delete(ctx, scaleToZeroConfigMap)).To(Succeed())
+		})
+
+		It("should handle duplicate modelID deterministically - first key wins", func() {
+			By("Creating a ConfigMap with duplicate modelIDs")
+			scaleToZeroConfigMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "model-scale-to-zero-config-duplicates",
+					Namespace: configMapNamespace,
+				},
+				Data: map[string]string{
+					// Same modelID in different keys - lexicographically first key should win
+					"model.z.duplicate": `modelID: "test/model"
+retentionPeriod: "999m"`,
+					"model.a.duplicate": `modelID: "test/model"
+retentionPeriod: "5m"`,
+					"model.m.duplicate": `modelID: "test/model"
+retentionPeriod: "10m"`,
+				},
+			}
+			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())
+
+			By("Reading the ConfigMap")
+			controllerReconciler := &VariantAutoscalingReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			configData, err := controllerReconciler.readScaleToZeroConfig(ctx, "model-scale-to-zero-config-duplicates", configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying only first key (lexicographically) wins")
+			Expect(len(configData)).To(Equal(1)) // Only one entry for the duplicate modelID
+			model, exists := configData["test/model"]
+			Expect(exists).To(BeTrue())
+			// "model.a.duplicate" comes first lexicographically, so its value should win
+			Expect(model.RetentionPeriod).To(Equal("5m"))
+			Expect(model.ModelID).To(Equal("test/model"))
+
+			By("Cleaning up ConfigMap")
+			Expect(k8sClient.Delete(ctx, scaleToZeroConfigMap)).To(Succeed())
+		})
+
+		It("should skip entries without modelID field", func() {
+			By("Creating a ConfigMap with missing modelID")
+			scaleToZeroConfigMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "model-scale-to-zero-config-no-modelid",
+					Namespace: configMapNamespace,
+				},
+				Data: map[string]string{
+					"model.valid": `modelID: "valid/model"
+retentionPeriod: "5m"`,
+					"model.invalid": `retentionPeriod: "10m"`, // Missing modelID field
+				},
+			}
+			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())
+
+			By("Reading the ConfigMap")
+			controllerReconciler := &VariantAutoscalingReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			configData, err := controllerReconciler.readScaleToZeroConfig(ctx, "model-scale-to-zero-config-no-modelid", configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying only valid entry was parsed")
+			Expect(len(configData)).To(Equal(1))
+			model, exists := configData["valid/model"]
+			Expect(exists).To(BeTrue())
+			Expect(model.ModelID).To(Equal("valid/model"))
+
+			By("Cleaning up ConfigMap")
+			Expect(k8sClient.Delete(ctx, scaleToZeroConfigMap)).To(Succeed())
+		})
+
+		It("should skip invalid YAML entries", func() {
+			By("Creating a ConfigMap with invalid YAML")
+			scaleToZeroConfigMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "model-scale-to-zero-config-invalid-yaml",
+					Namespace: configMapNamespace,
+				},
+				Data: map[string]string{
+					"model.valid": `modelID: "valid/model"
+retentionPeriod: "5m"`,
+					"model.invalid": `this is not: valid: yaml: [[[`, // Invalid YAML
+					"__defaults__": `invalid yaml here too: {{{{`,    // Invalid defaults
+				},
+			}
+			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())
+
+			By("Reading the ConfigMap")
+			controllerReconciler := &VariantAutoscalingReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			configData, err := controllerReconciler.readScaleToZeroConfig(ctx, "model-scale-to-zero-config-invalid-yaml", configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying only valid entry was parsed")
+			Expect(len(configData)).To(Equal(1))
+			model, exists := configData["valid/model"]
+			Expect(exists).To(BeTrue())
+			Expect(model.ModelID).To(Equal("valid/model"))
+
+			// Invalid defaults and invalid model should be skipped
+			_, exists = configData["__defaults__"]
+			Expect(exists).To(BeFalse())
+
+			By("Cleaning up ConfigMap")
+			Expect(k8sClient.Delete(ctx, scaleToZeroConfigMap)).To(Succeed())
+		})
+
+		It("should ignore non-prefixed keys", func() {
+			By("Creating a ConfigMap with mixed key formats")
+			scaleToZeroConfigMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "model-scale-to-zero-config-mixed",
+					Namespace: configMapNamespace,
+				},
+				Data: map[string]string{
+					"model.prefixed": `modelID: "prefixed/model"
+retentionPeriod: "5m"`,
+					"notprefixed": `modelID: "should/be/ignored"
+retentionPeriod: "10m"`,
+					"another-key": `modelID: "also/ignored"
+retentionPeriod: "15m"`,
+					"__defaults__": `enableScaleToZero: true
+retentionPeriod: "20m"`,
+				},
+			}
+			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())
+
+			By("Reading the ConfigMap")
+			controllerReconciler := &VariantAutoscalingReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			configData, err := controllerReconciler.readScaleToZeroConfig(ctx, "model-scale-to-zero-config-mixed", configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying only prefixed keys and defaults were parsed")
+			Expect(len(configData)).To(Equal(2)) // defaults + 1 prefixed model
+
+			// Check defaults
+			defaults, exists := configData["__defaults__"]
+			Expect(exists).To(BeTrue())
+			Expect(defaults.RetentionPeriod).To(Equal("20m"))
+
+			// Check prefixed model
+			model, exists := configData["prefixed/model"]
+			Expect(exists).To(BeTrue())
+			Expect(model.ModelID).To(Equal("prefixed/model"))
+
+			// Non-prefixed keys should be ignored
+			_, exists = configData["should/be/ignored"]
+			Expect(exists).To(BeFalse())
+			_, exists = configData["also/ignored"]
+			Expect(exists).To(BeFalse())
+
+			By("Cleaning up ConfigMap")
+			Expect(k8sClient.Delete(ctx, scaleToZeroConfigMap)).To(Succeed())
+		})
+
+		It("should handle special characters in modelID", func() {
+			By("Creating a ConfigMap with special characters in modelIDs")
+			scaleToZeroConfigMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "model-scale-to-zero-config-special-chars",
+					Namespace: configMapNamespace,
+				},
+				Data: map[string]string{
+					"model.test1": `modelID: "org/model-name_v1.2.3"
+retentionPeriod: "5m"`,
+					"model.test2": `modelID: "vllm:meta/llama@latest"
+retentionPeriod: "10m"`,
+					"model.test3": `modelID: "prefix:org/model-name:tag"
+retentionPeriod: "15m"`,
+				},
+			}
+			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())
+
+			By("Reading the ConfigMap")
+			controllerReconciler := &VariantAutoscalingReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			configData, err := controllerReconciler.readScaleToZeroConfig(ctx, "model-scale-to-zero-config-special-chars", configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying all special character modelIDs were parsed correctly")
+			Expect(len(configData)).To(Equal(3))
+
+			model1, exists := configData["org/model-name_v1.2.3"]
+			Expect(exists).To(BeTrue())
+			Expect(model1.ModelID).To(Equal("org/model-name_v1.2.3"))
+			Expect(model1.RetentionPeriod).To(Equal("5m"))
+
+			model2, exists := configData["vllm:meta/llama@latest"]
+			Expect(exists).To(BeTrue())
+			Expect(model2.ModelID).To(Equal("vllm:meta/llama@latest"))
+			Expect(model2.RetentionPeriod).To(Equal("10m"))
+
+			model3, exists := configData["prefix:org/model-name:tag"]
+			Expect(exists).To(BeTrue())
+			Expect(model3.ModelID).To(Equal("prefix:org/model-name:tag"))
+			Expect(model3.RetentionPeriod).To(Equal("15m"))
+
+			By("Cleaning up ConfigMap")
+			Expect(k8sClient.Delete(ctx, scaleToZeroConfigMap)).To(Succeed())
+		})
+
+		It("should handle partial overrides correctly", func() {
+			By("Creating a ConfigMap with partial overrides")
+			scaleToZeroConfigMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "model-scale-to-zero-config-partial",
+					Namespace: configMapNamespace,
+				},
+				Data: map[string]string{
+					"__defaults__": `enableScaleToZero: true
+retentionPeriod: "15m"`,
+					"model.only-retention": `modelID: "test/only-retention"
+retentionPeriod: "5m"`,
+					"model.only-enable": `modelID: "test/only-enable"
+enableScaleToZero: false`,
+					"model.both": `modelID: "test/both"
+enableScaleToZero: false
+retentionPeriod: "20m"`,
+				},
+			}
+			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())
+
+			By("Reading the ConfigMap")
+			controllerReconciler := &VariantAutoscalingReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			configData, err := controllerReconciler.readScaleToZeroConfig(ctx, "model-scale-to-zero-config-partial", configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying partial override behavior")
+			Expect(len(configData)).To(Equal(4))
+
+			// Model with only retentionPeriod set (EnableScaleToZero should be nil)
+			model1, exists := configData["test/only-retention"]
+			Expect(exists).To(BeTrue())
+			Expect(model1.RetentionPeriod).To(Equal("5m"))
+			Expect(model1.EnableScaleToZero).To(BeNil()) // Should inherit from defaults
+
+			// Model with only EnableScaleToZero set (RetentionPeriod should be empty)
+			model2, exists := configData["test/only-enable"]
+			Expect(exists).To(BeTrue())
+			Expect(model2.EnableScaleToZero).NotTo(BeNil())
+			Expect(*model2.EnableScaleToZero).To(BeFalse())
+			Expect(model2.RetentionPeriod).To(Equal("")) // Should inherit from defaults
+
+			// Model with both set
+			model3, exists := configData["test/both"]
+			Expect(exists).To(BeTrue())
+			Expect(model3.EnableScaleToZero).NotTo(BeNil())
+			Expect(*model3.EnableScaleToZero).To(BeFalse())
+			Expect(model3.RetentionPeriod).To(Equal("20m"))
+
+			By("Cleaning up ConfigMap")
+			Expect(k8sClient.Delete(ctx, scaleToZeroConfigMap)).To(Succeed())
+		})
 	})
 })

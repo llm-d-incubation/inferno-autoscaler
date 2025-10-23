@@ -21,9 +21,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -614,19 +617,27 @@ func (r *VariantAutoscalingReconciler) readOptimizationConfig(ctx context.Contex
 	return interval, nil
 }
 
-// readScaleToZeroConfig reads per-model scale-to-zero configuration from a ConfigMap.
+// readScaleToZeroConfig reads per-model scale-to-zero configuration from a ConfigMap
+// using prefixed-key format with YAML values.
 //
-// ConfigMap Key Format Requirements:
-// Kubernetes ConfigMap keys must match the regex: [-._a-zA-Z0-9]+
-// Since model IDs typically contain '/' (e.g., "meta/llama-3.1-8b"), users MUST
-// replace '/' with '_' in ConfigMap keys.
+// Format: Keys prefixed with "model.", values are YAML
 //
-// Examples:
-//   - Model ID: "meta/llama-3.1-8b"     → ConfigMap key: "meta_llama-3.1-8b"
-//   - Model ID: "mistralai/Mistral-7B"  → ConfigMap key: "mistralai_Mistral-7B"
+// Example:
+//    model.meta.llama-3.1-8b: |
+//      modelID: "meta/llama-3.1-8b"
+//      enableScaleToZero: true
+//      retentionPeriod: "5m"
+//    __defaults__: |
+//      enableScaleToZero: true
+//      retentionPeriod: "15m"
+//
+// Benefits:
+//    - Independently editable (kubectl patch single model)
+//    - Original modelID preserved in YAML value (no collision risk)
+//    - Better Git diffs (only changed models shown)
+//    - Human-readable YAML format
 //
 // The function returns an empty map if the ConfigMap is not found (it's optional).
-// Invalid JSON entries are logged and skipped.
 func (r *VariantAutoscalingReconciler) readScaleToZeroConfig(ctx context.Context, cmName, cmNamespace string) (utils.ScaleToZeroConfigData, error) {
 	cm := corev1.ConfigMap{}
 	err := utils.GetConfigMapWithBackoff(ctx, r.Client, cmName, cmNamespace, &cm)
@@ -637,16 +648,75 @@ func (r *VariantAutoscalingReconciler) readScaleToZeroConfig(ctx context.Context
 	}
 
 	out := make(utils.ScaleToZeroConfigData)
-	for modelID, configStr := range cm.Data {
-		var config utils.ModelScaleToZeroConfig
-		if err := json.Unmarshal([]byte(configStr), &config); err != nil {
-			logger.Log.Warn("Failed to parse scale-to-zero config for model, skipping",
-				"modelID", modelID,
-				"configMap", cmName,
-				"error", err)
+	// Track which keys define which modelIDs to detect duplicates
+	modelIDToKeys := make(map[string][]string)
+
+	logger.Log.Debug("Loading scale-to-zero config from prefixed-key format",
+		"configMap", cmName,
+		"namespace", cmNamespace)
+
+	// Sort keys to ensure deterministic processing order
+	// This is critical because map iteration in Go is non-deterministic.
+	// If there are duplicate modelIDs, the lexicographically first key will win.
+	keys := make([]string, 0, len(cm.Data))
+	for k := range cm.Data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		configStr := cm.Data[key]
+		// Handle global defaults (special key)
+		if key == utils.GlobalDefaultsKey {
+			var config utils.ModelScaleToZeroConfig
+			if err := yaml.Unmarshal([]byte(configStr), &config); err != nil {
+				logger.Log.Warn("Failed to parse __defaults__ in scale-to-zero ConfigMap, skipping",
+					"configMap", cmName,
+					"error", err)
+				continue
+			}
+			out[utils.GlobalDefaultsKey] = config
 			continue
 		}
-		out[modelID] = config
+
+		// Handle prefixed model keys
+		if strings.HasPrefix(key, "model.") {
+			var config utils.ModelScaleToZeroConfig
+			if err := yaml.Unmarshal([]byte(configStr), &config); err != nil {
+				logger.Log.Warn("Failed to parse scale-to-zero config for prefixed key, skipping",
+					"key", key,
+					"configMap", cmName,
+					"error", err)
+				continue
+			}
+
+			// Use modelID from YAML (not the key) to avoid collision
+			if config.ModelID == "" {
+				logger.Log.Warn("Skipping model config without modelID field in scale-to-zero ConfigMap",
+					"key", key,
+					"configMap", cmName)
+				continue
+			}
+
+			// Check for duplicate modelID
+			if existingKeys, exists := modelIDToKeys[config.ModelID]; exists {
+				logger.Log.Warn("Duplicate modelID found in scale-to-zero ConfigMap - first key wins (lexicographic order)",
+					"modelID", config.ModelID,
+					"winningKey", existingKeys[0],
+					"duplicateKey", key,
+					"configMap", cmName)
+				// Skip this duplicate - first key already processed wins
+				continue
+			}
+			modelIDToKeys[config.ModelID] = append(modelIDToKeys[config.ModelID], key)
+
+			out[config.ModelID] = config
+		}
 	}
+
+	logger.Log.Debug("Loaded scale-to-zero config",
+		"configMap", cmName,
+		"namespace", cmNamespace,
+		"modelCount", len(out))
 	return out, nil
 }

@@ -39,7 +39,7 @@ Scale-to-zero configuration is managed via a Kubernetes ConfigMap named `model-s
 
 ### ConfigMap Structure
 
-Create a ConfigMap in the `workload-variant-autoscaler-system` namespace:
+Create a ConfigMap in the `workload-variant-autoscaler-system` namespace using the **prefixed-key format with YAML values**:
 
 ```yaml
 apiVersion: v1
@@ -48,45 +48,60 @@ metadata:
   name: model-scale-to-zero-config
   namespace: workload-variant-autoscaler-system
 data:
-  # Global defaults for all models (optional)
-  # Use the special key "__defaults__" to set defaults for all models
-  "__defaults__": |
-    {
-      "enableScaleToZero": true,
-      "retentionPeriod": "15m"
-    }
+  # Global defaults for all models (optional, special key)
+  __defaults__: |
+    enableScaleToZero: true
+    retentionPeriod: "15m"
 
   # Per-model configurations
-  # Key: modelID (must match the modelID in VariantAutoscaling spec)
-  # Value: JSON configuration object that overrides global defaults
+  # Key format: "model.<safe-key>" where safe-key uses dots instead of slashes
+  # Value: YAML configuration that includes the original modelID
+  # This format allows independent editing of each model's configuration
 
-  # Example: Override global retention period for this model
-  "meta/llama-3.1-8b": |
-    {
-      "enableScaleToZero": true,
-      "retentionPeriod": "5m"
-    }
+  # Example: Override retention period for this model
+  # Key uses dots, but value contains original modelID with slash
+  model.meta.llama-3.1-8b: |
+    modelID: "meta/llama-3.1-8b"
+    retentionPeriod: "5m"
 
   # Example: Disable scale-to-zero (overrides global default)
-  "meta/llama-3.1-70b": |
-    {
-      "enableScaleToZero": false
-    }
+  model.meta.llama-3.1-70b: |
+    modelID: "meta/llama-3.1-70b"
+    enableScaleToZero: false
+
+  # Example: Model ID with colon (vllm prefix)
+  model.vllm.meta.llama-3.1-8b: |
+    modelID: "vllm:meta/llama-3.1-8b"
+    enableScaleToZero: true
+    retentionPeriod: "3m"
 
   # Example: Use global defaults by not specifying this model
   # "meta/llama-2-7b" - will inherit enableScaleToZero=true, retentionPeriod="15m"
 ```
 
+**Key Format Benefits**:
+- ✅ **Independently editable** - Use `kubectl patch` to update single models
+- ✅ **Better Git diffs** - Only changed models show in version control
+- ✅ **No collision risk** - Original modelID preserved in YAML value
+- ✅ **Human-readable** - Keys like `model.meta.llama-3.1-8b` are recognizable
+
 ### Configuration Fields
 
-#### `enableScaleToZero` (boolean, required)
+#### `modelID` (string, required for per-model entries)
+- Original model identifier with any characters (/, :, @, etc.)
+- Must match the `modelID` in VariantAutoscaling spec
+- Not required for `__defaults__` entry
+
+#### `enableScaleToZero` (boolean, optional)
 - **true**: Allows the model to scale down to 0 replicas when idle
 - **false**: Maintains a minimum of 1 replica at all times
+- If omitted, inherits from `__defaults__` or environment variable
 
 #### `retentionPeriod` (string, optional)
 - Duration to wait after the last request before scaling to zero
 - Format: Go duration string (e.g., "5m", "1h", "30s")
 - Default: "10m" (10 minutes)
+- If omitted, inherits from `__defaults__` or system default
 - Examples:
   - "30s" - 30 seconds
   - "5m" - 5 minutes
@@ -99,11 +114,9 @@ You can set default scale-to-zero behavior for all models using the special `__d
 
 ```yaml
 data:
-  "__defaults__": |
-    {
-      "enableScaleToZero": true,
-      "retentionPeriod": "20m"
-    }
+  __defaults__: |
+    enableScaleToZero: true
+    retentionPeriod: "20m"
 ```
 
 Models not explicitly configured will inherit these defaults. Per-model configurations always override global defaults.
@@ -120,23 +133,19 @@ Models not explicitly configured will inherit these defaults. Per-model configur
 
 ```yaml
 data:
-  "__defaults__": |
-    {
-      "enableScaleToZero": true,
-      "retentionPeriod": "15m"
-    }
+  __defaults__: |
+    enableScaleToZero: true
+    retentionPeriod: "15m"
 
   # Override ONLY retention period - inherits enableScaleToZero=true from defaults
-  "meta/llama-3.1-8b": |
-    {
-      "retentionPeriod": "5m"
-    }
+  model.meta.llama-3.1-8b: |
+    modelID: "meta/llama-3.1-8b"
+    retentionPeriod: "5m"
 
   # Override ONLY enableScaleToZero - inherits retentionPeriod="15m" from defaults
-  "meta/llama-3.1-70b": |
-    {
-      "enableScaleToZero": false
-    }
+  model.meta.llama-3.1-70b: |
+    modelID: "meta/llama-3.1-70b"
+    enableScaleToZero: false
 ```
 
 **Behavior**:
@@ -199,24 +208,21 @@ metadata:
   namespace: workload-variant-autoscaler-system
 data:
   # Development models: aggressive scale-to-zero (5 minutes)
-  "meta/llama-3.1-8b": |
-    {
-      "enableScaleToZero": true,
-      "retentionPeriod": "5m"
-    }
+  model.meta.llama-3.1-8b: |
+    modelID: "meta/llama-3.1-8b"
+    enableScaleToZero: true
+    retentionPeriod: "5m"
 
   # Production models: conservative scale-to-zero (30 minutes)
-  "meta/llama-3.1-70b": |
-    {
-      "enableScaleToZero": true,
-      "retentionPeriod": "30m"
-    }
+  model.meta.llama-3.1-70b: |
+    modelID: "meta/llama-3.1-70b"
+    enableScaleToZero: true
+    retentionPeriod: "30m"
 
   # Critical models: no scale-to-zero (always available)
-  "meta/llama-3.1-405b": |
-    {
-      "enableScaleToZero": false
-    }
+  model.meta.llama-3.1-405b: |
+    modelID: "meta/llama-3.1-405b"
+    enableScaleToZero: false
 ```
 
 ### Example 3: Using Global Defaults in ConfigMap
@@ -231,23 +237,18 @@ metadata:
   namespace: workload-variant-autoscaler-system
 data:
   # Set defaults for all models
-  "__defaults__": |
-    {
-      "enableScaleToZero": true,
-      "retentionPeriod": "20m"
-    }
+  __defaults__: |
+    enableScaleToZero: true
+    retentionPeriod: "20m"
 
   # Override defaults for specific models
-  "meta/llama-3.1-8b": |
-    {
-      "enableScaleToZero": true,
-      "retentionPeriod": "5m"  # Shorter retention for dev model
-    }
+  model.meta.llama-3.1-8b: |
+    modelID: "meta/llama-3.1-8b"
+    retentionPeriod: "5m"  # Shorter retention for dev model
 
-  "meta/llama-3.1-405b": |
-    {
-      "enableScaleToZero": false  # Critical model, always available
-    }
+  model.meta.llama-3.1-405b: |
+    modelID: "meta/llama-3.1-405b"
+    enableScaleToZero: false  # Critical model, always available
 ```
 
 In this configuration:
@@ -288,22 +289,18 @@ Consider your use case when setting retention periods:
 ```yaml
 data:
   # Set sensible defaults for most models
-  "__defaults__": |
-    {
-      "enableScaleToZero": true,
-      "retentionPeriod": "15m"
-    }
+  __defaults__: |
+    enableScaleToZero: true
+    retentionPeriod: "15m"
 
   # Only specify exceptions
-  "meta/llama-3.1-405b": |
-    {
-      "enableScaleToZero": false  # Critical model
-    }
+  model.meta.llama-3.1-405b: |
+    modelID: "meta/llama-3.1-405b"
+    enableScaleToZero: false  # Critical model
 
-  "meta/llama-3.1-8b": |
-    {
-      "retentionPeriod": "5m"  # Dev model, shorter retention
-    }
+  model.meta.llama-3.1-8b: |
+    modelID: "meta/llama-3.1-8b"
+    retentionPeriod: "5m"  # Dev model, shorter retention
 ```
 
 **Benefits:**
@@ -318,23 +315,19 @@ Group models by usage patterns with global defaults as baseline:
 ```yaml
 data:
   # Global baseline for most models
-  "__defaults__": |
-    {
-      "enableScaleToZero": true,
-      "retentionPeriod": "20m"
-    }
+  __defaults__: |
+    enableScaleToZero: true
+    retentionPeriod: "20m"
 
   # High-traffic models (override to disable)
-  "meta/llama-3.1-8b": |
-    {
-      "enableScaleToZero": false
-    }
+  model.meta.llama-3.1-8b: |
+    modelID: "meta/llama-3.1-8b"
+    enableScaleToZero: false
 
   # Low-traffic models (override for aggressive retention)
-  "mistralai/Mistral-7B-v0.1": |
-    {
-      "retentionPeriod": "5m"
-    }
+  model.mistralai.Mistral-7B-v0.1: |
+    modelID: "mistralai/Mistral-7B-v0.1"
+    retentionPeriod: "5m"
 
   # Medium-traffic models inherit defaults (20m retention)
 ```
@@ -396,17 +389,17 @@ The controller monitors these metrics to determine when to scale:
 
 **Solutions**:
 - Verify ConfigMap is in `workload-variant-autoscaler-system` namespace
-- Validate JSON syntax
+- Validate YAML syntax
 - Check controller logs for parsing errors
 - Trigger reconciliation by updating a VariantAutoscaling resource
 
-### Invalid JSON in ConfigMap
+### Invalid YAML in ConfigMap
 
 **Symptoms**: Some models work, others don't
 
-**Behavior**: The controller skips entries with invalid JSON and logs a warning. Other valid entries are still processed.
+**Behavior**: The controller skips entries with invalid YAML and logs a warning. Other valid entries are still processed.
 
-**Solution**: Check controller logs for JSON parsing errors and fix the configuration.
+**Solution**: Check controller logs for YAML parsing errors and fix the configuration.
 
 ## Implementation Details
 
@@ -423,7 +416,9 @@ The scale-to-zero feature is implemented across several components:
 
 #### Controller (`internal/controller/variantautoscaling_controller.go`)
 
-- `readScaleToZeroConfig()`: Reads and parses the ConfigMap
+- `readScaleToZeroConfig()`: Reads and parses the ConfigMap using prefixed-key format with YAML values
+- **Deterministic parsing**: Sorts keys lexicographically before processing
+- **Duplicate detection**: Warns if same modelID appears in multiple keys (first key wins)
 - ConfigMap watch: Automatically triggers reconciliation on changes
 - Integration with `prepareVariantAutoscalings()`: Applies configuration during optimization
 
@@ -450,13 +445,15 @@ Map of modelID to scale-to-zero configuration.
 
 ```go
 type ModelScaleToZeroConfig struct {
-    EnableScaleToZero bool   `json:"enableScaleToZero"`
-    RetentionPeriod   string `json:"retentionPeriod,omitempty"`
+    ModelID           string `yaml:"modelID,omitempty" json:"modelID,omitempty"`
+    EnableScaleToZero *bool  `yaml:"enableScaleToZero,omitempty" json:"enableScaleToZero,omitempty"`
+    RetentionPeriod   string `yaml:"retentionPeriod,omitempty" json:"retentionPeriod,omitempty"`
 }
 ```
 
 Configuration for a specific model:
-- `EnableScaleToZero`: Whether to allow scaling to zero
+- `ModelID`: Original model identifier (required for per-model entries)
+- `EnableScaleToZero`: Whether to allow scaling to zero (pointer to support partial overrides)
 - `RetentionPeriod`: How long to wait before scaling to zero (optional)
 
 ### Functions

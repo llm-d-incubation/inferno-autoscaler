@@ -75,18 +75,21 @@ const (
 // This allows partial overrides where a model can inherit enableScaleToZero from global defaults
 // while overriding only the retentionPeriod.
 type ModelScaleToZeroConfig struct {
+	// ModelID is the unique identifier for the model (original ID with any characters)
+	ModelID string `yaml:"modelID,omitempty" json:"modelID,omitempty"`
 	// EnableScaleToZero enables scaling the model to zero replicas when there is no traffic.
 	// Use pointer to allow omitting this field and inheriting from global defaults.
 	// nil = not set (inherit from defaults), true = enabled, false = disabled
-	EnableScaleToZero *bool `json:"enableScaleToZero,omitempty"`
+	EnableScaleToZero *bool `yaml:"enableScaleToZero,omitempty" json:"enableScaleToZero,omitempty"`
 	// RetentionPeriod specifies how long to wait after the last request before scaling to zero.
 	// This is stored as a string duration (e.g., "5m", "1h", "30s").
 	// Empty string = not set (inherit from defaults)
-	RetentionPeriod string `json:"retentionPeriod,omitempty"`
+	RetentionPeriod string `yaml:"retentionPeriod,omitempty" json:"retentionPeriod,omitempty"`
 }
 
 // ScaleToZeroConfigData holds pre-read scale-to-zero configuration data for all models.
 // This follows the project pattern of reading ConfigMaps once per reconcile loop.
+// Maps model ID to its configuration.
 type ScaleToZeroConfigData map[string]ModelScaleToZeroConfig
 
 // IsScaleToZeroEnabled determines if scale-to-zero is enabled for a specific model.
@@ -101,6 +104,7 @@ type ScaleToZeroConfigData map[string]ModelScaleToZeroConfig
 // 4. System default (false)
 func IsScaleToZeroEnabled(configData ScaleToZeroConfigData, modelID string) bool {
 	// Check per-model setting first (highest priority)
+	// With the new YAML format, model IDs are used directly without sanitization
 	if config, exists := configData[modelID]; exists {
 		// If EnableScaleToZero is explicitly set (not nil), use it
 		if config.EnableScaleToZero != nil {
@@ -127,6 +131,7 @@ func IsScaleToZeroEnabled(configData ScaleToZeroConfigData, modelID string) bool
 // 3. System default (10 minutes)
 func GetScaleToZeroRetentionPeriod(configData ScaleToZeroConfigData, modelID string) time.Duration {
 	// Check per-model retention period first (highest priority)
+	// With the new YAML format, model IDs are used directly without sanitization
 	if config, exists := configData[modelID]; exists && config.RetentionPeriod != "" {
 		duration, err := time.ParseDuration(config.RetentionPeriod)
 		if err != nil {
