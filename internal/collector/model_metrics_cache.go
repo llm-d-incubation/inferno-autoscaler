@@ -33,18 +33,28 @@ func NewModelMetricsCache() *ModelMetricsCache {
 
 // Set stores or updates metrics for a model
 func (c *ModelMetricsCache) Set(modelID string, metrics *ModelMetrics) {
+	if metrics == nil {
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	metrics.LastUpdated = time.Now()
-	c.metrics[modelID] = metrics
+	// Create a copy to avoid side effects on caller's struct
+	metricsCopy := *metrics
+	metricsCopy.LastUpdated = time.Now()
+	c.metrics[modelID] = &metricsCopy
 }
 
-// Get retrieves metrics for a model
+// Get retrieves a copy of metrics for a model
 func (c *ModelMetricsCache) Get(modelID string) (*ModelMetrics, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	metrics, exists := c.metrics[modelID]
-	return metrics, exists
+	if !exists {
+		return nil, false
+	}
+	// Return a copy to prevent race conditions
+	metricsCopy := *metrics
+	return &metricsCopy, true
 }
 
 // GetAll returns a copy of all metrics

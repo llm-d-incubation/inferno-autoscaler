@@ -223,8 +223,8 @@ func AddMetricsToOptStatus(ctx context.Context,
 	FixValue(&itlAverage)
 
 	// Query 5: Total requests over retention period (stored in internal cache only)
-	// Convert retention period to Prometheus duration format (e.g., "10m", "1h")
-	retentionPeriodStr := fmt.Sprintf("%.0fm", retentionPeriod.Minutes())
+	// Convert retention period to Prometheus duration format (e.g., "10m", "1h", "30s")
+	retentionPeriodStr := formatPrometheusDuration(retentionPeriod)
 	totalRequestsQuery := fmt.Sprintf(`sum(increase(%s{%s="%s",%s="%s"}[%s]))`,
 		constants.VLLMRequestSuccessTotal,
 		constants.LabelModelName, modelName,
@@ -290,4 +290,19 @@ func FixValue(x *float64) {
 	if math.IsNaN(*x) || math.IsInf(*x, 0) {
 		*x = 0
 	}
+}
+
+// formatPrometheusDuration converts a Go time.Duration to Prometheus duration format
+// Examples: 30s, 5m, 1h, 90s (not 1.5m)
+func formatPrometheusDuration(d time.Duration) string {
+	// Try to express in whole hours first
+	if d >= time.Hour && d%time.Hour == 0 {
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	// Try to express in whole minutes
+	if d >= time.Minute && d%time.Minute == 0 {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	// Express in seconds
+	return fmt.Sprintf("%ds", int(d.Seconds()))
 }
