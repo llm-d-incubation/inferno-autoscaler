@@ -81,12 +81,19 @@ This ensures namespace isolation - the same model in different namespaces is cac
 
 ### TTL and Expiration
 
-**Default TTL:** 30 seconds
+**Dynamic TTL:** Calculated as half of the reconciliation interval (minimum 5 seconds)
 
-The TTL balances:
-- **Freshness** - Metrics reflect recent workload changes
-- **Performance** - Reduces Prometheus query load by ~90% in multi-variant scenarios
-- **Accuracy** - Sufficient for autoscaling decisions (typical reconciliation interval: 60s)
+The cache TTL is dynamically calculated at controller startup based on the configured reconciliation interval:
+- **Formula:** `cacheTTL = reconciliationInterval / 2`
+- **Minimum:** 5 seconds (prevents excessive queries if interval is very short)
+- **Example:** If `GLOBAL_OPT_INTERVAL=60s`, then `cacheTTL=30s`
+- **Example:** If `GLOBAL_OPT_INTERVAL=20s`, then `cacheTTL=10s`
+- **Example:** If `GLOBAL_OPT_INTERVAL=8s`, then `cacheTTL=5s` (minimum applied)
+
+This dynamic approach ensures:
+- **Fresh data** - Cache expires between reconciliation loops, guaranteeing fresh Prometheus data at each reconciliation
+- **Performance** - Cache still provides benefit within same reconciliation batch (multiple VAs for same model)
+- **Adaptability** - TTL automatically adjusts to user-configured reconciliation intervals
 
 **Expiration Logic:**
 ```go
@@ -127,16 +134,50 @@ if cache != nil {
 
 ### Controller Integration
 
-The cache is initialized in the controller's `SetupWithManager()`:
+The cache is initialized in the controller's `SetupWithManager()` with dynamic TTL:
 
 ```go
 func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error {
     // ... Prometheus client setup ...
 
-    // Initialize model metrics cache with 30-second TTL
-    cacheTTL := 30 * time.Second
+    // Read reconciliation interval from ConfigMap to calculate optimal cache TTL
+    intervalStr, err := r.readOptimizationConfig(context.Background())
+    if err != nil {
+        logger.Log.Warn("Failed to read optimization config, using default reconciliation interval",
+            "error", err.Error())
+        intervalStr = "" // Will default to 60s below
+    }
+
+    // Parse reconciliation interval (default 60s if not set)
+    reconciliationInterval := 60 * time.Second
+    if intervalStr != "" {
+        if parsedInterval, parseErr := time.ParseDuration(intervalStr); parseErr != nil {
+            logger.Log.Warn("Failed to parse reconciliation interval, using default",
+                "configuredInterval", intervalStr,
+                "error", parseErr.Error(),
+                "default", reconciliationInterval.String())
+        } else {
+            reconciliationInterval = parsedInterval
+        }
+    }
+
+    // Calculate cache TTL as half of reconciliation interval
+    // This guarantees cache expires between reconciliation loops
+    cacheTTL := reconciliationInterval / 2
+
+    // Apply minimum TTL of 5 seconds
+    minCacheTTL := 5 * time.Second
+    if cacheTTL < minCacheTTL {
+        logger.Log.Warn("Calculated cache TTL too short, using minimum",
+            "calculated", cacheTTL.String(),
+            "minimum", minCacheTTL.String())
+        cacheTTL = minCacheTTL
+    }
+
     r.MetricsCache = collector.NewModelMetricsCache(cacheTTL)
-    logger.Log.Info("Model metrics cache initialized", "ttl", cacheTTL.String())
+    logger.Log.Info("Model metrics cache initialized with dynamic TTL",
+        "cacheTTL", cacheTTL.String(),
+        "reconciliationInterval", reconciliationInterval.String())
 
     return ctrl.NewControllerManagedBy(mgr).
         For(&llmdVariantAutoscalingV1alpha1.VariantAutoscaling{}).
@@ -161,19 +202,22 @@ load, ttftAvg, itlAvg, err := collector.CollectAggregateMetricsWithCache(
 
 ### Metrics Query Reduction
 
-**Scenario:** 10 VariantAutoscalings referencing the same model
+**Scenario:** 10 VariantAutoscalings referencing the same model with 60s reconciliation interval (cacheTTL=30s)
 
 **Without cache:**
 - 10 Prometheus queries per reconciliation cycle
 - Each query executes 4 separate Prometheus API calls
 - Total: 40 API calls per cycle
 
-**With cache (30s TTL):**
-- First VA: 1 Prometheus query (cache miss) → 4 API calls
-- Next 9 VAs: Return from cache → 0 API calls
+**With dynamic cache (TTL = interval / 2):**
+- First VA in reconciliation batch: 1 Prometheus query (cache miss or expired) → 4 API calls
+- Next 9 VAs in same batch: Return from cache → 0 API calls
 - Total: 4 API calls per cycle
+- Next reconciliation (60s later): Cache expired, fresh query for first VA
 
-**Reduction:** 90% fewer Prometheus API calls
+**Reduction:** 90% fewer Prometheus API calls **within same reconciliation batch**
+
+**Fresh Data Guarantee:** Cache TTL = half of reconciliation interval ensures cache always expires between reconciliation loops
 
 ### Memory Overhead
 
@@ -185,17 +229,36 @@ Each cached entry: ~200 bytes
 
 ### TTL Configuration
 
-Currently, TTL is hardcoded to 30 seconds. To change:
+The cache TTL is **automatically calculated** from the reconciliation interval. To adjust the cache TTL, change the reconciliation interval:
 
-1. Modify `internal/controller/variantautoscaling_controller.go`:
-   ```go
-   cacheTTL := 60 * time.Second // Example: 60 seconds
-   r.MetricsCache = collector.NewModelMetricsCache(cacheTTL)
+1. Update the reconciliation interval via ConfigMap:
+   ```bash
+   kubectl patch configmap workload-variant-autoscaler-variantautoscaling-config \
+     -n workload-variant-autoscaler-system \
+     --type merge \
+     -p '{"data":{"GLOBAL_OPT_INTERVAL":"30s"}}'
    ```
 
-2. Rebuild and redeploy the controller
+2. Restart the controller to apply changes:
+   ```bash
+   kubectl rollout restart deployment workload-variant-autoscaler-controller-manager \
+     -n workload-variant-autoscaler-system
+   ```
 
-**Future:** TTL will be configurable via ConfigMap
+3. Verify the new TTL in controller logs:
+   ```
+   Model metrics cache initialized with dynamic TTL
+     cacheTTL=15s reconciliationInterval=30s ratio="TTL = interval / 2"
+   ```
+
+**Cache TTL Examples:**
+| Reconciliation Interval | Cache TTL | Notes |
+|------------------------|-----------|-------|
+| 60s (default) | 30s | Balanced performance |
+| 30s | 15s | Fast response |
+| 20s | 10s | Very fast response |
+| 10s | 5s | Minimum TTL applied |
+| 5s | 5s | Minimum TTL (prevents excessive queries) |
 
 ### Disabling the Cache
 
@@ -292,14 +355,14 @@ go test ./internal/collector/... -v -run TestCollectAggregateMetricsWithCache
 
 ### Current Limitations
 
-1. **Fixed TTL** - Not configurable at runtime
+1. **Startup-time TTL calculation** - TTL is calculated at controller startup, not dynamically during runtime. Changing `GLOBAL_OPT_INTERVAL` requires controller restart.
 2. **No eviction policy** - Cache grows unbounded (though TTL provides implicit bounds)
 3. **No metrics** - Cache hit/miss rates not exposed as Prometheus metrics
 
 ### Planned Improvements
 
-1. **ConfigMap-based TTL** - Make TTL configurable via controller ConfigMap
-2. **Cache metrics** - Expose cache hit/miss rates, size, eviction count
+1. **Runtime TTL updates** - Detect ConfigMap changes and recalculate cache TTL without controller restart
+2. **Cache metrics** - Expose cache hit/miss rates, size, eviction count as Prometheus metrics
 3. **LRU eviction** - Limit cache size with LRU policy for long-running controllers
 4. **Prometheus query batching** - Batch multiple model queries into single API call
 5. **Cache warming** - Pre-populate cache on controller startup

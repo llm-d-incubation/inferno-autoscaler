@@ -489,11 +489,49 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	}
 	logger.Log.Info("Prometheus client and API wrapper initialized and validated successfully")
 
-	// Initialize model metrics cache with 30-second TTL
-	// This prevents redundant Prometheus queries when multiple VAs use the same model
-	cacheTTL := 30 * time.Second
+	// Read reconciliation interval from ConfigMap to calculate optimal cache TTL
+	// This ensures cache expires between reconciliation loops for fresh Prometheus data
+	intervalStr, err := r.readOptimizationConfig(context.Background())
+	if err != nil {
+		logger.Log.Warn("Failed to read optimization config, using default reconciliation interval",
+			"error", err.Error())
+		intervalStr = "" // Will default to 60s below
+	}
+
+	// Parse reconciliation interval (default 60s if not set)
+	reconciliationInterval := 60 * time.Second
+	if intervalStr != "" {
+		if parsedInterval, parseErr := time.ParseDuration(intervalStr); parseErr != nil {
+			logger.Log.Warn("Failed to parse reconciliation interval, using default",
+				"configuredInterval", intervalStr,
+				"error", parseErr.Error(),
+				"default", reconciliationInterval.String())
+		} else {
+			reconciliationInterval = parsedInterval
+		}
+	}
+
+	// Calculate cache TTL as half of reconciliation interval
+	// This guarantees cache expires between reconciliation loops, ensuring fresh data
+	// while maintaining caching benefit for multiple VAs within same reconciliation batch
+	cacheTTL := reconciliationInterval / 2
+
+	// Apply minimum TTL of 5 seconds to prevent excessive Prometheus queries
+	// if reconciliation interval is configured very short (< 10s)
+	minCacheTTL := 5 * time.Second
+	if cacheTTL < minCacheTTL {
+		logger.Log.Warn("Calculated cache TTL too short, using minimum",
+			"calculated", cacheTTL.String(),
+			"minimum", minCacheTTL.String(),
+			"reconciliationInterval", reconciliationInterval.String())
+		cacheTTL = minCacheTTL
+	}
+
 	r.MetricsCache = collector.NewModelMetricsCache(cacheTTL)
-	logger.Log.Info("Model metrics cache initialized", "ttl", cacheTTL.String())
+	logger.Log.Info("Model metrics cache initialized with dynamic TTL",
+		"cacheTTL", cacheTTL.String(),
+		"reconciliationInterval", reconciliationInterval.String(),
+		"ratio", "TTL = interval / 2")
 
 	//logger.Log.Info("Prometheus client initialized (validation skipped)")
 
