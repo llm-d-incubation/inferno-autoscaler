@@ -221,6 +221,38 @@ _Appears in:_
 | `sloClassRef` _[ConfigMapKeyRef](#configmapkeyref)_ | SLOClassRef references the ConfigMap key containing Service Level Objective (SLO) configuration. |  | Required: \{\} <br /> |
 | `modelProfile` _[ModelProfile](#modelprofile)_ | ModelProfile provides resource and performance characteristics for the model variant. |  | Required: \{\} <br /> |
 
+**Scale-to-Zero Configuration:**
+
+Scale-to-zero configuration is managed per-model using a ConfigMap named `model-scale-to-zero-config` in the `workload-variant-autoscaler-system` namespace. This allows multiple variants with different accelerators for the same model to share the same scale-to-zero behavior.
+
+Configure scale-to-zero with the following structure:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: model-scale-to-zero-config
+  namespace: workload-variant-autoscaler-system
+data:
+  # Global defaults for all models (recommended)
+  "__defaults__": '{"enableScaleToZero": true, "retentionPeriod": "15m"}'
+
+  # Per-model overrides
+  "model-id": '{"enableScaleToZero": true, "retentionPeriod": "5m"}'
+```
+
+Configuration fields:
+- **enableScaleToZero** (boolean): Enables scale-to-zero for this model
+- **retentionPeriod** (string, optional): Duration to wait after the last request before scaling to zero (e.g., "5m", "1h", "30s"). Defaults to 10 minutes if not specified.
+
+Configuration priority (highest to lowest):
+1. Per-model configuration (specific modelID)
+2. Global defaults (`"__defaults__"` key in ConfigMap)
+3. `WVA_SCALE_TO_ZERO` environment variable
+4. System default (disabled, 10-minute retention)
+
+See `config/samples/model-scale-to-zero-config.yaml` for a complete example.
+
 
 #### VariantAutoscalingStatus
 
@@ -239,5 +271,6 @@ _Appears in:_
 | `currentAlloc` _[Allocation](#allocation)_ | CurrentAlloc specifies the current resource allocation for the variant. |  |  |
 | `desiredOptimizedAlloc` _[OptimizedAlloc](#optimizedalloc)_ | DesiredOptimizedAlloc indicates the target optimized allocation based on autoscaling logic. |  |  |
 | `actuation` _[ActuationStatus](#actuationstatus)_ | Actuation provides details about the actuation process and its current status. |  |  |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.32/#condition-v1-meta) array_ | Conditions represent the latest available observations of the VariantAutoscaling's state |  |  |
 
 

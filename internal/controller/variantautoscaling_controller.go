@@ -21,9 +21,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -60,7 +63,8 @@ type VariantAutoscalingReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 
-	PromAPI promv1.API
+	PromAPI           promv1.API
+	ModelMetricsCache *collector.ModelMetricsCache
 }
 
 // +kubebuilder:rbac:groups=llmd.ai,resources=variantautoscalings,verbs=get;list;watch;create;update;patch;delete
@@ -117,6 +121,13 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	// Read scale-to-zero configuration (optional - falls back to global defaults if not found)
+	scaleToZeroConfigData, err := r.readScaleToZeroConfig(ctx, "model-scale-to-zero-config", configMapNamespace)
+	if err != nil {
+		logger.Log.Error(err, "unable to read scale-to-zero configMap, using global defaults")
+		scaleToZeroConfigData = make(utils.ScaleToZeroConfigData)
+	}
+
 	var variantAutoscalingList llmdVariantAutoscalingV1alpha1.VariantAutoscalingList
 	if err := r.List(ctx, &variantAutoscalingList); err != nil {
 		logger.Log.Error(err, "unable to list variantAutoscaling resources")
@@ -133,7 +144,7 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// WVA operates in unlimited mode - no cluster inventory collection needed
 	systemData := utils.CreateSystemData(acceleratorCm, serviceClassCm)
 
-	updateList, vaMap, allAnalyzerResponses, err := r.prepareVariantAutoscalings(ctx, activeVAs, acceleratorCm, serviceClassCm, systemData)
+	updateList, vaMap, allAnalyzerResponses, err := r.prepareVariantAutoscalings(ctx, activeVAs, acceleratorCm, serviceClassCm, systemData, scaleToZeroConfigData)
 	if err != nil {
 		logger.Log.Error(err, "failed to prepare variant autoscalings")
 		return ctrl.Result{}, err
@@ -221,6 +232,7 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 	acceleratorCm map[string]map[string]string,
 	serviceClassCm map[string]string,
 	systemData *infernoConfig.SystemData,
+	scaleToZeroConfigData utils.ScaleToZeroConfigData,
 ) (*llmdVariantAutoscalingV1alpha1.VariantAutoscalingList, map[string]*llmdVariantAutoscalingV1alpha1.VariantAutoscaling, map[string]*interfaces.ModelAnalyzeResponse, error) {
 	var updateList llmdVariantAutoscalingV1alpha1.VariantAutoscalingList
 	allAnalyzerResponses := make(map[string]*interfaces.ModelAnalyzeResponse)
@@ -314,7 +326,10 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 			continue
 		}
 
-		currentAllocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, r.PromAPI)
+		// Get retention period for this model from scale-to-zero config
+		retentionPeriod := utils.GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, modelName)
+
+		currentAllocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, r.PromAPI, r.ModelMetricsCache, retentionPeriod)
 		if err != nil {
 			logger.Log.Error(err, "unable to fetch metrics, skipping this variantAutoscaling loop")
 			// Don't update status here - will be updated in next reconcile when metrics are available
@@ -322,7 +337,7 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 		}
 		updateVA.Status.CurrentAlloc = currentAllocation
 
-		if err := utils.AddServerInfoToSystemData(systemData, &updateVA, className); err != nil {
+		if err := utils.AddServerInfoToSystemData(systemData, &updateVA, className, scaleToZeroConfigData); err != nil {
 			logger.Log.Info("variantAutoscaling bad deployment server data, skipping optimization - ", "variantAutoscaling-name: ", updateVA.Name)
 			continue
 		}
@@ -444,6 +459,10 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 
 	r.PromAPI = promv1.NewAPI(promClient)
 
+	// Initialize model metrics cache for storing internal per-model metrics
+	r.ModelMetricsCache = collector.NewModelMetricsCache()
+	logger.Log.Info("Model metrics cache initialized")
+
 	// Validate that the API is working by testing a simple query with retry logic
 	if err := utils.ValidatePrometheusAPI(context.Background(), r.PromAPI); err != nil {
 		logger.Log.Error(err, "CRITICAL: Failed to connect to Prometheus - Inferno requires Prometheus connectivity for autoscaling decisions")
@@ -467,6 +486,19 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			// Predicate to filter only the target configmap
 			builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
 				return obj.GetName() == configMapName && obj.GetNamespace() == configMapNamespace
+			})),
+		).
+		// Watch the model-scale-to-zero-config ConfigMap to trigger reconcile when scale-to-zero config changes
+		Watches(
+			&corev1.ConfigMap{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+				if obj.GetName() == "model-scale-to-zero-config" && obj.GetNamespace() == configMapNamespace {
+					return []reconcile.Request{{}}
+				}
+				return nil
+			}),
+			builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+				return obj.GetName() == "model-scale-to-zero-config" && obj.GetNamespace() == configMapNamespace
 			})),
 		).
 		Named("variantAutoscaling").
@@ -591,4 +623,108 @@ func (r *VariantAutoscalingReconciler) readOptimizationConfig(ctx context.Contex
 
 	interval = cm.Data["GLOBAL_OPT_INTERVAL"]
 	return interval, nil
+}
+
+// readScaleToZeroConfig reads per-model scale-to-zero configuration from a ConfigMap
+// using prefixed-key format with YAML values.
+//
+// Format: Keys prefixed with "model.", values are YAML
+//
+// Example:
+//    model.meta.llama-3.1-8b: |
+//      modelID: "meta/llama-3.1-8b"
+//      enableScaleToZero: true
+//      retentionPeriod: "5m"
+//    __defaults__: |
+//      enableScaleToZero: true
+//      retentionPeriod: "15m"
+//
+// Benefits:
+//    - Independently editable (kubectl patch single model)
+//    - Original modelID preserved in YAML value (no collision risk)
+//    - Better Git diffs (only changed models shown)
+//    - Human-readable YAML format
+//
+// The function returns an empty map if the ConfigMap is not found (it's optional).
+func (r *VariantAutoscalingReconciler) readScaleToZeroConfig(ctx context.Context, cmName, cmNamespace string) (utils.ScaleToZeroConfigData, error) {
+	cm := corev1.ConfigMap{}
+	err := utils.GetConfigMapWithBackoff(ctx, r.Client, cmName, cmNamespace, &cm)
+	if err != nil {
+		// ConfigMap is optional - return empty map if not found
+		logger.Log.Debug("Scale-to-zero ConfigMap not found, using global defaults", "configMap", cmName, "namespace", cmNamespace)
+		return make(utils.ScaleToZeroConfigData), nil
+	}
+
+	out := make(utils.ScaleToZeroConfigData)
+	// Track which keys define which modelIDs to detect duplicates
+	modelIDToKeys := make(map[string][]string)
+
+	logger.Log.Debug("Loading scale-to-zero config from prefixed-key format",
+		"configMap", cmName,
+		"namespace", cmNamespace)
+
+	// Sort keys to ensure deterministic processing order
+	// This is critical because map iteration in Go is non-deterministic.
+	// If there are duplicate modelIDs, the lexicographically first key will win.
+	keys := make([]string, 0, len(cm.Data))
+	for k := range cm.Data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		configStr := cm.Data[key]
+		// Handle global defaults (special key)
+		if key == utils.GlobalDefaultsKey {
+			var config utils.ModelScaleToZeroConfig
+			if err := yaml.Unmarshal([]byte(configStr), &config); err != nil {
+				logger.Log.Warn("Failed to parse __defaults__ in scale-to-zero ConfigMap, skipping",
+					"configMap", cmName,
+					"error", err)
+				continue
+			}
+			out[utils.GlobalDefaultsKey] = config
+			continue
+		}
+
+		// Handle prefixed model keys
+		if strings.HasPrefix(key, "model.") {
+			var config utils.ModelScaleToZeroConfig
+			if err := yaml.Unmarshal([]byte(configStr), &config); err != nil {
+				logger.Log.Warn("Failed to parse scale-to-zero config for prefixed key, skipping",
+					"key", key,
+					"configMap", cmName,
+					"error", err)
+				continue
+			}
+
+			// Use modelID from YAML (not the key) to avoid collision
+			if config.ModelID == "" {
+				logger.Log.Warn("Skipping model config without modelID field in scale-to-zero ConfigMap",
+					"key", key,
+					"configMap", cmName)
+				continue
+			}
+
+			// Check for duplicate modelID
+			if existingKeys, exists := modelIDToKeys[config.ModelID]; exists {
+				logger.Log.Warn("Duplicate modelID found in scale-to-zero ConfigMap - first key wins (lexicographic order)",
+					"modelID", config.ModelID,
+					"winningKey", existingKeys[0],
+					"duplicateKey", key,
+					"configMap", cmName)
+				// Skip this duplicate - first key already processed wins
+				continue
+			}
+			modelIDToKeys[config.ModelID] = append(modelIDToKeys[config.ModelID], key)
+
+			out[config.ModelID] = config
+		}
+	}
+
+	logger.Log.Debug("Loaded scale-to-zero config",
+		"configMap", cmName,
+		"namespace", cmNamespace,
+		"modelCount", len(out))
+	return out, nil
 }

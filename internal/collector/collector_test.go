@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -240,6 +241,8 @@ var _ = Describe("Collector", func() {
 			modelID       string
 			testNamespace string
 			accCost       float64
+			metricsCache  *ModelMetricsCache
+			retentionPeriod time.Duration
 		)
 
 		BeforeEach(func() {
@@ -252,6 +255,8 @@ var _ = Describe("Collector", func() {
 			modelID = "default/default"
 			testNamespace = "default"
 			accCost = 40.0 // sample accelerator cost
+			metricsCache = NewModelMetricsCache()
+			retentionPeriod = 10 * time.Minute
 
 			deployment = appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
@@ -297,7 +302,7 @@ var _ = Describe("Collector", func() {
 				&model.Sample{Value: model.SampleValue(0.05)}, // 0.05 seconds
 			}
 
-			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
+			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm, metricsCache, retentionPeriod)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(allocation.Accelerator).To(Equal("A100"))
@@ -308,6 +313,11 @@ var _ = Describe("Collector", func() {
 			Expect(allocation.ITLAverage).To(Equal("50.00"))            // 0.05 * 1000 ms
 			Expect(allocation.Load.ArrivalRate).To(Equal("10.50"))      // req per min
 			Expect(allocation.Load.AvgOutputTokens).To(Equal("150.00")) // tokens per req
+
+			// Verify metrics were cached
+			cachedMetrics, exists := metricsCache.Get(modelID)
+			Expect(exists).To(BeTrue())
+			Expect(cachedMetrics.RetentionPeriod).To(Equal(retentionPeriod))
 		})
 
 		It("should handle missing accelerator label", func() {
@@ -325,7 +335,7 @@ var _ = Describe("Collector", func() {
 				&model.Sample{Value: model.SampleValue(100.0)},
 			}
 
-			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
+			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm, metricsCache, retentionPeriod)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(allocation.Accelerator).To(Equal("")) // Empty due to deleted accName label
@@ -336,7 +346,7 @@ var _ = Describe("Collector", func() {
 			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
 			mockProm.QueryErrors[arrivalQuery] = fmt.Errorf("prometheus connection failed")
 
-			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
+			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm, metricsCache, retentionPeriod)
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("prometheus connection failed"))
@@ -352,7 +362,7 @@ var _ = Describe("Collector", func() {
 			mockProm.QueryResults[arrivalQuery] = model.Vector{}
 			mockProm.QueryResults[tokenQuery] = model.Vector{}
 
-			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
+			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm, metricsCache, retentionPeriod)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(allocation.ITLAverage).To(Equal("0.00"))
@@ -360,6 +370,11 @@ var _ = Describe("Collector", func() {
 			Expect(allocation.Load.ArrivalRate).To(Equal("0.00"))
 			Expect(allocation.Load.AvgInputTokens).To(Equal("0.00"))
 			Expect(allocation.Load.AvgOutputTokens).To(Equal("0.00"))
+
+			// Verify metrics were cached with 0 total requests
+			cachedMetrics, exists := metricsCache.Get(modelID)
+			Expect(exists).To(BeTrue())
+			Expect(cachedMetrics.TotalRequestsOverRetentionPeriod).To(Equal(0.0))
 		})
 	})
 

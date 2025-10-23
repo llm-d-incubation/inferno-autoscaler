@@ -54,6 +54,154 @@ var (
 	}
 )
 
+const (
+	// DefaultScaleToZeroRetentionPeriod is the default time to wait after the last request
+	// before scaling down to zero replicas. This default applies when scale-to-zero is enabled
+	// but no explicit retention period is specified.
+	DefaultScaleToZeroRetentionPeriod = 10 * time.Minute
+
+	// DefaultScaleToZeroConfigMapName is the default name of the ConfigMap that stores
+	// per-model scale-to-zero configuration. This ConfigMap should be in the same namespace
+	// as the VariantAutoscaling resources.
+	DefaultScaleToZeroConfigMapName = "model-scale-to-zero-config"
+
+	// GlobalDefaultsKey is the special key in the ConfigMap used to specify global defaults
+	// for all models. Models can override these defaults with their specific configuration.
+	GlobalDefaultsKey = "__defaults__"
+)
+
+// ModelScaleToZeroConfig represents the scale-to-zero configuration for a single model.
+// Uses pointer for EnableScaleToZero to distinguish between "not set" (nil) and explicitly set to false.
+// This allows partial overrides where a model can inherit enableScaleToZero from global defaults
+// while overriding only the retentionPeriod.
+type ModelScaleToZeroConfig struct {
+	// ModelID is the unique identifier for the model (original ID with any characters)
+	ModelID string `yaml:"modelID,omitempty" json:"modelID,omitempty"`
+	// EnableScaleToZero enables scaling the model to zero replicas when there is no traffic.
+	// Use pointer to allow omitting this field and inheriting from global defaults.
+	// nil = not set (inherit from defaults), true = enabled, false = disabled
+	EnableScaleToZero *bool `yaml:"enableScaleToZero,omitempty" json:"enableScaleToZero,omitempty"`
+	// RetentionPeriod specifies how long to wait after the last request before scaling to zero.
+	// This is stored as a string duration (e.g., "5m", "1h", "30s").
+	// Empty string = not set (inherit from defaults)
+	RetentionPeriod string `yaml:"retentionPeriod,omitempty" json:"retentionPeriod,omitempty"`
+}
+
+// ScaleToZeroConfigData holds pre-read scale-to-zero configuration data for all models.
+// This follows the project pattern of reading ConfigMaps once per reconcile loop.
+// Maps model ID to its configuration.
+type ScaleToZeroConfigData map[string]ModelScaleToZeroConfig
+
+// IsScaleToZeroEnabled determines if scale-to-zero is enabled for a specific model.
+// Supports partial overrides: if a model config exists but EnableScaleToZero is nil,
+// it falls through to check global defaults. This allows models to override only
+// retentionPeriod while inheriting the enableScaleToZero setting from defaults.
+//
+// Configuration priority (highest to lowest):
+// 1. Per-model configuration in ConfigMap (if EnableScaleToZero is set)
+// 2. Global defaults in ConfigMap (under "__defaults__" key)
+// 3. WVA_SCALE_TO_ZERO environment variable
+// 4. System default (false)
+func IsScaleToZeroEnabled(configData ScaleToZeroConfigData, modelID string) bool {
+	// Check per-model setting first (highest priority)
+	// With the new YAML format, model IDs are used directly without sanitization
+	if config, exists := configData[modelID]; exists {
+		// If EnableScaleToZero is explicitly set (not nil), use it
+		if config.EnableScaleToZero != nil {
+			return *config.EnableScaleToZero
+		}
+		// If nil, fall through to check global defaults (allows partial override)
+	}
+
+	// Check global defaults in ConfigMap (second priority)
+	if globalConfig, exists := configData[GlobalDefaultsKey]; exists {
+		if globalConfig.EnableScaleToZero != nil {
+			return *globalConfig.EnableScaleToZero
+		}
+	}
+
+	// Fall back to global environment variable (third priority)
+	return strings.EqualFold(os.Getenv("WVA_SCALE_TO_ZERO"), "true")
+}
+
+// ValidateRetentionPeriod validates a retention period string.
+// Returns the parsed duration and an error if validation fails.
+// Validation rules:
+//   - Must be a valid Go duration format (e.g., "5m", "1h", "30s")
+//   - Must be positive (> 0)
+//   - Should be reasonable for production use (warns if > 24h)
+func ValidateRetentionPeriod(retentionPeriod string) (time.Duration, error) {
+	if retentionPeriod == "" {
+		return 0, fmt.Errorf("retention period cannot be empty")
+	}
+
+	duration, err := time.ParseDuration(retentionPeriod)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration format: %w", err)
+	}
+
+	if duration <= 0 {
+		return 0, fmt.Errorf("retention period must be positive, got %v", duration)
+	}
+
+	// Warn if retention period is unusually long (> 24 hours)
+	// This is not an error, just a warning for potentially misconfigured values
+	if duration > 24*time.Hour {
+		logger.Log.Warn("Retention period is unusually long",
+			"retentionPeriod", retentionPeriod,
+			"duration", duration,
+			"recommendation", "Consider using a shorter period for better resource utilization")
+	}
+
+	return duration, nil
+}
+
+// GetScaleToZeroRetentionPeriod returns the pod retention period for scale-to-zero for a specific model.
+// Configuration priority (highest to lowest):
+// 1. Per-model retention period in ConfigMap
+// 2. Global defaults retention period in ConfigMap (under "__defaults__" key)
+// 3. System default (10 minutes)
+func GetScaleToZeroRetentionPeriod(configData ScaleToZeroConfigData, modelID string) time.Duration {
+	// Check per-model retention period first (highest priority)
+	// With the new YAML format, model IDs are used directly without sanitization
+	if config, exists := configData[modelID]; exists && config.RetentionPeriod != "" {
+		duration, err := ValidateRetentionPeriod(config.RetentionPeriod)
+		if err != nil {
+			logger.Log.Warn("Invalid retention period for model, checking global defaults",
+				"modelID", modelID,
+				"retentionPeriod", config.RetentionPeriod,
+				"error", err)
+			// Don't return here, fall through to check global defaults
+		} else {
+			return duration
+		}
+	}
+
+	// Check global defaults retention period (second priority)
+	if globalConfig, exists := configData[GlobalDefaultsKey]; exists && globalConfig.RetentionPeriod != "" {
+		duration, err := ValidateRetentionPeriod(globalConfig.RetentionPeriod)
+		if err != nil {
+			logger.Log.Warn("Invalid global default retention period, using system default",
+				"retentionPeriod", globalConfig.RetentionPeriod,
+				"error", err)
+			return DefaultScaleToZeroRetentionPeriod
+		}
+		return duration
+	}
+
+	// Fall back to system default (lowest priority)
+	return DefaultScaleToZeroRetentionPeriod
+}
+
+// GetMinNumReplicas returns the minimum number of replicas for a specific model based on
+// scale-to-zero configuration. Returns 0 if scale-to-zero is enabled, otherwise returns 1.
+func GetMinNumReplicas(configData ScaleToZeroConfigData, modelID string) int {
+	if IsScaleToZeroEnabled(configData, modelID) {
+		return 0
+	}
+	return 1
+}
+
 // GetResourceWithBackoff performs a Get operation with exponential backoff retry logic
 func GetResourceWithBackoff[T client.Object](ctx context.Context, c client.Client, objKey client.ObjectKey, obj T, backoff wait.Backoff, resourceType string) error {
 	return wait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
@@ -237,7 +385,8 @@ func AddModelAcceleratorProfileToSystemData(
 func AddServerInfoToSystemData(
 	sd *infernoConfig.SystemData,
 	va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
-	className string) (err error) {
+	className string,
+	scaleToZeroConfigData ScaleToZeroConfigData) (err error) {
 
 	// server load statistics
 	var arrivalRate, avgOutputTokens, avgInputTokens, cost, itlAverage, ttftAverage float64
@@ -279,10 +428,19 @@ func AddServerInfoToSystemData(
 	}
 
 	// all server data
-	minNumReplicas := 1 // scale to zero is disabled by default
-	if os.Getenv("WVA_SCALE_TO_ZERO") == "true" {
-		minNumReplicas = 0
+	// Determine minimum replicas based on per-model scale-to-zero configuration
+	minNumReplicas := GetMinNumReplicas(scaleToZeroConfigData, va.Spec.ModelID)
+
+	// Log retention period if scale-to-zero is enabled (for future use in scale-to-zero logic)
+	if IsScaleToZeroEnabled(scaleToZeroConfigData, va.Spec.ModelID) {
+		retentionPeriod := GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, va.Spec.ModelID)
+		logger.Log.Debug("Scale-to-zero retention period configured",
+			"modelID", va.Spec.ModelID,
+			"variant", va.Name,
+			"namespace", va.Namespace,
+			"retentionPeriod", retentionPeriod)
 	}
+
 	serverSpec := &infernoConfig.ServerSpec{
 		Name:            FullName(va.Name, va.Namespace),
 		Class:           className,
