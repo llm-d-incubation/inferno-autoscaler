@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -1400,6 +1401,134 @@ retentionPeriod: "20m"`,
 			Expect(model3.EnableScaleToZero).NotTo(BeNil())
 			Expect(*model3.EnableScaleToZero).To(BeFalse())
 			Expect(model3.RetentionPeriod).To(Equal("20m"))
+
+			By("Cleaning up ConfigMap")
+			Expect(k8sClient.Delete(ctx, scaleToZeroConfigMap)).To(Succeed())
+		})
+
+		// EDGE CASE TESTS FOR RETENTION PERIOD VALIDATION
+
+		It("should handle invalid retention period formats", func() {
+			By("Creating a ConfigMap with invalid retention periods")
+			scaleToZeroConfigMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "model-scale-to-zero-config-invalid-retention",
+					Namespace: configMapNamespace,
+				},
+				Data: map[string]string{
+					"__defaults__": `enableScaleToZero: true
+retentionPeriod: "10m"`,
+					"model.valid": `modelID: "test/valid"
+retentionPeriod: "5m"`,
+					"model.invalid-format": `modelID: "test/invalid-format"
+retentionPeriod: "invalid"`,
+					"model.number-only": `modelID: "test/number-only"
+retentionPeriod: "5"`,
+					"model.negative": `modelID: "test/negative"
+retentionPeriod: "-5m"`,
+					"model.zero": `modelID: "test/zero"
+retentionPeriod: "0s"`,
+				},
+			}
+			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())
+
+			By("Reading the ConfigMap")
+			controllerReconciler := &VariantAutoscalingReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			configData, err := controllerReconciler.readScaleToZeroConfig(ctx, "model-scale-to-zero-config-invalid-retention", configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying invalid retention periods are still parsed but will fail validation during use")
+			// All entries should be parsed (YAML is valid)
+			Expect(len(configData)).To(Equal(6)) // defaults + 5 models
+
+			// Check that entries are present (validation happens at use time via GetScaleToZeroRetentionPeriod)
+			_, exists := configData["test/valid"]
+			Expect(exists).To(BeTrue())
+			_, exists = configData["test/invalid-format"]
+			Expect(exists).To(BeTrue())
+			_, exists = configData["test/number-only"]
+			Expect(exists).To(BeTrue())
+			_, exists = configData["test/negative"]
+			Expect(exists).To(BeTrue())
+			_, exists = configData["test/zero"]
+			Expect(exists).To(BeTrue())
+
+			By("Cleaning up ConfigMap")
+			Expect(k8sClient.Delete(ctx, scaleToZeroConfigMap)).To(Succeed())
+		})
+
+		It("should handle unusually long retention periods with warning", func() {
+			By("Creating a ConfigMap with very long retention period")
+			scaleToZeroConfigMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "model-scale-to-zero-config-long-retention",
+					Namespace: configMapNamespace,
+				},
+				Data: map[string]string{
+					"model.long-retention": `modelID: "test/long"
+retentionPeriod: "48h"`,
+					"model.very-long": `modelID: "test/very-long"
+retentionPeriod: "168h"`,
+				},
+			}
+			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())
+
+			By("Reading the ConfigMap")
+			controllerReconciler := &VariantAutoscalingReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			configData, err := controllerReconciler.readScaleToZeroConfig(ctx, "model-scale-to-zero-config-long-retention", configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying long retention periods are accepted")
+			Expect(len(configData)).To(Equal(2))
+
+			model1, exists := configData["test/long"]
+			Expect(exists).To(BeTrue())
+			Expect(model1.RetentionPeriod).To(Equal("48h"))
+
+			model2, exists := configData["test/very-long"]
+			Expect(exists).To(BeTrue())
+			Expect(model2.RetentionPeriod).To(Equal("168h"))
+
+			By("Cleaning up ConfigMap")
+			Expect(k8sClient.Delete(ctx, scaleToZeroConfigMap)).To(Succeed())
+		})
+
+		It("should fall back to defaults when retention period is invalid", func() {
+			By("Creating a ConfigMap with invalid retention and valid defaults")
+			scaleToZeroConfigMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "model-scale-to-zero-config-fallback",
+					Namespace: configMapNamespace,
+				},
+				Data: map[string]string{
+					"__defaults__": `enableScaleToZero: true
+retentionPeriod: "20m"`,
+					"model.invalid-retention": `modelID: "test/invalid"
+retentionPeriod: "not-a-duration"`,
+				},
+			}
+			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())
+
+			By("Reading the ConfigMap")
+			controllerReconciler := &VariantAutoscalingReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			configData, err := controllerReconciler.readScaleToZeroConfig(ctx, "model-scale-to-zero-config-fallback", configMapNamespace)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying both entries are present")
+			Expect(len(configData)).To(Equal(2))
+
+			// GetScaleToZeroRetentionPeriod will fall back to defaults when model's retention is invalid
+			duration := utils.GetScaleToZeroRetentionPeriod(configData, "test/invalid")
+			Expect(duration).To(Equal(20 * time.Minute)) // Should use defaults, not system default
 
 			By("Cleaning up ConfigMap")
 			Expect(k8sClient.Delete(ctx, scaleToZeroConfigMap)).To(Succeed())

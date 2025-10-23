@@ -677,6 +677,167 @@ func TestModelScaleToZeroConfig(t *testing.T) {
 	})
 }
 
+// TestValidateRetentionPeriod tests the ValidateRetentionPeriod function with various edge cases
+func TestValidateRetentionPeriod(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         string
+		expectedError bool
+		expectedValue time.Duration
+		errorContains string
+	}{
+		// Valid cases
+		{
+			name:          "Valid: 5 minutes",
+			input:         "5m",
+			expectedError: false,
+			expectedValue: 5 * time.Minute,
+		},
+		{
+			name:          "Valid: 1 hour",
+			input:         "1h",
+			expectedError: false,
+			expectedValue: 1 * time.Hour,
+		},
+		{
+			name:          "Valid: 30 seconds",
+			input:         "30s",
+			expectedError: false,
+			expectedValue: 30 * time.Second,
+		},
+		{
+			name:          "Valid: 1 hour 30 minutes",
+			input:         "1h30m",
+			expectedError: false,
+			expectedValue: 90 * time.Minute,
+		},
+		{
+			name:          "Valid: 1 nanosecond (minimum positive)",
+			input:         "1ns",
+			expectedError: false,
+			expectedValue: 1 * time.Nanosecond,
+		},
+		{
+			name:          "Valid: 24 hours (boundary)",
+			input:         "24h",
+			expectedError: false,
+			expectedValue: 24 * time.Hour,
+		},
+		{
+			name:          "Valid but warns: 25 hours (unusually long)",
+			input:         "25h",
+			expectedError: false,
+			expectedValue: 25 * time.Hour,
+		},
+		{
+			name:          "Valid but warns: 48 hours",
+			input:         "48h",
+			expectedError: false,
+			expectedValue: 48 * time.Hour,
+		},
+		// Invalid cases: empty string
+		{
+			name:          "Invalid: empty string",
+			input:         "",
+			expectedError: true,
+			errorContains: "cannot be empty",
+		},
+		// Invalid cases: negative duration
+		{
+			name:          "Invalid: negative duration",
+			input:         "-5m",
+			expectedError: true,
+			errorContains: "must be positive",
+		},
+		{
+			name:          "Invalid: negative hours",
+			input:         "-1h",
+			expectedError: true,
+			errorContains: "must be positive",
+		},
+		{
+			name:          "Invalid: negative seconds",
+			input:         "-30s",
+			expectedError: true,
+			errorContains: "must be positive",
+		},
+		// Invalid cases: zero duration
+		{
+			name:          "Invalid: zero duration (0s)",
+			input:         "0s",
+			expectedError: true,
+			errorContains: "must be positive",
+		},
+		{
+			name:          "Invalid: zero duration (0m)",
+			input:         "0m",
+			expectedError: true,
+			errorContains: "must be positive",
+		},
+		{
+			name:          "Invalid: zero duration (0h)",
+			input:         "0h",
+			expectedError: true,
+			errorContains: "must be positive",
+		},
+		// Invalid cases: bad format
+		{
+			name:          "Invalid: not a duration",
+			input:         "invalid",
+			expectedError: true,
+			errorContains: "invalid duration format",
+		},
+		{
+			name:          "Invalid: number without unit",
+			input:         "5",
+			expectedError: true,
+			errorContains: "invalid duration format",
+		},
+		{
+			name:          "Invalid: invalid unit",
+			input:         "5x",
+			expectedError: true,
+			errorContains: "invalid duration format",
+		},
+		{
+			name:          "Invalid: mixed invalid format",
+			input:         "5minutes",
+			expectedError: true,
+			errorContains: "invalid duration format",
+		},
+		{
+			name:          "Invalid: spaces",
+			input:         "5 m",
+			expectedError: true,
+			errorContains: "invalid duration format",
+		},
+		{
+			name:          "Invalid: special characters",
+			input:         "@@##",
+			expectedError: true,
+			errorContains: "invalid duration format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			duration, err := ValidateRetentionPeriod(tt.input)
+
+			if tt.expectedError {
+				assert.Error(t, err, "ValidateRetentionPeriod should return error for input: %s", tt.input)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains,
+						"Error message should contain: %s", tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err, "ValidateRetentionPeriod should not return error for valid input: %s", tt.input)
+				assert.Equal(t, tt.expectedValue, duration,
+					"ValidateRetentionPeriod should return correct duration for input: %s", tt.input)
+			}
+		})
+	}
+}
+
 // TestScaleToZeroIntegration tests the integration of all scale-to-zero functions
 func TestScaleToZeroIntegration(t *testing.T) {
 	t.Run("End-to-end workflow for model with scale-to-zero enabled", func(t *testing.T) {

@@ -124,6 +124,38 @@ func IsScaleToZeroEnabled(configData ScaleToZeroConfigData, modelID string) bool
 	return strings.EqualFold(os.Getenv("WVA_SCALE_TO_ZERO"), "true")
 }
 
+// ValidateRetentionPeriod validates a retention period string.
+// Returns the parsed duration and an error if validation fails.
+// Validation rules:
+//   - Must be a valid Go duration format (e.g., "5m", "1h", "30s")
+//   - Must be positive (> 0)
+//   - Should be reasonable for production use (warns if > 24h)
+func ValidateRetentionPeriod(retentionPeriod string) (time.Duration, error) {
+	if retentionPeriod == "" {
+		return 0, fmt.Errorf("retention period cannot be empty")
+	}
+
+	duration, err := time.ParseDuration(retentionPeriod)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration format: %w", err)
+	}
+
+	if duration <= 0 {
+		return 0, fmt.Errorf("retention period must be positive, got %v", duration)
+	}
+
+	// Warn if retention period is unusually long (> 24 hours)
+	// This is not an error, just a warning for potentially misconfigured values
+	if duration > 24*time.Hour {
+		logger.Log.Warn("Retention period is unusually long",
+			"retentionPeriod", retentionPeriod,
+			"duration", duration,
+			"recommendation", "Consider using a shorter period for better resource utilization")
+	}
+
+	return duration, nil
+}
+
 // GetScaleToZeroRetentionPeriod returns the pod retention period for scale-to-zero for a specific model.
 // Configuration priority (highest to lowest):
 // 1. Per-model retention period in ConfigMap
@@ -133,9 +165,9 @@ func GetScaleToZeroRetentionPeriod(configData ScaleToZeroConfigData, modelID str
 	// Check per-model retention period first (highest priority)
 	// With the new YAML format, model IDs are used directly without sanitization
 	if config, exists := configData[modelID]; exists && config.RetentionPeriod != "" {
-		duration, err := time.ParseDuration(config.RetentionPeriod)
+		duration, err := ValidateRetentionPeriod(config.RetentionPeriod)
 		if err != nil {
-			logger.Log.Warn("Failed to parse retention period for model, checking global defaults",
+			logger.Log.Warn("Invalid retention period for model, checking global defaults",
 				"modelID", modelID,
 				"retentionPeriod", config.RetentionPeriod,
 				"error", err)
@@ -147,9 +179,9 @@ func GetScaleToZeroRetentionPeriod(configData ScaleToZeroConfigData, modelID str
 
 	// Check global defaults retention period (second priority)
 	if globalConfig, exists := configData[GlobalDefaultsKey]; exists && globalConfig.RetentionPeriod != "" {
-		duration, err := time.ParseDuration(globalConfig.RetentionPeriod)
+		duration, err := ValidateRetentionPeriod(globalConfig.RetentionPeriod)
 		if err != nil {
-			logger.Log.Warn("Failed to parse global default retention period, using system default",
+			logger.Log.Warn("Invalid global default retention period, using system default",
 				"retentionPeriod", globalConfig.RetentionPeriod,
 				"error", err)
 			return DefaultScaleToZeroRetentionPeriod
