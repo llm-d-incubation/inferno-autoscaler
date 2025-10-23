@@ -12,7 +12,7 @@
 # Benefits of this approach:
 #   Independently editable - Change one model without touching others
 #   Easy kubectl operations - Add/update/remove individual models
-#   ✅ Better Git diffs - Only changed models show in version control
+#   Better Git diffs - Only changed models show in version control
 #   ✅ No collision risk - Original modelID preserved in JSON value
 #   ✅ Semi-human-readable - Keys like "model.meta.llama-3.1-8b" are recognizable
 #
