@@ -42,7 +42,7 @@ func (engine *VariantAutoscalingsEngine) Optimize(ctx context.Context,
 	}
 	allocationSolution := engine.system.GenerateSolution()
 	if allocationSolution == nil || len(allocationSolution.Spec) == 0 {
-		return nil, fmt.Errorf("no feasible allocations found for all variants: ")
+		return nil, fmt.Errorf("no feasible allocations found for %d variants", len(vaList.Items))
 	}
 
 	logger.Log.Debug("Optimization solution - ", "system: ", engine.system)
@@ -54,9 +54,13 @@ func (engine *VariantAutoscalingsEngine) Optimize(ctx context.Context,
 	for _, va := range vaList.Items {
 		vaName := va.Name
 		vaNamespace := va.Namespace
-		if optimizedAllocation, err := utils.CreateOptimizedAlloc(vaName, vaNamespace, allocationSolution); err == nil {
-			optimizedAllocMap[vaName] = *optimizedAllocation
+		optimizedAllocation, err := utils.CreateOptimizedAlloc(vaName, vaNamespace, allocationSolution)
+		if err != nil {
+			logger.Log.Error(err, "Failed to create optimized allocation",
+				"variant", vaName, "namespace", vaNamespace)
+			continue
 		}
+		optimizedAllocMap[vaName] = *optimizedAllocation
 	}
 	return optimizedAllocMap, nil
 }
@@ -71,7 +75,12 @@ func (engine *VariantAutoscalingsEngine) applyZeroRateHandling(
 	metricsCache *collector.ModelMetricsCache,
 ) {
 	// Group variants by ModelID
-	modelVariants := make(map[string][]*llmdOptv1alpha1.VariantAutoscaling)
+	// Estimate capacity: assume average 2-3 variants per model
+	estimatedModels := len(vaList.Items) / 2
+	if estimatedModels == 0 {
+		estimatedModels = 1
+	}
+	modelVariants := make(map[string][]*llmdOptv1alpha1.VariantAutoscaling, estimatedModels)
 	for i := range vaList.Items {
 		va := &vaList.Items[i]
 		modelID := va.Spec.ModelID
@@ -80,12 +89,14 @@ func (engine *VariantAutoscalingsEngine) applyZeroRateHandling(
 
 	// Process each model
 	for modelID, variants := range modelVariants {
-		if len(variants) == 0 {
-			continue
-		}
-
 		// Check scale-to-zero configuration
-		scaleToZeroEnabled := utils.IsScaleToZeroEnabled(*scaleToZeroConfigData, modelID)
+		var scaleToZeroEnabled bool
+		if scaleToZeroConfigData == nil {
+			logger.Log.Warn("Scale-to-zero config is nil, treating as disabled", "modelID", modelID)
+			scaleToZeroEnabled = false
+		} else {
+			scaleToZeroEnabled = utils.IsScaleToZeroEnabled(*scaleToZeroConfigData, modelID)
+		}
 
 		// Get total requests over retention period from metrics cache
 		totalRequests := 0.0
@@ -136,14 +147,13 @@ func (engine *VariantAutoscalingsEngine) applyZeroRateHandling(
 		}
 
 		// Zero-rate scenario: keep exactly one replica of one variant
+		reason := "scale-to-zero disabled"
+		if scaleToZeroEnabled {
+			reason = fmt.Sprintf("recent requests (%.0f over retention period)", totalRequests)
+		}
 		logger.Log.Info("Applying zero-rate handling: keeping one replica",
 			"modelID", modelID,
-			"reason", func() string {
-				if !scaleToZeroEnabled {
-					return "scale-to-zero disabled"
-				}
-				return fmt.Sprintf("recent requests (%.0f over retention period)", totalRequests)
-			}())
+			"reason", reason)
 
 		// Choose which variant to keep based on current state and cost
 		variantToKeep := engine.selectVariantToKeep(variants, allocationSolution)
@@ -238,6 +248,9 @@ func (engine *VariantAutoscalingsEngine) selectCheapestVariant(
 
 	// Fallback to first variant if no cost info available
 	if cheapestVariant == nil {
+		logger.Log.Warn("No cost information available in allocation solution, selecting first variant",
+			"variant", variants[0].Name,
+			"namespace", variants[0].Namespace)
 		return variants[0]
 	}
 
