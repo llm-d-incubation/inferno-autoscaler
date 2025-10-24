@@ -191,7 +191,7 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	engine := variantAutoscalingOptimizer.NewVariantAutoscalingsEngine(manager, system)
 
-	optimizedAllocation, err := engine.Optimize(ctx, *updateList, allAnalyzerResponses)
+	optimizedAllocation, err := engine.Optimize(ctx, *updateList, allAnalyzerResponses, &scaleToZeroConfigData, r.ScaleToZeroMetricsCache)
 	if err != nil {
 		logger.Log.Error(err, "unable to perform model optimization, skipping this iteration")
 
