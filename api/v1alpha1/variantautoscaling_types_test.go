@@ -3,6 +3,7 @@ package v1alpha1
 import (
 	"encoding/json"
 	"reflect"
+	"regexp"
 	"testing"
 	"time"
 
@@ -365,6 +366,155 @@ func TestVariantCostDefaultValue(t *testing.T) {
 				specMap := rawMap["spec"].(map[string]interface{})
 				if _, exists := specMap["variantCost"]; exists {
 					t.Errorf("expected variantCost to be omitted, but it exists in JSON")
+				}
+			}
+		})
+	}
+}
+
+// TestVariantIDPatternValidation tests the VariantID pattern validation
+// Pattern: ^.+-[A-Za-z0-9_-]+-[1-9][0-9]*$
+// Format: {modelID}-{accelerator}-{count}
+func TestVariantIDPatternValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		variantID   string
+		shouldMatch bool
+		reason      string
+	}{
+		// Valid cases - standard format
+		{
+			name:        "simple alphanumeric",
+			variantID:   "llama-A100-1",
+			shouldMatch: true,
+			reason:      "basic format with alphanumeric accelerator",
+		},
+		{
+			name:        "model with slash",
+			variantID:   "meta/llama-3.1-8b-A100-4",
+			shouldMatch: true,
+			reason:      "HuggingFace style model name with slash",
+		},
+		{
+			name:        "model with lowercase",
+			variantID:   "llama-8b-h100-1",
+			shouldMatch: true,
+			reason:      "lowercase accelerator name",
+		},
+
+		// Valid cases - complex accelerator names (NEW with flexible pattern)
+		{
+			name:        "accelerator with hyphen",
+			variantID:   "meta/llama-8b-H100-SXM-4",
+			shouldMatch: true,
+			reason:      "accelerator name with hyphen (H100-SXM)",
+		},
+		{
+			name:        "accelerator with underscore",
+			variantID:   "model-A100_80GB-1",
+			shouldMatch: true,
+			reason:      "accelerator name with underscore (A100_80GB)",
+		},
+		{
+			name:        "complex accelerator",
+			variantID:   "model-H100-SXM4-80GB-2",
+			shouldMatch: true,
+			reason:      "complex accelerator with multiple hyphens",
+		},
+		{
+			name:        "accelerator with mixed separators",
+			variantID:   "model-A100_PCIE-SXM4-1",
+			shouldMatch: true,
+			reason:      "accelerator with both underscore and hyphen",
+		},
+
+		// Valid cases - various model names
+		{
+			name:        "multiple slashes in model",
+			variantID:   "org/team/model-GPU-1",
+			shouldMatch: true,
+			reason:      "model name with multiple organization levels",
+		},
+		{
+			name:        "model with dots",
+			variantID:   "gpt-4.0-turbo-H100-2",
+			shouldMatch: true,
+			reason:      "model name with version dots",
+		},
+		{
+			name:        "model with underscores",
+			variantID:   "model_name-A100-1",
+			shouldMatch: true,
+			reason:      "model name with underscores",
+		},
+
+		// Invalid cases - count must start with 1-9
+		{
+			name:        "count starting with zero",
+			variantID:   "model-A100-0",
+			shouldMatch: false,
+			reason:      "replica count cannot start with 0",
+		},
+		{
+			name:        "count is zero",
+			variantID:   "model-GPU-00",
+			shouldMatch: false,
+			reason:      "replica count of 00 not allowed",
+		},
+
+		// Invalid cases - missing components
+		{
+			name:        "missing count",
+			variantID:   "model-A100",
+			shouldMatch: false,
+			reason:      "missing replica count",
+		},
+		{
+			name:        "missing accelerator",
+			variantID:   "model-1",
+			shouldMatch: false,
+			reason:      "missing accelerator name",
+		},
+		{
+			name:        "only model name",
+			variantID:   "model",
+			shouldMatch: false,
+			reason:      "missing accelerator and count",
+		},
+
+		// Invalid cases - empty or malformed
+		{
+			name:        "empty string",
+			variantID:   "",
+			shouldMatch: false,
+			reason:      "empty variantID",
+		},
+		{
+			name:        "only dashes",
+			variantID:   "---",
+			shouldMatch: false,
+			reason:      "no valid components",
+		},
+	}
+
+	// The actual pattern from the CRD validation
+	pattern := `^.+-[A-Za-z0-9_-]+-[1-9][0-9]*$`
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test using Go regex matching (simulating Kubernetes validation)
+			matched, err := regexp.MatchString(pattern, tt.variantID)
+			if err != nil {
+				t.Fatalf("regex error: %v", err)
+			}
+
+			if matched != tt.shouldMatch {
+				if tt.shouldMatch {
+					t.Errorf("Expected '%s' to MATCH pattern, but it didn't. Reason: %s",
+						tt.variantID, tt.reason)
+				} else {
+					t.Errorf("Expected '%s' to NOT MATCH pattern, but it did. Reason: %s",
+						tt.variantID, tt.reason)
 				}
 			}
 		})

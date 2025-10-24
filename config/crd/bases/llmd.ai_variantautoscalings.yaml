@@ -113,7 +113,10 @@ spec:
                   VariantID uniquely identifies this variant (model + accelerator + acceleratorCount combination).
                   This is a business identifier that may contain slashes, dots, and mixed case.
                   Format: {modelID}-{accelerator}-{acceleratorCount}
-                  Example: "meta/llama-3.1-8b-A100-4"
+                  Example: "meta/llama-3.1-8b-A100-4" or "model-H100-SXM4-80GB-2"
+
+                  The accelerator portion supports alphanumeric characters, hyphens, and underscores
+                  to accommodate complex GPU names like "H100-SXM", "A100_80GB", etc.
 
                   Note: VariantID (variant_id) is distinct from the VariantAutoscaling resource name (variant_name):
                     - variant_id (this field): Business identifier, may contain non-K8s-compliant characters
@@ -123,7 +126,7 @@ spec:
                     - Use variant_name to query by Kubernetes resource (typically matches Deployment name)
                     - Use variant_id to query by business identifier (model/variant naming)
                 minLength: 1
-                pattern: ^.+-[A-Za-z0-9]+-[1-9][0-9]*$
+                pattern: ^.+-[A-Za-z0-9_-]+-[1-9][0-9]*$
                 type: string
               variantProfile:
                 description: VariantProfile provides performance characteristics for

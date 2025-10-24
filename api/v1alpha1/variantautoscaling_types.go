@@ -14,7 +14,10 @@ type VariantAutoscalingSpec struct {
 	// VariantID uniquely identifies this variant (model + accelerator + acceleratorCount combination).
 	// This is a business identifier that may contain slashes, dots, and mixed case.
 	// Format: {modelID}-{accelerator}-{acceleratorCount}
-	// Example: "meta/llama-3.1-8b-A100-4"
+	// Example: "meta/llama-3.1-8b-A100-4" or "model-H100-SXM4-80GB-2"
+	//
+	// The accelerator portion supports alphanumeric characters, hyphens, and underscores
+	// to accommodate complex GPU names like "H100-SXM", "A100_80GB", etc.
 	//
 	// Note: VariantID (variant_id) is distinct from the VariantAutoscaling resource name (variant_name):
 	//   - variant_id (this field): Business identifier, may contain non-K8s-compliant characters
@@ -26,7 +29,7 @@ type VariantAutoscalingSpec struct {
 	//
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Pattern=`^.+-[A-Za-z0-9]+-[1-9][0-9]*$`
+	// +kubebuilder:validation:Pattern=`^.+-[A-Za-z0-9_-]+-[1-9][0-9]*$`
 	VariantID string `json:"variantID"`
 
 	// Accelerator specifies the accelerator type for this variant (e.g., "A100", "L40S").
