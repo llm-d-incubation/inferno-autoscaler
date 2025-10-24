@@ -29,6 +29,48 @@ func NewVariantAutoscalingsEngine(manager *infernoManager.Manager, system *infer
 	}
 }
 
+// validateReplicaBounds validates minReplicas and maxReplicas configurations and logs warnings
+func (engine *VariantAutoscalingsEngine) validateReplicaBounds(
+	ctx context.Context,
+	vaList llmdOptv1alpha1.VariantAutoscalingList,
+	scaleToZeroConfigData *utils.ScaleToZeroConfigData,
+) {
+	// Track variants with minReplicas > 0 per model
+	modelVariantsWithMin := make(map[string][]string)
+
+	for i := range vaList.Items {
+		va := &vaList.Items[i]
+		modelID := va.Spec.ModelID
+		minReplicas := utils.GetVariantMinReplicas(va)
+
+		if minReplicas > 0 {
+			modelVariantsWithMin[modelID] = append(modelVariantsWithMin[modelID], va.Name)
+		}
+	}
+
+	// Check for multiple variants with minReplicas > 0
+	for modelID, variantNames := range modelVariantsWithMin {
+		if len(variantNames) > 1 {
+			logger.Log.Warn("Multiple variants with minReplicas > 0 may lead to unnecessary GPU utilization",
+				"modelID", modelID,
+				"variants", variantNames,
+				"count", len(variantNames))
+		}
+	}
+
+	// Check for conflict between scaleToZero and minReplicas > 0
+	if scaleToZeroConfigData != nil {
+		for modelID, variantNames := range modelVariantsWithMin {
+			if utils.IsScaleToZeroEnabled(*scaleToZeroConfigData, modelID) {
+				logger.Log.Warn("Model has scaleToZero enabled but variants have minReplicas > 0, preventing scale-to-zero",
+					"modelID", modelID,
+					"variants", variantNames,
+					"scaleToZeroEnabled", true)
+			}
+		}
+	}
+}
+
 // Perform a global optimization producing optimized allocations for all variants
 func (engine *VariantAutoscalingsEngine) Optimize(ctx context.Context,
 	vaList llmdOptv1alpha1.VariantAutoscalingList,
@@ -36,6 +78,9 @@ func (engine *VariantAutoscalingsEngine) Optimize(ctx context.Context,
 	scaleToZeroConfigData *utils.ScaleToZeroConfigData,
 	scaleToZeroCache *collector.ScaleToZeroMetricsCache,
 ) (map[string]llmdOptv1alpha1.OptimizedAlloc, error) {
+
+	// Validate replica bounds and log warnings
+	engine.validateReplicaBounds(ctx, vaList, scaleToZeroConfigData)
 
 	if err := engine.manager.Optimize(); err != nil {
 		// Return empty map instead of nil to prevent panic in controller
@@ -63,6 +108,22 @@ func (engine *VariantAutoscalingsEngine) Optimize(ctx context.Context,
 				"variant", vaName, "namespace", vaNamespace)
 			continue
 		}
+
+		// Enforce maxReplicas bound
+		// Note: minReplicas is enforced during optimization via AddServerInfoToSystemData,
+		// which passes it as a constraint to the inferno optimizer.
+		// maxReplicas is enforced here as a post-processing step because the optimizer
+		// may not have a built-in maxReplicas constraint.
+		maxReplicas := utils.GetVariantMaxReplicas(&va)
+		if maxReplicas > 0 && optimizedAllocation.NumReplicas > maxReplicas {
+			logger.Log.Info("Clamping replicas to maxReplicas",
+				"variant", vaName,
+				"namespace", vaNamespace,
+				"optimized", optimizedAllocation.NumReplicas,
+				"maxReplicas", maxReplicas)
+			optimizedAllocation.NumReplicas = maxReplicas
+		}
+
 		optimizedAllocMap[vaName] = *optimizedAllocation
 	}
 	return optimizedAllocMap, nil

@@ -60,6 +60,23 @@ type VariantAutoscalingSpec struct {
 	// +kubebuilder:default="10"
 	// +optional
 	VariantCost string `json:"variantCost,omitempty"`
+
+	// MinReplicas specifies the minimum number of replicas for this variant.
+	// The optimizer will never scale below this value.
+	// If not specified, defaults to 0.
+	// Warning: Setting minReplicas > 0 for multiple variants may lead to unnecessary GPU utilization.
+	// Warning: Setting minReplicas > 0 prevents the model from scaling to zero even if scaleToZero is enabled.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:default=0
+	// +optional
+	MinReplicas *int `json:"minReplicas,omitempty"`
+
+	// MaxReplicas specifies the maximum number of replicas for this variant.
+	// The optimizer will never scale above this value.
+	// If not specified, no upper bound is enforced (unlimited scaling).
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MaxReplicas *int `json:"maxReplicas,omitempty"`
 }
 
 // ConfigMapKeyRef references a specific key within a ConfigMap.

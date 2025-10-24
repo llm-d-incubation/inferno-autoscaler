@@ -19,7 +19,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -193,6 +192,7 @@ var _ = Describe("Optimizer", Ordered, func() {
 						Accelerator:      "A100",
 						AcceleratorCount: 1,
 						VariantCost:      "10.5",
+						MinReplicas:      &minNumReplicas,
 						VariantProfile: llmdVariantAutoscalingV1alpha1.VariantProfile{
 							PerfParms: llmdVariantAutoscalingV1alpha1.PerfParms{
 								DecodeParms:  map[string]string{"alpha": "20.28", "beta": "0.72"},
@@ -326,8 +326,8 @@ var _ = Describe("Optimizer", Ordered, func() {
 
 			By("Performing optimization")
 			scaleToZeroConfigData := make(utils.ScaleToZeroConfigData)
-		scaleToZeroCache := collector.NewScaleToZeroMetricsCache()
-		optimizedAllocs, err := engine.Optimize(ctx, updateList, allAnalyzerResponses, &scaleToZeroConfigData, scaleToZeroCache)
+			scaleToZeroCache := collector.NewScaleToZeroMetricsCache()
+			optimizedAllocs, err := engine.Optimize(ctx, updateList, allAnalyzerResponses, &scaleToZeroConfigData, scaleToZeroCache)
 			Expect(err).NotTo(HaveOccurred(), "unable to perform model optimization")
 			Expect(len(optimizedAllocs)).To(Equal(len(updateList.Items)), "Expected optimized allocations for all VariantAutoscalings")
 			for key, value := range optimizedAllocs {
@@ -449,8 +449,8 @@ var _ = Describe("Optimizer", Ordered, func() {
 
 			By("Performing optimization")
 			scaleToZeroConfigData := make(utils.ScaleToZeroConfigData)
-		scaleToZeroCache := collector.NewScaleToZeroMetricsCache()
-		optimizedAllocs, err := engine.Optimize(ctx, updateList, allAnalyzerResponses, &scaleToZeroConfigData, scaleToZeroCache)
+			scaleToZeroCache := collector.NewScaleToZeroMetricsCache()
+			optimizedAllocs, err := engine.Optimize(ctx, updateList, allAnalyzerResponses, &scaleToZeroConfigData, scaleToZeroCache)
 			Expect(err).NotTo(HaveOccurred(), "unable to perform model optimization")
 			Expect(len(optimizedAllocs)).To(Equal(len(updateList.Items)), "Expected optimized allocations for all VariantAutoscalings")
 			for key, value := range optimizedAllocs {

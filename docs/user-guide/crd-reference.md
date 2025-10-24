@@ -164,6 +164,8 @@ _Appears in:_
 | `sloClassRef` _[ConfigMapKeyRef](#configmapkeyref)_ | SLOClassRef references the ConfigMap key containing Service Level Objective (SLO) configuration. |  | Required: \{\} <br /> |
 | `variantProfile` _[VariantProfile](#variantprofile)_ | VariantProfile provides performance characteristics for this variant. |  | Required: \{\} <br /> |
 | `variantCost` _string_ | VariantCost specifies the cost per replica for this variant configuration.<br />This is a static characteristic of the variant (cost rate), not runtime cost.<br />Total cost can be calculated as: VariantCost * NumReplicas<br />If not specified, defaults to "10".<br />Note: When running multiple variants with different costs, it is recommended to explicitly<br />set this field for accurate cost comparisons. A warning will be logged if the default is used. | 10 | Pattern: `^\d+(\.\d+)?$` <br /> |
+| `minReplicas` _integer_ | MinReplicas specifies the minimum number of replicas for this variant.<br />The optimizer will never scale below this value.<br />If not specified, defaults to 0.<br />Warning: Setting minReplicas > 0 for multiple variants may lead to unnecessary GPU utilization.<br />Warning: Setting minReplicas > 0 prevents the model from scaling to zero even if scaleToZero is enabled. | 0 | Minimum: 0 <br /> |
+| `maxReplicas` _integer_ | MaxReplicas specifies the maximum number of replicas for this variant.<br />The optimizer will never scale above this value.<br />If not specified, no upper bound is enforced (unlimited scaling). |  | Minimum: 1 <br /> |
 
 
 #### VariantAutoscalingStatus

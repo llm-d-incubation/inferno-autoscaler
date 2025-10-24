@@ -195,11 +195,32 @@ func GetScaleToZeroRetentionPeriod(configData ScaleToZeroConfigData, modelID str
 
 // GetMinNumReplicas returns the minimum number of replicas for a specific model based on
 // scale-to-zero configuration. Returns 0 if scale-to-zero is enabled, otherwise returns 1.
+// DEPRECATED: Use GetVariantMinReplicas for per-variant control.
 func GetMinNumReplicas(configData ScaleToZeroConfigData, modelID string) int {
 	if IsScaleToZeroEnabled(configData, modelID) {
 		return 0
 	}
 	return 1
+}
+
+// GetVariantMinReplicas returns the minimum number of replicas for a specific variant.
+// If va.Spec.MinReplicas is set, returns that value.
+// Otherwise, returns 0 (default).
+func GetVariantMinReplicas(va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling) int {
+	if va.Spec.MinReplicas != nil {
+		return *va.Spec.MinReplicas
+	}
+	return 0 // Default value
+}
+
+// GetVariantMaxReplicas returns the maximum number of replicas for a specific variant.
+// If va.Spec.MaxReplicas is set, returns that value.
+// Otherwise, returns -1 to indicate no upper bound (unlimited).
+func GetVariantMaxReplicas(va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling) int {
+	if va.Spec.MaxReplicas != nil {
+		return *va.Spec.MaxReplicas
+	}
+	return -1 // No upper bound
 }
 
 // GetResourceWithBackoff performs a Get operation with exponential backoff retry logic
@@ -428,8 +449,8 @@ func AddServerInfoToSystemData(
 	}
 
 	// all server data
-	// Determine minimum replicas based on per-model scale-to-zero configuration
-	minNumReplicas := GetMinNumReplicas(scaleToZeroConfigData, va.Spec.ModelID)
+	// Determine minimum replicas from VA spec (per-variant control)
+	minNumReplicas := GetVariantMinReplicas(va)
 
 	// Log retention period if scale-to-zero is enabled (for future use in scale-to-zero logic)
 	if IsScaleToZeroEnabled(scaleToZeroConfigData, va.Spec.ModelID) {

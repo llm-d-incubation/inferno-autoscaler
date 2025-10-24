@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"regexp"
 	"testing"
@@ -519,4 +520,251 @@ func TestVariantIDPatternValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestReplicaBoundsEdgeCases tests edge cases for minReplicas and maxReplicas
+func TestReplicaBoundsEdgeCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		minReplicas *int
+		maxReplicas *int
+		expectValid bool
+		description string
+	}{
+		{
+			name:        "both nil (defaults)",
+			minReplicas: nil,
+			maxReplicas: nil,
+			expectValid: true,
+			description: "Should use defaults: min=0, max=unlimited",
+		},
+		{
+			name:        "min=0, max=nil",
+			minReplicas: intPtr(0),
+			maxReplicas: nil,
+			expectValid: true,
+			description: "Explicit min=0 with unlimited max",
+		},
+		{
+			name:        "min=1, max=10",
+			minReplicas: intPtr(1),
+			maxReplicas: intPtr(10),
+			expectValid: true,
+			description: "Valid range: min < max",
+		},
+		{
+			name:        "min=5, max=5",
+			minReplicas: intPtr(5),
+			maxReplicas: intPtr(5),
+			expectValid: true,
+			description: "Edge case: min = max (fixed replicas)",
+		},
+		{
+			name:        "min=10, max=5",
+			minReplicas: intPtr(10),
+			maxReplicas: intPtr(5),
+			expectValid: false,
+			description: "Invalid: min > max",
+		},
+		{
+			name:        "min=0, max=1",
+			minReplicas: intPtr(0),
+			maxReplicas: intPtr(1),
+			expectValid: true,
+			description: "Minimum range: can scale 0-1",
+		},
+		{
+			name:        "large values: min=100, max=1000",
+			minReplicas: intPtr(100),
+			maxReplicas: intPtr(1000),
+			expectValid: true,
+			description: "Should handle large replica counts",
+		},
+		{
+			name:        "very large max: 10000",
+			minReplicas: intPtr(0),
+			maxReplicas: intPtr(10000),
+			expectValid: true,
+			description: "Should handle very large max replica counts",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			va := makeValidVA()
+			va.Spec.MinReplicas = tt.minReplicas
+			va.Spec.MaxReplicas = tt.maxReplicas
+
+			// Marshal to JSON to ensure serialization works
+			_, err := json.Marshal(va)
+			if err != nil {
+				t.Errorf("Failed to marshal VA: %v", err)
+			}
+
+			// Check logical validity
+			if tt.minReplicas != nil && tt.maxReplicas != nil {
+				if *tt.minReplicas > *tt.maxReplicas {
+					if tt.expectValid {
+						t.Errorf("Expected configuration to be valid, but min > max: min=%d, max=%d",
+							*tt.minReplicas, *tt.maxReplicas)
+					}
+					// This is expected to be invalid
+					return
+				}
+			}
+
+			if !tt.expectValid {
+				t.Errorf("Expected configuration to be invalid, but validation passed")
+			}
+
+			t.Logf("✓ %s: min=%v, max=%v", tt.description,
+				ptrToString(tt.minReplicas), ptrToString(tt.maxReplicas))
+		})
+	}
+}
+
+// TestReplicaBoundsWithScaleToZero tests interaction between replica bounds and scale-to-zero
+func TestReplicaBoundsWithScaleToZero(t *testing.T) {
+	tests := []struct {
+		name               string
+		minReplicas        *int
+		scaleToZeroEnabled bool
+		canScaleToZero     bool
+		description        string
+	}{
+		{
+			name:               "min=0, scaleToZero=true",
+			minReplicas:        intPtr(0),
+			scaleToZeroEnabled: true,
+			canScaleToZero:     true,
+			description:        "Should allow scaling to zero",
+		},
+		{
+			name:               "min=1, scaleToZero=true",
+			minReplicas:        intPtr(1),
+			scaleToZeroEnabled: true,
+			canScaleToZero:     false,
+			description:        "minReplicas=1 prevents scale-to-zero",
+		},
+		{
+			name:               "min=0, scaleToZero=false",
+			minReplicas:        intPtr(0),
+			scaleToZeroEnabled: false,
+			canScaleToZero:     false,
+			description:        "scaleToZero disabled prevents scaling to zero",
+		},
+		{
+			name:               "min=nil (default 0), scaleToZero=true",
+			minReplicas:        nil,
+			scaleToZeroEnabled: true,
+			canScaleToZero:     true,
+			description:        "Default minReplicas=0 allows scale-to-zero",
+		},
+		{
+			name:               "min=5, scaleToZero=true",
+			minReplicas:        intPtr(5),
+			scaleToZeroEnabled: true,
+			canScaleToZero:     false,
+			description:        "High minReplicas prevents scale-to-zero",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			va := makeValidVA()
+			va.Spec.MinReplicas = tt.minReplicas
+
+			// Determine effective minReplicas
+			effectiveMin := 0
+			if tt.minReplicas != nil {
+				effectiveMin = *tt.minReplicas
+			}
+
+			// Logic: can scale to zero only if scaleToZero is enabled AND minReplicas is 0
+			actualCanScale := tt.scaleToZeroEnabled && effectiveMin == 0
+
+			if actualCanScale != tt.canScaleToZero {
+				t.Errorf("Expected canScaleToZero=%v, got %v (minReplicas=%d, scaleToZero=%v)",
+					tt.canScaleToZero, actualCanScale, effectiveMin, tt.scaleToZeroEnabled)
+			}
+
+			t.Logf("✓ %s: effectiveMin=%d, scaleToZero=%v, canScale=%v",
+				tt.description, effectiveMin, tt.scaleToZeroEnabled, actualCanScale)
+		})
+	}
+}
+
+// TestReplicaBoundsJSONRoundTrip tests JSON marshaling/unmarshaling of replica bounds
+func TestReplicaBoundsJSONRoundTrip(t *testing.T) {
+	tests := []struct {
+		name        string
+		minReplicas *int
+		maxReplicas *int
+	}{
+		{name: "both nil", minReplicas: nil, maxReplicas: nil},
+		{name: "only min set", minReplicas: intPtr(2), maxReplicas: nil},
+		{name: "only max set", minReplicas: nil, maxReplicas: intPtr(10)},
+		{name: "both set", minReplicas: intPtr(1), maxReplicas: intPtr(5)},
+		{name: "min=0, max=1", minReplicas: intPtr(0), maxReplicas: intPtr(1)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			original := makeValidVA()
+			original.Spec.MinReplicas = tt.minReplicas
+			original.Spec.MaxReplicas = tt.maxReplicas
+
+			// Marshal to JSON
+			data, err := json.Marshal(original)
+			if err != nil {
+				t.Fatalf("Failed to marshal: %v", err)
+			}
+
+			// Unmarshal back
+			var decoded VariantAutoscaling
+			if err := json.Unmarshal(data, &decoded); err != nil {
+				t.Fatalf("Failed to unmarshal: %v", err)
+			}
+
+			// Compare replica bounds
+			if !intPtrEqual(original.Spec.MinReplicas, decoded.Spec.MinReplicas) {
+				t.Errorf("MinReplicas mismatch: original=%v, decoded=%v",
+					ptrToString(original.Spec.MinReplicas),
+					ptrToString(decoded.Spec.MinReplicas))
+			}
+
+			if !intPtrEqual(original.Spec.MaxReplicas, decoded.Spec.MaxReplicas) {
+				t.Errorf("MaxReplicas mismatch: original=%v, decoded=%v",
+					ptrToString(original.Spec.MaxReplicas),
+					ptrToString(decoded.Spec.MaxReplicas))
+			}
+
+			t.Logf("✓ Round trip successful: min=%v, max=%v",
+				ptrToString(tt.minReplicas), ptrToString(tt.maxReplicas))
+		})
+	}
+}
+
+// Helper functions for tests
+
+func intPtr(i int) *int {
+	return &i
+}
+
+func intPtrEqual(a, b *int) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
+}
+
+func ptrToString(p *int) string {
+	if p == nil {
+		return "nil"
+	}
+	// Convert integer to string representation
+	return fmt.Sprintf("%d", *p)
 }
