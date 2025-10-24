@@ -141,6 +141,23 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 
+	// Check for variants using default variantCost and log warnings
+	if len(activeVAs) > 1 {
+		variantsWithDefaultCost := []string{}
+		for _, va := range activeVAs {
+			if va.Spec.VariantCost == "" || va.Spec.VariantCost == "10" {
+				variantsWithDefaultCost = append(variantsWithDefaultCost, va.Name)
+			}
+		}
+		if len(variantsWithDefaultCost) > 0 {
+			logger.Log.Info("Warning: Multiple variants detected with some using default variantCost",
+				"totalVariants", len(activeVAs),
+				"variantsUsingDefault", len(variantsWithDefaultCost),
+				"variantNames", strings.Join(variantsWithDefaultCost, ", "),
+				"recommendation", "Set explicit variantCost for accurate cost comparisons")
+		}
+	}
+
 	// WVA operates in unlimited mode - no cluster inventory collection needed
 	systemData := utils.CreateSystemData(acceleratorCm, serviceClassCm)
 

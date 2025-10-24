@@ -98,10 +98,14 @@ spec:
                 - name
                 type: object
               variantCost:
+                default: "10"
                 description: |-
                   VariantCost specifies the cost per replica for this variant configuration.
                   This is a static characteristic of the variant (cost rate), not runtime cost.
                   Total cost can be calculated as: VariantCost * NumReplicas
+                  If not specified, defaults to "10".
+                  Note: When running multiple variants with different costs, it is recommended to explicitly
+                  set this field for accurate cost comparisons. A warning will be logged if the default is used.
                 pattern: ^\d+(\.\d+)?$
                 type: string
               variantID:
@@ -163,7 +167,6 @@ spec:
             - acceleratorCount
             - modelID
             - sloClassRef
-            - variantCost
             - variantID
             - variantProfile
             type: object

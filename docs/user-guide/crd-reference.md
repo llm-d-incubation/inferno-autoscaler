@@ -163,7 +163,7 @@ _Appears in:_
 | `acceleratorCount` _integer_ | AcceleratorCount specifies the number of accelerator units per replica. |  | Minimum: 1 <br />Required: \{\} <br /> |
 | `sloClassRef` _[ConfigMapKeyRef](#configmapkeyref)_ | SLOClassRef references the ConfigMap key containing Service Level Objective (SLO) configuration. |  | Required: \{\} <br /> |
 | `variantProfile` _[VariantProfile](#variantprofile)_ | VariantProfile provides performance characteristics for this variant. |  | Required: \{\} <br /> |
-| `variantCost` _string_ | VariantCost specifies the cost per replica for this variant configuration.<br />This is a static characteristic of the variant (cost rate), not runtime cost.<br />Total cost can be calculated as: VariantCost * NumReplicas |  | Pattern: `^\d+(\.\d+)?$` <br />Required: \{\} <br /> |
+| `variantCost` _string_ | VariantCost specifies the cost per replica for this variant configuration.<br />This is a static characteristic of the variant (cost rate), not runtime cost.<br />Total cost can be calculated as: VariantCost * NumReplicas<br />If not specified, defaults to "10".<br />Note: When running multiple variants with different costs, it is recommended to explicitly<br />set this field for accurate cost comparisons. A warning will be logged if the default is used. | 10 | Pattern: `^\d+(\.\d+)?$` <br /> |
 
 
 #### VariantAutoscalingStatus

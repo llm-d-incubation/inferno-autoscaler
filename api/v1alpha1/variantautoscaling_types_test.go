@@ -251,3 +251,122 @@ func jsonContainsKey(b []byte, key string) bool {
 	_, ok := m[key]
 	return ok
 }
+
+// TestVariantCostOmitEmpty verifies that variantCost can be omitted in JSON
+// and will use the default value "10" set by the CRD webhook
+func TestVariantCostOmitEmpty(t *testing.T) {
+	// Test 1: When variantCost is explicitly set, it should be in JSON
+	vaWithCost := makeValidVA()
+	vaWithCost.Spec.VariantCost = "15.5"
+
+	b, err := json.Marshal(vaWithCost)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+
+	var probe1 struct {
+		Spec struct {
+			VariantCost string `json:"variantCost"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal(b, &probe1); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if probe1.Spec.VariantCost != "15.5" {
+		t.Errorf("expected variantCost=15.5, got %s", probe1.Spec.VariantCost)
+	}
+
+	// Test 2: When variantCost is empty, it should be omitted from JSON (omitempty)
+	vaWithoutCost := makeValidVA()
+	vaWithoutCost.Spec.VariantCost = ""
+
+	b2, err := json.Marshal(vaWithoutCost)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+
+	// Parse to check if variantCost is absent
+	var rawSpec map[string]interface{}
+	var probe2 struct {
+		Spec json.RawMessage `json:"spec"`
+	}
+	if err := json.Unmarshal(b2, &probe2); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if err := json.Unmarshal(probe2.Spec, &rawSpec); err != nil {
+		t.Fatalf("unmarshal spec failed: %v", err)
+	}
+
+	// variantCost should be omitted when empty due to omitempty tag
+	if _, exists := rawSpec["variantCost"]; exists {
+		t.Errorf("expected variantCost to be omitted when empty, but it was present")
+	}
+}
+
+// TestVariantCostDefaultValue verifies the default value behavior
+// Note: The actual default value "10" is set by Kubernetes API server via
+// the +kubebuilder:default="10" marker, not by Go struct defaults
+func TestVariantCostDefaultValue(t *testing.T) {
+	tests := []struct {
+		name         string
+		variantCost  string
+		expectInJSON bool
+		expectedVal  string
+	}{
+		{
+			name:         "explicit cost set",
+			variantCost:  "20.5",
+			expectInJSON: true,
+			expectedVal:  "20.5",
+		},
+		{
+			name:         "empty cost - should be omitted",
+			variantCost:  "",
+			expectInJSON: false,
+			expectedVal:  "",
+		},
+		{
+			name:         "default value explicitly set",
+			variantCost:  "10",
+			expectInJSON: true,
+			expectedVal:  "10",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			va := makeValidVA()
+			va.Spec.VariantCost = tt.variantCost
+
+			b, err := json.Marshal(va)
+			if err != nil {
+				t.Fatalf("marshal failed: %v", err)
+			}
+
+			var probe struct {
+				Spec struct {
+					VariantCost string `json:"variantCost,omitempty"`
+				} `json:"spec"`
+			}
+			if err := json.Unmarshal(b, &probe); err != nil {
+				t.Fatalf("unmarshal failed: %v", err)
+			}
+
+			if tt.expectInJSON {
+				if probe.Spec.VariantCost != tt.expectedVal {
+					t.Errorf("expected variantCost=%s, got %s", tt.expectedVal, probe.Spec.VariantCost)
+				}
+			} else {
+				// Check raw JSON to ensure field is truly omitted
+				var rawMap map[string]interface{}
+				if err := json.Unmarshal(b, &rawMap); err != nil {
+					t.Fatalf("unmarshal to map failed: %v", err)
+				}
+				specMap := rawMap["spec"].(map[string]interface{})
+				if _, exists := specMap["variantCost"]; exists {
+					t.Errorf("expected variantCost to be omitted, but it exists in JSON")
+				}
+			}
+		})
+	}
+}

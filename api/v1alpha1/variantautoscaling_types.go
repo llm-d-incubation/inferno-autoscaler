@@ -50,9 +50,13 @@ type VariantAutoscalingSpec struct {
 	// VariantCost specifies the cost per replica for this variant configuration.
 	// This is a static characteristic of the variant (cost rate), not runtime cost.
 	// Total cost can be calculated as: VariantCost * NumReplicas
+	// If not specified, defaults to "10".
+	// Note: When running multiple variants with different costs, it is recommended to explicitly
+	// set this field for accurate cost comparisons. A warning will be logged if the default is used.
 	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?$`
-	// +kubebuilder:validation:Required
-	VariantCost string `json:"variantCost"`
+	// +kubebuilder:default="10"
+	// +optional
+	VariantCost string `json:"variantCost,omitempty"`
 }
 
 // ConfigMapKeyRef references a specific key within a ConfigMap.
