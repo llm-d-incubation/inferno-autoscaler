@@ -876,6 +876,30 @@ data:
 	})
 
 	Context("Scale-to-Zero ConfigMap Integration Tests", func() {
+		BeforeEach(func() {
+			// Initialize logger for tests
+			_, err := logger.InitLogger()
+			Expect(err).NotTo(HaveOccurred())
+
+			// Create the namespace required for ConfigMaps
+			ns := &v1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: configMapNamespace,
+				},
+			}
+			Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, ns))).To(Succeed())
+		})
+
+		AfterEach(func() {
+			// Clean up ConfigMaps
+			cmList := &v1.ConfigMapList{}
+			Expect(k8sClient.List(ctx, cmList, client.InNamespace(configMapNamespace))).To(Succeed())
+			for _, cm := range cmList.Items {
+				Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &cm))).To(Succeed())
+			}
+
+		})
+
 		It("should read scale-to-zero ConfigMap successfully", func() {
 			By("Creating a scale-to-zero ConfigMap")
 			scaleToZeroConfigMap := &v1.ConfigMap{
@@ -884,15 +908,18 @@ data:
 					Namespace: configMapNamespace,
 				},
 				Data: map[string]string{
-					"meta_llama-3.1-8b": `{
-						"enableScaleToZero": true,
+					"model.meta_llama-3.1-8b": `{
+						"modelID": "meta_llama-3.1-8b",
+					"enableScaleToZero": true,
 						"retentionPeriod": "5m"
 					}`,
-					"meta_llama-3.1-70b": `{
-						"enableScaleToZero": false
+					"model.meta_llama-3.1-70b": `{
+						"modelID": "meta_llama-3.1-70b",
+					"enableScaleToZero": false
 					}`,
-					"mistralai_Mistral-7B-v0.1": `{
-						"enableScaleToZero": true,
+					"model.mistralai_Mistral-7B-v0.1": `{
+						"modelID": "mistralai_Mistral-7B-v0.1",
+					"enableScaleToZero": true,
 						"retentionPeriod": "15m"
 					}`,
 				},
@@ -956,13 +983,15 @@ data:
 					Namespace: configMapNamespace,
 				},
 				Data: map[string]string{
-					"meta_llama-3.1-8b": `{
-						"enableScaleToZero": true,
+					"model.meta_llama-3.1-8b": `{
+						"modelID": "meta_llama-3.1-8b",
+					"enableScaleToZero": true,
 						"retentionPeriod": "5m"
 					}`,
 					"meta_llama-3.1-70b": `invalid json`,
-					"mistralai_Mistral-7B-v0.1": `{
-						"enableScaleToZero": true,
+					"model.mistralai_Mistral-7B-v0.1": `{
+						"modelID": "mistralai_Mistral-7B-v0.1",
+					"enableScaleToZero": true,
 						"retentionPeriod": "15m"
 					}`,
 				},
@@ -1224,7 +1253,7 @@ retentionPeriod: "5m"`,
 					"model.valid": `modelID: "valid/model"
 retentionPeriod: "5m"`,
 					"model.invalid": `this is not: valid: yaml: [[[`, // Invalid YAML
-					"__defaults__": `invalid yaml here too: {{{{`,    // Invalid defaults
+					"__defaults__":  `invalid yaml here too: {{{{`,   // Invalid defaults
 				},
 			}
 			Expect(k8sClient.Create(ctx, scaleToZeroConfigMap)).To(Succeed())

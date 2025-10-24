@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -293,7 +294,8 @@ var _ = Describe("Optimizer", Ordered, func() {
 				err = utils.GetVariantAutoscalingWithBackoff(ctx, k8sClient, deploy.Name, deploy.Namespace, &updateVA)
 				Expect(err).NotTo(HaveOccurred(), "failed to get variantAutoscaling for deployment - ", "deployment-name: ", deploy.Name)
 
-				currentAllocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, &testutils.MockPromAPI{})
+				testMetricsCache := collector.NewModelMetricsCache()
+				currentAllocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, &testutils.MockPromAPI{}, testMetricsCache, 10*time.Minute)
 				Expect(err).NotTo(HaveOccurred(), "unable to fetch metrics and add to Optimizer status for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 				updateVA.Status.CurrentAlloc = currentAllocation
 
@@ -327,7 +329,9 @@ var _ = Describe("Optimizer", Ordered, func() {
 			}
 
 			By("Performing optimization")
-			optimizedAllocs, err := engine.Optimize(ctx, updateList, allAnalyzerResponses)
+			scaleToZeroConfigData := make(utils.ScaleToZeroConfigData)
+			metricsCache := collector.NewModelMetricsCache()
+			optimizedAllocs, err := engine.Optimize(ctx, updateList, allAnalyzerResponses, &scaleToZeroConfigData, metricsCache)
 			Expect(err).NotTo(HaveOccurred(), "unable to perform model optimization")
 			Expect(len(optimizedAllocs)).To(Equal(len(updateList.Items)), "Expected optimized allocations for all VariantAutoscalings")
 			for key, value := range optimizedAllocs {
@@ -414,7 +418,8 @@ var _ = Describe("Optimizer", Ordered, func() {
 					&model.Sample{Value: model.SampleValue(0.008)},
 				}
 
-				currentAllocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, mockProm)
+				testMetricsCache := collector.NewModelMetricsCache()
+				currentAllocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, mockProm, testMetricsCache, 10*time.Minute)
 				Expect(err).NotTo(HaveOccurred(), "unable to fetch metrics and add to Optimizer status for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 				updateVA.Status.CurrentAlloc = currentAllocation
 
@@ -448,13 +453,556 @@ var _ = Describe("Optimizer", Ordered, func() {
 			}
 
 			By("Performing optimization")
-			optimizedAllocs, err := engine.Optimize(ctx, updateList, allAnalyzerResponses)
+			scaleToZeroConfigData := make(utils.ScaleToZeroConfigData)
+			metricsCache := collector.NewModelMetricsCache()
+			optimizedAllocs, err := engine.Optimize(ctx, updateList, allAnalyzerResponses, &scaleToZeroConfigData, metricsCache)
 			Expect(err).NotTo(HaveOccurred(), "unable to perform model optimization")
 			Expect(len(optimizedAllocs)).To(Equal(len(updateList.Items)), "Expected optimized allocations for all VariantAutoscalings")
 			for key, value := range optimizedAllocs {
 				logger.Log.Info("Optimized allocation entry - ", "key: ", key, ", value: ", value)
 				Expect(value.NumReplicas).To(BeNumerically(">", 1), "Expected optimized number of replicas to be higher than 1 under high load for VariantAutoscaling - ", key)
 			}
+		})
+	})
+})
+
+var _ = Describe("Zero-Rate Handling Edge Cases", func() {
+	var (
+		ctx                   context.Context
+		engine                *VariantAutoscalingsEngine
+		manager               *infernoManager.Manager
+		system                *inferno.System
+		allocationSolution    *infernoConfig.AllocationSolution
+		metricsCache          *collector.ModelMetricsCache
+		scaleToZeroConfigData utils.ScaleToZeroConfigData
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+
+		// Setup minimal inferno system using the same pattern as the main tests
+		systemData := &infernoConfig.SystemData{
+			Spec: infernoConfig.SystemSpec{
+				Optimizer: infernoConfig.OptimizerData{
+					Spec: infernoConfig.OptimizerSpec{},
+				},
+				Servers: infernoConfig.ServerData{
+					Spec: []infernoConfig.ServerSpec{},
+				},
+			},
+		}
+		system = inferno.NewSystem()
+		optimizerSpec := system.SetFromSpec(&systemData.Spec)
+		optimizer := infernoSolver.NewOptimizerFromSpec(optimizerSpec)
+		manager = infernoManager.NewManager(system, optimizer)
+		engine = NewVariantAutoscalingsEngine(manager, system)
+
+		// Setup metrics cache
+		metricsCache = collector.NewModelMetricsCache()
+
+		// Setup scale-to-zero config
+		scaleToZeroConfigData = make(utils.ScaleToZeroConfigData)
+
+		// Setup allocation solution
+		allocationSolution = &infernoConfig.AllocationSolution{
+			Spec: make(map[string]infernoConfig.AllocationData),
+		}
+	})
+
+	Context("Nil parameter handling", func() {
+		It("should handle nil scaleToZeroConfigData gracefully without panic", func() {
+			vaList := llmdVariantAutoscalingV1alpha1.VariantAutoscalingList{
+				Items: []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "variant1",
+							Namespace: "default",
+						},
+						Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+							ModelID: "model1",
+						},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+				},
+			}
+
+			allocationSolution.Spec["variant1:default"] = infernoConfig.AllocationData{
+				NumReplicas: 0,
+				Cost:        1.0,
+			}
+
+			// Should not panic with nil scaleToZeroConfigData
+			Expect(func() {
+				engine.applyZeroRateHandling(ctx, &vaList, allocationSolution, nil, metricsCache)
+			}).NotTo(Panic())
+
+			// Should keep one replica (scale-to-zero disabled due to nil)
+			Expect(allocationSolution.Spec["variant1:default"].NumReplicas).To(Equal(1))
+		})
+
+		It("should handle nil metricsCache gracefully without panic", func() {
+			vaList := llmdVariantAutoscalingV1alpha1.VariantAutoscalingList{
+				Items: []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "variant1",
+							Namespace: "default",
+						},
+						Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+							ModelID: "model1",
+						},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+				},
+			}
+
+			allocationSolution.Spec["variant1:default"] = infernoConfig.AllocationData{
+				NumReplicas: 0,
+				Cost:        1.0,
+			}
+
+			// Should not panic with nil metricsCache
+			Expect(func() {
+				engine.applyZeroRateHandling(ctx, &vaList, allocationSolution, &scaleToZeroConfigData, nil)
+			}).NotTo(Panic())
+
+			// Should keep one replica (totalRequests = 0 but scale-to-zero not enabled)
+			Expect(allocationSolution.Spec["variant1:default"].NumReplicas).To(Equal(1))
+		})
+
+		It("should handle both nil parameters gracefully", func() {
+			vaList := llmdVariantAutoscalingV1alpha1.VariantAutoscalingList{
+				Items: []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "variant1",
+							Namespace: "default",
+						},
+						Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+							ModelID: "model1",
+						},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+				},
+			}
+
+			allocationSolution.Spec["variant1:default"] = infernoConfig.AllocationData{
+				NumReplicas: 0,
+				Cost:        1.0,
+			}
+
+			Expect(func() {
+				engine.applyZeroRateHandling(ctx, &vaList, allocationSolution, nil, nil)
+			}).NotTo(Panic())
+
+			Expect(allocationSolution.Spec["variant1:default"].NumReplicas).To(Equal(1))
+		})
+	})
+
+	Context("Cost-based selection", func() {
+		It("should select cheapest variant when all have zero replicas", func() {
+			vaList := llmdVariantAutoscalingV1alpha1.VariantAutoscalingList{
+				Items: []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "expensive-variant", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "cheap-variant", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+				},
+			}
+
+			allocationSolution.Spec["expensive-variant:default"] = infernoConfig.AllocationData{NumReplicas: 0, Cost: 5.0}
+			allocationSolution.Spec["cheap-variant:default"] = infernoConfig.AllocationData{NumReplicas: 0, Cost: 1.0}
+
+			engine.applyZeroRateHandling(ctx, &vaList, allocationSolution, &scaleToZeroConfigData, metricsCache)
+
+			// Cheapest variant should get 1 replica
+			Expect(allocationSolution.Spec["cheap-variant:default"].NumReplicas).To(Equal(1))
+			Expect(allocationSolution.Spec["expensive-variant:default"].NumReplicas).To(Equal(0))
+		})
+
+		It("should handle variants with same cost by selecting first one found", func() {
+			vaList := llmdVariantAutoscalingV1alpha1.VariantAutoscalingList{
+				Items: []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "variant1", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "variant2", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+				},
+			}
+
+			// Both variants have same cost
+			allocationSolution.Spec["variant1:default"] = infernoConfig.AllocationData{NumReplicas: 0, Cost: 2.0}
+			allocationSolution.Spec["variant2:default"] = infernoConfig.AllocationData{NumReplicas: 0, Cost: 2.0}
+
+			engine.applyZeroRateHandling(ctx, &vaList, allocationSolution, &scaleToZeroConfigData, metricsCache)
+
+			// Exactly one variant should have 1 replica
+			total := allocationSolution.Spec["variant1:default"].NumReplicas +
+				allocationSolution.Spec["variant2:default"].NumReplicas
+			Expect(total).To(Equal(1))
+		})
+
+		It("should fallback to first variant when cost info is missing", func() {
+			vaList := llmdVariantAutoscalingV1alpha1.VariantAutoscalingList{
+				Items: []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "variant1", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "variant2", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+				},
+			}
+
+			// No allocation solution entries - missing cost info
+			variants := []*llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+				&vaList.Items[0],
+				&vaList.Items[1],
+			}
+
+			selected := engine.selectVariantToKeep(variants, allocationSolution)
+
+			// Should fallback to first variant
+			Expect(selected).NotTo(BeNil())
+			Expect(selected.Name).To(Equal("variant1"))
+		})
+	})
+
+	Context("Scale-to-zero scenarios", func() {
+		It("should scale to zero when enabled and no recent requests", func() {
+			// Enable scale-to-zero for model1
+			enabled := true
+			scaleToZeroConfigData["model1"] = utils.ModelScaleToZeroConfig{
+				ModelID:           "model1",
+				EnableScaleToZero: &enabled,
+				RetentionPeriod:   "10m",
+			}
+
+			vaList := llmdVariantAutoscalingV1alpha1.VariantAutoscalingList{
+				Items: []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "variant1", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+				},
+			}
+
+			allocationSolution.Spec["variant1:default"] = infernoConfig.AllocationData{NumReplicas: 0, Cost: 1.0}
+
+			// No metrics in cache (totalRequests = 0)
+			engine.applyZeroRateHandling(ctx, &vaList, allocationSolution, &scaleToZeroConfigData, metricsCache)
+
+			// Should scale to zero
+			Expect(allocationSolution.Spec["variant1:default"].NumReplicas).To(Equal(0))
+		})
+
+		It("should keep one replica when scale-to-zero enabled but has recent requests", func() {
+			// Enable scale-to-zero for model1
+			enabled := true
+			scaleToZeroConfigData["model1"] = utils.ModelScaleToZeroConfig{
+				ModelID:           "model1",
+				EnableScaleToZero: &enabled,
+				RetentionPeriod:   "10m",
+			}
+
+			// Add metrics showing recent requests
+			metricsCache.Set("model1", &collector.ModelMetrics{
+				TotalRequestsOverRetentionPeriod: 10.0,
+				RetentionPeriod:                  10 * time.Minute,
+			})
+
+			vaList := llmdVariantAutoscalingV1alpha1.VariantAutoscalingList{
+				Items: []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "variant1", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+				},
+			}
+
+			allocationSolution.Spec["variant1:default"] = infernoConfig.AllocationData{NumReplicas: 0, Cost: 1.0}
+
+			engine.applyZeroRateHandling(ctx, &vaList, allocationSolution, &scaleToZeroConfigData, metricsCache)
+
+			// Should keep one replica due to recent requests
+			Expect(allocationSolution.Spec["variant1:default"].NumReplicas).To(Equal(1))
+		})
+
+		It("should keep one replica when scale-to-zero disabled regardless of request count", func() {
+			// Disable scale-to-zero for model1
+			disabled := false
+			scaleToZeroConfigData["model1"] = utils.ModelScaleToZeroConfig{
+				ModelID:           "model1",
+				EnableScaleToZero: &disabled,
+				RetentionPeriod:   "10m",
+			}
+
+			vaList := llmdVariantAutoscalingV1alpha1.VariantAutoscalingList{
+				Items: []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "variant1", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+				},
+			}
+
+			allocationSolution.Spec["variant1:default"] = infernoConfig.AllocationData{NumReplicas: 0, Cost: 1.0}
+
+			// No requests in metrics
+			engine.applyZeroRateHandling(ctx, &vaList, allocationSolution, &scaleToZeroConfigData, metricsCache)
+
+			// Should keep one replica (scale-to-zero disabled)
+			Expect(allocationSolution.Spec["variant1:default"].NumReplicas).To(Equal(1))
+		})
+
+		It("should scale all variants to zero when enabled and no requests", func() {
+			// Enable scale-to-zero
+			enabled := true
+			scaleToZeroConfigData["model1"] = utils.ModelScaleToZeroConfig{
+				ModelID:           "model1",
+				EnableScaleToZero: &enabled,
+				RetentionPeriod:   "10m",
+			}
+
+			vaList := llmdVariantAutoscalingV1alpha1.VariantAutoscalingList{
+				Items: []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "variant1", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "variant2", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+				},
+			}
+
+			allocationSolution.Spec["variant1:default"] = infernoConfig.AllocationData{NumReplicas: 0, Cost: 1.0}
+			allocationSolution.Spec["variant2:default"] = infernoConfig.AllocationData{NumReplicas: 0, Cost: 2.0}
+
+			engine.applyZeroRateHandling(ctx, &vaList, allocationSolution, &scaleToZeroConfigData, metricsCache)
+
+			// Both should scale to zero
+			Expect(allocationSolution.Spec["variant1:default"].NumReplicas).To(Equal(0))
+			Expect(allocationSolution.Spec["variant2:default"].NumReplicas).To(Equal(0))
+		})
+	})
+
+	Context("Variant selection priority", func() {
+		It("should prefer variant with current replicas over cheaper variant", func() {
+			vaList := llmdVariantAutoscalingV1alpha1.VariantAutoscalingList{
+				Items: []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "expensive-with-replicas", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 2}, // Has replicas
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "cheap-without-replicas", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0}, // No replicas
+						},
+					},
+				},
+			}
+
+			allocationSolution.Spec["expensive-with-replicas:default"] = infernoConfig.AllocationData{NumReplicas: 0, Cost: 5.0}
+			allocationSolution.Spec["cheap-without-replicas:default"] = infernoConfig.AllocationData{NumReplicas: 0, Cost: 1.0}
+
+			engine.applyZeroRateHandling(ctx, &vaList, allocationSolution, &scaleToZeroConfigData, metricsCache)
+
+			// Should select expensive variant (has current replicas) even though cheap variant has lower cost
+			Expect(allocationSolution.Spec["expensive-with-replicas:default"].NumReplicas).To(Equal(1))
+			Expect(allocationSolution.Spec["cheap-without-replicas:default"].NumReplicas).To(Equal(0))
+		})
+
+		It("should select cheapest when multiple variants have non-zero replicas", func() {
+			vaList := llmdVariantAutoscalingV1alpha1.VariantAutoscalingList{
+				Items: []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "expensive-variant", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 1},
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "cheap-variant", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 2},
+						},
+					},
+				},
+			}
+
+			allocationSolution.Spec["expensive-variant:default"] = infernoConfig.AllocationData{NumReplicas: 0, Cost: 5.0}
+			allocationSolution.Spec["cheap-variant:default"] = infernoConfig.AllocationData{NumReplicas: 0, Cost: 1.0}
+
+			engine.applyZeroRateHandling(ctx, &vaList, allocationSolution, &scaleToZeroConfigData, metricsCache)
+
+			// Should select cheapest among those with replicas
+			Expect(allocationSolution.Spec["cheap-variant:default"].NumReplicas).To(Equal(1))
+			Expect(allocationSolution.Spec["expensive-variant:default"].NumReplicas).To(Equal(0))
+		})
+
+		It("should keep only one variant when multiple models exist", func() {
+			vaList := llmdVariantAutoscalingV1alpha1.VariantAutoscalingList{
+				Items: []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "model1-variant1", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "model1-variant2", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "model2-variant1", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model2"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+				},
+			}
+
+			allocationSolution.Spec["model1-variant1:default"] = infernoConfig.AllocationData{NumReplicas: 0, Cost: 2.0}
+			allocationSolution.Spec["model1-variant2:default"] = infernoConfig.AllocationData{NumReplicas: 0, Cost: 1.0}
+			allocationSolution.Spec["model2-variant1:default"] = infernoConfig.AllocationData{NumReplicas: 0, Cost: 1.0}
+
+			engine.applyZeroRateHandling(ctx, &vaList, allocationSolution, &scaleToZeroConfigData, metricsCache)
+
+			// Each model should have exactly one variant with 1 replica
+			model1Total := allocationSolution.Spec["model1-variant1:default"].NumReplicas +
+				allocationSolution.Spec["model1-variant2:default"].NumReplicas
+			model2Total := allocationSolution.Spec["model2-variant1:default"].NumReplicas
+
+			Expect(model1Total).To(Equal(1))
+			Expect(model2Total).To(Equal(1))
+		})
+	})
+
+	Context("Empty list edge cases", func() {
+		It("should handle empty variant list gracefully", func() {
+			vaList := llmdVariantAutoscalingV1alpha1.VariantAutoscalingList{
+				Items: []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{},
+			}
+
+			Expect(func() {
+				engine.applyZeroRateHandling(ctx, &vaList, allocationSolution, &scaleToZeroConfigData, metricsCache)
+			}).NotTo(Panic())
+		})
+
+		It("should return nil when selecting from empty variant list", func() {
+			variants := []*llmdVariantAutoscalingV1alpha1.VariantAutoscaling{}
+
+			selected := engine.selectVariantToKeep(variants, allocationSolution)
+
+			Expect(selected).To(BeNil())
+		})
+
+		It("should return single variant when only one exists", func() {
+			vaList := llmdVariantAutoscalingV1alpha1.VariantAutoscalingList{
+				Items: []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "only-variant", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+				},
+			}
+
+			allocationSolution.Spec["only-variant:default"] = infernoConfig.AllocationData{NumReplicas: 0, Cost: 1.0}
+
+			engine.applyZeroRateHandling(ctx, &vaList, allocationSolution, &scaleToZeroConfigData, metricsCache)
+
+			// Single variant should get 1 replica
+			Expect(allocationSolution.Spec["only-variant:default"].NumReplicas).To(Equal(1))
+		})
+	})
+
+	Context("Optimizer allocation preservation", func() {
+		It("should not modify allocations when optimizer already allocated non-zero replicas", func() {
+			vaList := llmdVariantAutoscalingV1alpha1.VariantAutoscalingList{
+				Items: []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "variant1", Namespace: "default"},
+						Spec:       llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{ModelID: "model1"},
+						Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
+							CurrentAlloc: llmdVariantAutoscalingV1alpha1.Allocation{NumReplicas: 0},
+						},
+					},
+				},
+			}
+
+			// Optimizer already allocated 3 replicas
+			allocationSolution.Spec["variant1:default"] = infernoConfig.AllocationData{NumReplicas: 3, Cost: 1.0}
+
+			engine.applyZeroRateHandling(ctx, &vaList, allocationSolution, &scaleToZeroConfigData, metricsCache)
+
+			// Should preserve optimizer's decision
+			Expect(allocationSolution.Spec["variant1:default"].NumReplicas).To(Equal(3))
 		})
 	})
 })
