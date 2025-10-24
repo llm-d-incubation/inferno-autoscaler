@@ -1,13 +1,10 @@
 #!/bin/bash
 #
-# Workload-Variant-Autoscaler Kubernetes Deployment Script
+# Workload-Variant-Autoscaler Deployment Script
 # Automated deployment of WVA, llm-d infrastructure, Prometheus, and HPA
 #
 # Prerequisites:
-# - kubectl installed and configured
-# - helm installed
-# - yq installed (optional)
-# - Access to a Kubernetes cluster
+# - Access to a Kubernetes/OpenShift cluster or Kind cluster with emulated GPUs
 # - HuggingFace token (for llm-d deployment)
 #
 
@@ -24,6 +21,7 @@ NC='\033[0m' # No Color
 # Configuration
 WVA_PROJECT=${WVA_PROJECT:-$PWD}
 WELL_LIT_PATH_NAME=${WELL_LIT_PATH_NAME:-"inference-scheduling"}
+ARCH=$(uname -m)
 
 # Namespaces
 LLMD_NS=${LLMD_NS:-"llm-d-$WELL_LIT_PATH_NAME"}
@@ -36,6 +34,7 @@ WVA_IMAGE_TAG=${WVA_IMAGE_TAG:-"v0.0.2"}
 WVA_IMAGE_PULL_POLICY=${WVA_IMAGE_PULL_POLICY:-"Always"}
 VLLM_SVC_ENABLED=${VLLM_SVC_ENABLED:-true}
 VLLM_SVC_NODEPORT=${VLLM_SVC_NODEPORT:-30000}
+GAIE_IMAGE_ARM64=${GAIE_IMAGE_ARM64:-"quay.io/infernoautoscaler/llm-d-inference-scheduler:v0.2.1-arm64"}
 
 # llm-d Configuration
 LLM_D_OWNER=${LLM_D_OWNER:-"llm-d"}
@@ -77,6 +76,12 @@ DEPLOY_VLLM_EMULATOR=${DEPLOY_VLLM_EMULATOR:-false}  # Set to true if no GPUs av
 APPLY_VLLM_EMULATOR_FIXES=${APPLY_VLLM_EMULATOR_FIXES:-false}
 SKIP_CHECKS=${SKIP_CHECKS:-false}
 
+# Script directories
+SCRIPT_DIR=$(cd $(dirname "${BASH_SOURCE[0]}") && pwd)
+ENVIRONMENT=${ENVIRONMENT:-"kubernetes"}
+COMPATIBLE_ENV_LIST=("kubernetes" "openshift" "kind-emulated")
+NON_EMULATED_ENV_LIST=("kubernetes" "openshift")
+
 # Undeployment flags
 UNDEPLOY=${UNDEPLOY:-false}
 DELETE_NAMESPACES=${DELETE_NAMESPACES:-false}
@@ -103,8 +108,7 @@ print_help() {
   cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
 
-This script deploys the complete Workload-Variant-Autoscaler stack on a
-Kubernetes cluster with real GPUs.
+This script deploys the complete Workload-Variant-Autoscaler stack on a cluster with real GPUs.
 
 Options:
   -i, --wva-image IMAGE        Container image to use for the WVA (default: $WVA_IMAGE_REPO:$WVA_IMAGE_TAG)
@@ -112,6 +116,7 @@ Options:
   -a, --accelerator TYPE       Accelerator type: A100, H100, L40S, etc. (default: $ACCELERATOR_TYPE)
   -u, --undeploy               Undeploy all components
   -d, --delete-namespaces      Delete namespaces after undeployment
+  -e, --environment            Specify deployment environment: kubernetes, openshift, kind-emulated (default: kubernetes)
   -h, --help                   Show this help and exit
 
 Environment Variables:
@@ -148,6 +153,15 @@ Examples:
 EOF
 }
 
+# Used to check if the environment variable is in a list
+containsElement () {
+  local e match="$1"
+  shift
+  for e; do [[ "$e" == "$match" ]] && return 0; done
+  return 1
+}
+
+
 parse_args() {
   # Check for IMG environment variable (used by Make)
   if [[ -n "$IMG" ]]; then
@@ -176,6 +190,11 @@ parse_args() {
       -a|--accelerator)       ACCELERATOR_TYPE="$2"; shift 2 ;;
       -u|--undeploy)          UNDEPLOY=true; shift ;;
       -d|--delete-namespaces) DELETE_NAMESPACES=true; shift ;;
+      -e|--environment)
+        ENVIRONMENT="$2"
+        if ! containsElement "$ENVIRONMENT" "${COMPATIBLE_ENV_LIST[@]}"; then
+          log_error "Invalid environment: $ENVIRONMENT. Valid options are: ${COMPATIBLE_ENV_LIST[*]}"
+        fi
       -h|--help)              print_help; exit 0 ;;
       *)                      log_error "Unknown option: $1"; print_help; exit 1 ;;
     esac
@@ -202,7 +221,7 @@ check_prerequisites() {
     
     # Check Kubernetes connection
     if ! kubectl cluster-info &> /dev/null; then
-        log_error "Cannot connect to Kubernetes cluster. Please check your kubeconfig"
+        log_error "Not connected to Kubernetes cluster. Please check your kubeconfig"
         exit 1
     fi
     
@@ -276,60 +295,9 @@ create_namespaces() {
     done
 }
 
-deploy_prometheus_stack() {
-    log_info "Deploying kube-prometheus-stack with TLS..."
-    
-    # Add helm repo
-    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
-    helm repo update
-    
-    # Create self-signed TLS certificate for Prometheus
-    log_info "Creating self-signed TLS certificate for Prometheus"
-    openssl req -x509 -newkey rsa:2048 -nodes \
-        -keyout /tmp/prometheus-tls.key \
-        -out /tmp/prometheus-tls.crt \
-        -days 365 \
-        -subj "/CN=prometheus" \
-        -addext "subjectAltName=DNS:kube-prometheus-stack-prometheus.${MONITORING_NAMESPACE}.svc.cluster.local,DNS:kube-prometheus-stack-prometheus.${MONITORING_NAMESPACE}.svc,DNS:prometheus,DNS:localhost" \
-        &> /dev/null
-    
-    # Create Kubernetes secret with TLS certificate
-    log_info "Creating Kubernetes secret for Prometheus TLS"
-    kubectl create secret tls $PROMETHEUS_SECRET_NAME \
-        --cert=/tmp/prometheus-tls.crt \
-        --key=/tmp/prometheus-tls.key \
-        -n $MONITORING_NAMESPACE \
-        --dry-run=client -o yaml | kubectl apply -f - &> /dev/null
-    
-    # Clean up temp files
-    rm -f /tmp/prometheus-tls.{key,crt}
-    
-    # Install kube-prometheus-stack with TLS enabled
-    log_info "Installing kube-prometheus-stack with TLS configuration"
-    helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-        -n $MONITORING_NAMESPACE \
-        --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
-        --set prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false \
-        --set prometheus.service.type=ClusterIP \
-        --set prometheus.service.port=$PROMETHEUS_PORT \
-        --set prometheus.prometheusSpec.web.tlsConfig.cert.secret.name=$PROMETHEUS_SECRET_NAME \
-        --set prometheus.prometheusSpec.web.tlsConfig.cert.secret.key=tls.crt \
-        --set prometheus.prometheusSpec.web.tlsConfig.keySecret.name=$PROMETHEUS_SECRET_NAME \
-        --set prometheus.prometheusSpec.web.tlsConfig.keySecret.key=tls.key \
-        --timeout=5m \
-        --wait
-    
-    log_success "kube-prometheus-stack deployed with TLS"
-    log_info "Prometheus URL: $PROMETHEUS_URL"
-}
-
 deploy_wva_controller() {
     log_info "Deploying Workload-Variant-Autoscaler..."
     log_info "Using image: $WVA_IMAGE_REPO:$WVA_IMAGE_TAG"
-    
-    # Extract Prometheus CA certificate
-    log_info "Extracting Prometheus TLS certificate"
-    kubectl get secret $PROMETHEUS_SECRET_NAME -n $MONITORING_NAMESPACE -o jsonpath='{.data.tls\.crt}' | base64 -d > $PROM_CA_CERT_PATH
 
     # Deploy WVA using Helm chart
     log_info "Installing Workload-Variant-Autoscaler via Helm chart"
@@ -658,7 +626,7 @@ deploy_prometheus_adapter() {
     log_success "prometheus-ca ConfigMap created/updated"
     
     # Create prometheus-adapter values for Kubernetes
-    cat > /tmp/prometheus-adapter-values-k8s.yaml <<EOF
+    cat > /tmp/prometheus-adapter-values.yaml <<EOF
 prometheus:
   url: $PROMETHEUS_BASE_URL
   port: $PROMETHEUS_PORT
@@ -806,6 +774,7 @@ print_summary() {
     echo " Deployment Summary"
     echo "=========================================="
     echo ""
+    echo "Deployment Environment: $ENVIRONMENT"
     echo "WVA Namespace:          $WVA_NS"
     echo "LLMD Namespace:         $LLMD_NS"
     echo "Monitoring Namespace:   $MONITORING_NAMESPACE"
@@ -965,25 +934,12 @@ undeploy_llm_d_infrastructure() {
 undeploy_wva_controller() {
     log_info "Uninstalling Workload-Variant-Autoscaler..."
     
-    cd "$WVA_PROJECT/charts"
     helm uninstall workload-variant-autoscaler -n $WVA_NS 2>/dev/null || \
         log_warning "Workload-Variant-Autoscaler not found or already uninstalled"
-    cd "$WVA_PROJECT"
     
     rm -f "$PROM_CA_CERT_PATH"
     
     log_success "WVA uninstalled"
-}
-
-undeploy_prometheus_stack() {
-    log_info "Uninstalling kube-prometheus-stack..."
-    
-    helm uninstall kube-prometheus-stack -n $MONITORING_NAMESPACE 2>/dev/null || \
-        log_warning "Prometheus stack not found or already uninstalled"
-
-    kubectl delete secret $PROMETHEUS_SECRET_NAME -n $MONITORING_NAMESPACE --ignore-not-found
-
-    log_success "Prometheus stack uninstalled"
 }
 
 delete_namespaces() {
@@ -1004,6 +960,11 @@ cleanup() {
     log_info "Starting undeployment process..."
     log_info "======================================"
     echo ""
+
+    # Undeploy environment-specific components (Prometheus, etc.)
+    if [ "$DEPLOY_PROMETHEUS" = "true" ]; then
+        undeploy_prometheus_stack
+    fi
     
     # Undeploy in reverse order
     if [ "$DEPLOY_PROMETHEUS_ADAPTER" = "true" ]; then
@@ -1020,10 +981,6 @@ cleanup() {
     
     if [ "$DEPLOY_WVA" = "true" ]; then
         undeploy_wva_controller
-    fi
-    
-    if [ "$DEPLOY_PROMETHEUS" = "true" ]; then
-        undeploy_prometheus_stack
     fi
     
     # Delete namespaces if requested
@@ -1072,15 +1029,23 @@ main() {
 
     # Undeploy mode
     if [ "$UNDEPLOY" = "true" ]; then
-        log_info "Starting Workload-Variant-Autoscaler Kubernetes Undeployment"
+        log_info "Starting Workload-Variant-Autoscaler Undeployment on $ENVIRONMENT"
         log_info "============================================================="
         echo ""
+        
+        # Source environment-specific script to make functions available
+        if [ -f "$SCRIPT_DIR/$ENVIRONMENT.sh" ]; then
+            source "$SCRIPT_DIR/$ENVIRONMENT.sh"
+        else
+            log_error "Environment script not found: $SCRIPT_DIR/$ENVIRONMENT.sh"
+        fi
+        
         cleanup
         exit 0
     fi
 
     # Normal deployment flow
-    log_info "Starting Workload-Variant-Autoscaler Kubernetes Deployment"
+    log_info "Starting Workload-Variant-Autoscaler Deployment on $ENVIRONMENT"
     log_info "==========================================================="
     echo ""
     
@@ -1088,29 +1053,54 @@ main() {
     if [ "$SKIP_CHECKS" != "true" ]; then
         check_prerequisites
     fi
-    
-    # Detect GPU type
-    detect_gpu_type
-    
+
+    # Source environment-specific script to make functions available
+    log_info "Loading environment-specific functions for $ENVIRONMENT..."
+    if [ -f "$SCRIPT_DIR/$ENVIRONMENT/$ENVIRONMENT.sh" ]; then
+        source "$SCRIPT_DIR/$ENVIRONMENT/$ENVIRONMENT.sh"
+        
+        # Run environment-specific prerequisite checks if function exists
+        if declare -f check_prerequisites > /dev/null; then
+            if [ "$SKIP_CHECKS" != "true" ]; then
+                check_prerequisites
+            fi
+        fi
+    else
+        log_error "Environment script not found: $SCRIPT_DIR/$ENVIRONMENT/$ENVIRONMENT.sh"
+    fi
+
+    # Detect GPU type for non-emulated environments
+    if containsElement "$ENVIRONMENT" "${NON_EMULATED_ENV_LIST[@]}"; then
+        detect_gpu_type
+    else
+        log_info "Skipping GPU type detection for emulated environment (ENVIRONMENT=$ENVIRONMENT)"
+    fi
+
     # Display configuration
     log_info "Using configuration:"
+    echo "    Deployed on:          $ENVIRONMENT"
     echo "    WVA Image:            $WVA_IMAGE_REPO:$WVA_IMAGE_TAG"
     echo "    WVA Namespace:        $WVA_NS"
-    echo "    LLMD Namespace:       $LLMD_NS"
+    echo "    llm-d Namespace:      $LLMD_NS"
     echo "    Monitoring Namespace: $MONITORING_NAMESPACE"
     echo "    Model:                $MODEL_ID"
     echo "    Accelerator:          $ACCELERATOR_TYPE"
     echo "    Emulator Mode:        $DEPLOY_VLLM_EMULATOR"
     echo ""
-    
+
     # Create namespaces
     create_namespaces
     
-    # Deploy Prometheus Stack
+    # Deploy Prometheus Stack (environment-specific)
     if [ "$DEPLOY_PROMETHEUS" = "true" ]; then
         deploy_prometheus_stack
     else
         log_info "Skipping Prometheus deployment (DEPLOY_PROMETHEUS=false)"
+    fi
+    
+    # Deploy WVA prerequisites (environment-specific)
+    if [ "$DEPLOY_WVA" = "true" ]; then
+        deploy_wva_prerequisites
     fi
     
     # Deploy WVA
@@ -1154,8 +1144,8 @@ main() {
     
     # Print summary
     print_summary
-    
-    log_success "Deployment complete!"
+
+    log_success "Deployment on $ENVIRONMENT complete!"
 }
 
 # Run main function
