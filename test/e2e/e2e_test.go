@@ -835,9 +835,9 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to get Deployment")
 
 			if deployment.Status.Replicas == 0 {
-				fmt.Fprintf(GinkgoWriter, "✓ HPA successfully scaled deployment to 0 replicas\n")
+				_, _ = fmt.Fprintf(GinkgoWriter, "✓ HPA successfully scaled deployment to 0 replicas\n")
 			} else {
-				fmt.Fprintf(GinkgoWriter, "Current replicas: %d (expected 0)\n", deployment.Status.Replicas)
+				_, _ = fmt.Fprintf(GinkgoWriter, "Current replicas: %d (expected 0)\n", deployment.Status.Replicas)
 			}
 
 			g.Expect(deployment.Status.Replicas).To(Equal(int32(0)),
@@ -855,7 +855,7 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 			g.Expect(podList.Items).To(BeEmpty(), "No pods should be running after scale-to-zero")
 		}, 2*time.Minute, 10*time.Second).Should(Succeed())
 
-		fmt.Fprintf(GinkgoWriter, "✓ Scale-to-zero flow completed successfully\n")
+		_, _ = fmt.Fprintf(GinkgoWriter, "✓ Scale-to-zero flow completed successfully\n")
 	})
 
 	AfterAll(func() {
@@ -1566,9 +1566,9 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to get Deployment")
 
 			if deployment.Status.Replicas == 0 {
-				fmt.Fprintf(GinkgoWriter, "✓ HPA successfully scaled deployment to 0 replicas\n")
+				_, _ = fmt.Fprintf(GinkgoWriter, "✓ HPA successfully scaled deployment to 0 replicas\n")
 			} else {
-				fmt.Fprintf(GinkgoWriter, "Current replicas: %d (expected 0)\n", deployment.Status.Replicas)
+				_, _ = fmt.Fprintf(GinkgoWriter, "Current replicas: %d (expected 0)\n", deployment.Status.Replicas)
 			}
 
 			g.Expect(deployment.Status.Replicas).To(Equal(int32(0)),
@@ -1586,7 +1586,7 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 			g.Expect(podList.Items).To(BeEmpty(), "No pods should be running after scale-to-zero")
 		}, 2*time.Minute, 10*time.Second).Should(Succeed())
 
-		fmt.Fprintf(GinkgoWriter, "✓ Scale-to-zero flow completed successfully\n")
+		_, _ = fmt.Fprintf(GinkgoWriter, "✓ Scale-to-zero flow completed successfully\n")
 	})
 
 	AfterAll(func() {
