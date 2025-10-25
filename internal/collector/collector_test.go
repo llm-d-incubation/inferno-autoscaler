@@ -267,8 +267,8 @@ var _ = Describe("Collector", func() {
 		It("should collect allocation and metrics successfully", func() {
 			// Setup mock responses for aggregate metrics
 			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
-			tokenQuery := utils.CreateTokenQuery(modelID, testNamespace)
-			waitQuery := utils.CreateWaitQuery(modelID, testNamespace)
+			tokenQuery := utils.CreateDecToksQuery(modelID, testNamespace)
+			ttftQuery := utils.CreateTTFTQuery(modelID, testNamespace)
 			itlQuery := utils.CreateITLQuery(modelID, testNamespace)
 
 			mockProm.QueryResults[arrivalQuery] = model.Vector{
@@ -277,7 +277,7 @@ var _ = Describe("Collector", func() {
 			mockProm.QueryResults[tokenQuery] = model.Vector{
 				&model.Sample{Value: model.SampleValue(150.0)}, // 150 tokens per request
 			}
-			mockProm.QueryResults[waitQuery] = model.Vector{
+			mockProm.QueryResults[ttftQuery] = model.Vector{
 				&model.Sample{Value: model.SampleValue(0.5)}, // 0.5 seconds
 			}
 			mockProm.QueryResults[itlQuery] = model.Vector{
@@ -322,14 +322,14 @@ var _ = Describe("Collector", func() {
 		It("should handle empty metric results gracefully", func() {
 			// Setup empty responses (no data points)
 			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
-			tokenQuery := utils.CreateTokenQuery(modelID, testNamespace)
-			waitQuery := utils.CreateWaitQuery(modelID, testNamespace)
+			tokenQuery := utils.CreateDecToksQuery(modelID, testNamespace)
+			ttftQuery := utils.CreateTTFTQuery(modelID, testNamespace)
 			itlQuery := utils.CreateITLQuery(modelID, testNamespace)
 
 			// Empty vectors (no data)
 			mockProm.QueryResults[arrivalQuery] = model.Vector{}
 			mockProm.QueryResults[tokenQuery] = model.Vector{}
-			mockProm.QueryResults[waitQuery] = model.Vector{}
+			mockProm.QueryResults[ttftQuery] = model.Vector{}
 			mockProm.QueryResults[itlQuery] = model.Vector{}
 
 			// CollectAggregateMetrics should handle empty data gracefully

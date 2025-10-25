@@ -236,14 +236,12 @@ func CollectAggregateMetrics(ctx context.Context,
 	}
 	FixValue(&avgOutputTokens)
 
-	// TODO: change waiting time to TTFT
-
-	// Query 3: Average waiting time
+	// Query 3: Time To First Token (TTFT)
 	ttftQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
-		constants.VLLMRequestQueueTimeSecondsSum,
+		constants.VLLMTimeToFirstTokenSecondsSum,
 		constants.LabelModelName, modelName,
 		constants.LabelNamespace, namespace,
-		constants.VLLMRequestQueueTimeSecondsCount,
+		constants.VLLMTimeToFirstTokenSecondsCount,
 		constants.LabelModelName, modelName,
 		constants.LabelNamespace, namespace)
 	ttftAverageTime := 0.0
@@ -383,12 +381,14 @@ func AddMetricsToOptStatus(ctx context.Context,
 	}
 	arrivalVal *= 60 // convert from req/sec to req/min
 
-	avgInputTokens, err := queryAndExtractMetric(ctx, promAPI, avgPromptToksQuery, "AvgInputTokens")
+	// Note: avgInputTokens and avgOutputTokens are not used in single-variant architecture
+	// where metrics are passed separately via CollectAggregateMetrics
+	_, err = queryAndExtractMetric(ctx, promAPI, avgPromptToksQuery, "AvgInputTokens")
 	if err != nil {
 		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
 	}
 
-	avgOutputTokens, err := queryAndExtractMetric(ctx, promAPI, avgDecToksQuery, "AvgOutputTokens")
+	_, err = queryAndExtractMetric(ctx, promAPI, avgDecToksQuery, "AvgOutputTokens")
 	if err != nil {
 		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
 	}
