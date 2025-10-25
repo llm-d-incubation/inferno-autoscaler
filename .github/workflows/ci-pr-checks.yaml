@@ -54,6 +54,8 @@ jobs:
       - name: Run make test-e2e
         shell: bash
         run: |
+          mkdir -p $HOME/.kube
+          export KUBECONFIG=$HOME/.kube/config
           make test-e2e
           
       - name: Run make build

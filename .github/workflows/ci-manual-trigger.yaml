@@ -96,6 +96,8 @@ jobs:
         timeout-minutes: 35
         run: |
           echo "Running E2E tests..."
+          mkdir -p $HOME/.kube
+          export KUBECONFIG=$HOME/.kube/config
           make test-e2e
 
       - name: E2E tests skipped
