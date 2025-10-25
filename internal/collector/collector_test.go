@@ -267,15 +267,19 @@ var _ = Describe("Collector", func() {
 		It("should collect allocation and metrics successfully", func() {
 			// Setup mock responses for aggregate metrics
 			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
+			promptTokensQuery := utils.CreatePromptToksQuery(modelID, testNamespace)
 			tokenQuery := utils.CreateDecToksQuery(modelID, testNamespace)
 			ttftQuery := utils.CreateTTFTQuery(modelID, testNamespace)
 			itlQuery := utils.CreateITLQuery(modelID, testNamespace)
 
 			mockProm.QueryResults[arrivalQuery] = model.Vector{
-				&model.Sample{Value: model.SampleValue(10.5)}, // 10.5 requests/min
+				&model.Sample{Value: model.SampleValue(0.175)}, // 0.175 requests/sec (will be * 60 = 10.5 req/min)
+			}
+			mockProm.QueryResults[promptTokensQuery] = model.Vector{
+				&model.Sample{Value: model.SampleValue(100.0)}, // 100 input tokens per request
 			}
 			mockProm.QueryResults[tokenQuery] = model.Vector{
-				&model.Sample{Value: model.SampleValue(150.0)}, // 150 tokens per request
+				&model.Sample{Value: model.SampleValue(150.0)}, // 150 output tokens per request
 			}
 			mockProm.QueryResults[ttftQuery] = model.Vector{
 				&model.Sample{Value: model.SampleValue(0.5)}, // 0.5 seconds
@@ -322,12 +326,14 @@ var _ = Describe("Collector", func() {
 		It("should handle empty metric results gracefully", func() {
 			// Setup empty responses (no data points)
 			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
+			promptTokensQuery := utils.CreatePromptToksQuery(modelID, testNamespace)
 			tokenQuery := utils.CreateDecToksQuery(modelID, testNamespace)
 			ttftQuery := utils.CreateTTFTQuery(modelID, testNamespace)
 			itlQuery := utils.CreateITLQuery(modelID, testNamespace)
 
 			// Empty vectors (no data)
 			mockProm.QueryResults[arrivalQuery] = model.Vector{}
+			mockProm.QueryResults[promptTokensQuery] = model.Vector{}
 			mockProm.QueryResults[tokenQuery] = model.Vector{}
 			mockProm.QueryResults[ttftQuery] = model.Vector{}
 			mockProm.QueryResults[itlQuery] = model.Vector{}
