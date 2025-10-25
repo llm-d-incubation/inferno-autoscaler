@@ -48,6 +48,34 @@ type MetricKV struct {
 	Value  float64
 }
 
+// queryAndExtractMetric performs a Prometheus query and extracts the float value,
+func queryAndExtractMetric(ctx context.Context, promAPI promv1.API, query string, metricName string) (float64, error) {
+	val, warn, err := promAPI.Query(ctx, query, time.Now())
+	if err != nil {
+		return 0.0, fmt.Errorf("failed to query Prometheus for %s: %w", metricName, err)
+	}
+
+	if warn != nil {
+		logger.Log.Warn("Prometheus warnings", "metric", metricName, "warnings", warn)
+	}
+
+	// Check if the result type is a Vector
+	if val.Type() != model.ValVector {
+		logger.Log.Debug("Prometheus query returned non-vector type", "metric", metricName, "type", val.Type().String())
+		return 0.0, nil
+	}
+
+	vec := val.(model.Vector)
+	resultVal := 0.0
+	if len(vec) > 0 {
+		resultVal = float64(vec[0].Value)
+		// Handle NaN or Inf values
+		FixValue(&resultVal)
+	}
+
+	return resultVal, nil
+}
+
 // MetricsValidationResult contains the result of metrics availability check
 type MetricsValidationResult struct {
 	Available bool
@@ -303,31 +331,24 @@ func AddMetricsToOptStatus(ctx context.Context,
 	deployNamespace := deployment.Namespace
 	modelName := opt.Spec.ModelID
 
-	// Setup Prometheus client
-	// TODO: agree on using standard vllm metrics
-	// Query 1: Arrival rate (requests per minute)
-	arrivalQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m])) * 60`,
+	// --- 1. Define Queries ---
+
+	// Metric 1: Arrival rate (requests per minute)
+	arrivalQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
 		constants.VLLMRequestSuccessTotal,
 		constants.LabelModelName, modelName,
 		constants.LabelNamespace, deployNamespace)
-	arrivalVal := 0.0
-	if val, warn, err := promAPI.Query(ctx, arrivalQuery, time.Now()); err == nil && val.Type() == model.ValVector {
-		vec := val.(model.Vector)
-		if len(vec) > 0 {
-			arrivalVal = float64(vec[0].Value)
-		}
-		if warn != nil {
-			logger.Log.Warn("Prometheus warnings - ", "warnings: ", warn)
-		}
-	} else {
-		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
-	}
-	FixValue(&arrivalVal)
 
-	// TODO: add query to get prompt tokens (avgInputTokens not yet collected - will be needed later)
+	// Metric 2: Average prompt length (Input Tokens)
+	avgPromptToksQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
+		constants.VLLMRequestPromptTokensSum,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, deployNamespace,
+		constants.VLLMRequestPromptTokensCount,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, deployNamespace)
 
-	// Query 2: Average token length
-	// TODO: split composite query to individual queries
+	// Metric 3: Average decode length (Output Tokens)
 	avgDecToksQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
 		constants.VLLMRequestGenerationTokensSum,
 		constants.LabelModelName, modelName,
@@ -335,39 +356,17 @@ func AddMetricsToOptStatus(ctx context.Context,
 		constants.VLLMRequestGenerationTokensCount,
 		constants.LabelModelName, modelName,
 		constants.LabelNamespace, deployNamespace)
-	avgOutputTokens := 0.0
-	if val, _, err := promAPI.Query(ctx, avgDecToksQuery, time.Now()); err == nil && val.Type() == model.ValVector {
-		vec := val.(model.Vector)
-		if len(vec) > 0 {
-			avgOutputTokens = float64(vec[0].Value)
-		}
-	} else {
-		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
-	}
-	FixValue(&avgOutputTokens)
 
-	// TODO: change waiting time to TTFT
-
-	// Query 3: Average waiting time
+	// Metric 4: Average TTFT (Time to First Token) ms
 	ttftQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
-		constants.VLLMRequestQueueTimeSecondsSum,
+		constants.VLLMTimeToFirstTokenSecondsSum,
 		constants.LabelModelName, modelName,
 		constants.LabelNamespace, deployNamespace,
-		constants.VLLMRequestQueueTimeSecondsCount,
+		constants.VLLMTimeToFirstTokenSecondsCount,
 		constants.LabelModelName, modelName,
 		constants.LabelNamespace, deployNamespace)
-	ttftAverageTime := 0.0
-	if val, _, err := promAPI.Query(ctx, ttftQuery, time.Now()); err == nil && val.Type() == model.ValVector {
-		vec := val.(model.Vector)
-		if len(vec) > 0 {
-			ttftAverageTime = float64(vec[0].Value) * 1000 //msec
-		}
-	} else {
-		logger.Log.Warn("failed to get avg wait time, using 0: ", "model: ", modelName)
-	}
-	FixValue(&ttftAverageTime)
 
-	// Query 4: Average ITL
+	// Metric 5: Average ITL (Inter-Token Latency) ms
 	itlQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
 		constants.VLLMTimePerOutputTokenSecondsSum,
 		constants.LabelModelName, modelName,
@@ -375,16 +374,38 @@ func AddMetricsToOptStatus(ctx context.Context,
 		constants.VLLMTimePerOutputTokenSecondsCount,
 		constants.LabelModelName, modelName,
 		constants.LabelNamespace, deployNamespace)
-	itlAverage := 0.0
-	if val, _, err := promAPI.Query(ctx, itlQuery, time.Now()); err == nil && val.Type() == model.ValVector {
-		vec := val.(model.Vector)
-		if len(vec) > 0 {
-			itlAverage = float64(vec[0].Value) * 1000 //msec
-		}
-	} else {
-		logger.Log.Warn("failed to get avg itl time, using 0: ", "model: ", modelName)
+
+	// --- 2. Execute Queries ---
+
+	arrivalVal, err := queryAndExtractMetric(ctx, promAPI, arrivalQuery, "ArrivalRate")
+	if err != nil {
+		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
 	}
-	FixValue(&itlAverage)
+	arrivalVal *= 60 // convert from req/sec to req/min
+
+	avgInputTokens, err := queryAndExtractMetric(ctx, promAPI, avgPromptToksQuery, "AvgInputTokens")
+	if err != nil {
+		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
+	}
+
+	avgOutputTokens, err := queryAndExtractMetric(ctx, promAPI, avgDecToksQuery, "AvgOutputTokens")
+	if err != nil {
+		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
+	}
+
+	ttftAverageTime, err := queryAndExtractMetric(ctx, promAPI, ttftQuery, "TTFTAverageTime")
+	if err != nil {
+		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
+	}
+	ttftAverageTime *= 1000 // convert to msec
+
+	itlAverage, err := queryAndExtractMetric(ctx, promAPI, itlQuery, "ITLAverage")
+	if err != nil {
+		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
+	}
+	itlAverage *= 1000 // convert to msec
+
+	// --- 3. Collect K8s and Static Info ---
 
 	// Query 5: Total requests over retention period (stored in internal cache only)
 	// Convert retention period to Prometheus duration format (e.g., "10m", "1h", "30s")

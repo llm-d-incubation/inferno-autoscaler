@@ -579,8 +579,8 @@ func VerifyPortForwardReadiness(ctx context.Context, localPort int, request stri
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
 	}
-	err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 10*time.Second, true, func(ctx context.Context) (bool, error) {
-		client = &http.Client{Transport: tr, Timeout: 2 * time.Second}
+	err := wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+		client = &http.Client{Transport: tr, Timeout: 5 * time.Second}
 		resp, err := client.Get(request)
 		if err != nil {
 			return false, nil // Retrying
@@ -589,7 +589,13 @@ func VerifyPortForwardReadiness(ctx context.Context, localPort int, request stri
 			err := resp.Body.Close()
 			gom.Expect(err).NotTo(gom.HaveOccurred(), "Should be able to close response body")
 		}()
-		return resp.StatusCode < 500, nil // Accept any non-server error status
+		// Retry on 4xx and 5xx errors
+		if resp.StatusCode >= 500 {
+			fmt.Printf("Debug: Error - Returned status code: %d, retrying...\n", resp.StatusCode)
+			return false, nil // Retry on client and server errors
+		}
+
+		return true, nil // Success
 	})
 	return err
 }
@@ -1108,4 +1114,31 @@ func GetInfernoReplicaMetrics(variantName, namespace, acceleratorType, variantID
 	}
 
 	return currentReplicas, desiredReplicas, desiredRatio, nil
+}
+
+// setupEnvironment sets up necessary environment variables for the E2E tests
+func SetupTestEnvironment(image string, numNodes, gpusPerNode int, gpuTypes string) {
+	// Set default environment variables for Kind cluster creation
+	gom.Expect(os.Setenv("IMG", image)).To(gom.Succeed())
+	gom.Expect(os.Setenv("CLUSTER_NAME", clusterName)).To(gom.Succeed())
+	gom.Expect(os.Setenv("CLUSTER_NODES", fmt.Sprintf("%d", numNodes))).To(gom.Succeed())
+	gom.Expect(os.Setenv("CLUSTER_GPUS", fmt.Sprintf("%d", gpusPerNode))).To(gom.Succeed())
+	gom.Expect(os.Setenv("CLUSTER_TYPE", gpuTypes)).To(gom.Succeed())
+	gom.Expect(os.Setenv("WVA_IMAGE_PULL_POLICY", "IfNotPresent")).To(gom.Succeed()) // The image is built locally by the tests
+	gom.Expect(os.Setenv("CREATE_CLUSTER", "true")).To(gom.Succeed())                // Always create a new cluster for E2E tests
+
+	// Enable components needed for the tests
+	gom.Expect(os.Setenv("DEPLOY_LLM_D", "true")).To(gom.Succeed())
+	gom.Expect(os.Setenv("DEPLOY_WVA", "true")).To(gom.Succeed())
+	gom.Expect(os.Setenv("DEPLOY_PROMETHEUS", "true")).To(gom.Succeed())
+	gom.Expect(os.Setenv("APPLY_VLLM_EMULATOR_FIXES", "true")).To(gom.Succeed())
+
+	// Disable components not needed to be deployed by the script
+	// Tests create their own vLLM deployments, but script still patches InferencePool
+	gom.Expect(os.Setenv("DEPLOY_VLLM_EMULATOR", "false")).To(gom.Succeed())      // we deploy our own vLLM deployments in the tests
+	gom.Expect(os.Setenv("DEPLOY_VA", "false")).To(gom.Succeed())                 // we create our own VariantAutoscaling resources in the tests
+	gom.Expect(os.Setenv("DEPLOY_HPA", "false")).To(gom.Succeed())                // HPA is not needed for these tests
+	gom.Expect(os.Setenv("DEPLOY_PROMETHEUS_ADAPTER", "false")).To(gom.Succeed()) // Prometheus Adapter is not needed for these tests
+	gom.Expect(os.Setenv("VLLM_SVC_ENABLED", "false")).To(gom.Succeed())          // we deploy our own Service in the tests
+	gom.Expect(os.Setenv("DEPLOY_INFERENCE_MODEL", "false")).To(gom.Succeed())    // we create our own InferenceModel resources in the tests
 }
