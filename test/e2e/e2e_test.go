@@ -145,6 +145,7 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - singl
 		deployName     string
 		serviceName    string
 		serviceMonName string
+		inferenceModel *unstructured.Unstructured
 		appLabel       string
 		loadGenCmd     *exec.Cmd
 		portForwardCmd *exec.Cmd
@@ -194,6 +195,11 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - singl
 		variantAutoscaling := utils.CreateVariantAutoscalingResource(namespace, deployName, modelName, a100Acc)
 		err = crClient.Create(ctx, variantAutoscaling)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create VariantAutoscaling for: %s", deployName))
+
+		By("adding an InferenceModel for the deployment")
+		inferenceModel = utils.CreateInferenceModel(deployName, namespace, modelName)
+		err = crClient.Create(ctx, inferenceModel)
+		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create InferenceModel: %s", modelName))
 
 		logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 	})
@@ -304,7 +310,9 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - singl
 		By("verifying VariantAutoscaling spec")
 		Expect(variantAutoscaling.Spec.ModelID).To(Equal("default/default"))
 		Expect(variantAutoscaling.Spec.SLOClassRef.Name).To(Equal("premium"))
-		Expect(variantAutoscaling.Spec.ModelProfile.Accelerators).To(HaveLen(3))
+		// Single-variant architecture: Each VariantAutoscaling represents one accelerator type
+		Expect(variantAutoscaling.Spec.Accelerator).NotTo(BeEmpty())
+		Expect(variantAutoscaling.Spec.VariantID).NotTo(BeEmpty())
 	})
 
 	It("should have VariantAutoscaling with correct ownerReference to Deployment", func() {
@@ -409,7 +417,8 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - singl
 				fmt.Sprintf("High load should trigger scale-up recommendation for VA: %s - actual replicas: %d", va.Name, va.Status.DesiredOptimizedAlloc.NumReplicas))
 
 			// Verify Prometheus replica metrics
-			currentReplicasProm, desiredReplicasProm, _, err = utils.GetInfernoReplicaMetrics(va.Name, namespace, va.Status.CurrentAlloc.Accelerator)
+			// In single-variant architecture, accelerator is in spec
+			currentReplicasProm, desiredReplicasProm, _, err = utils.GetInfernoReplicaMetrics(va.Name, namespace, va.Spec.Accelerator, va.Spec.VariantID)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va.Name, err))
 
 			g.Expect(desiredReplicasProm).To(BeNumerically(">", 1),
@@ -466,7 +475,7 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - singl
 		}()
 
 		By("getting the current number of replicas")
-		var initialDesiredReplicas int
+		var initialDesiredReplicas int32
 		va := &v1alpha1.VariantAutoscaling{}
 		err = crClient.Get(ctx, client.ObjectKey{
 			Namespace: namespace,
@@ -487,10 +496,11 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - singl
 
 			// Verify that the desired allocation remains stable with constant load
 			g.Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(Equal(initialDesiredReplicas),
-				fmt.Sprintf("DesiredOptimizedAlloc for VA %s should stay at %d replicas with constant load equal to %s", deployName, initialDesiredReplicas, va.Status.CurrentAlloc.Load.ArrivalRate))
+				fmt.Sprintf("DesiredOptimizedAlloc for VA %s should stay at %d replicas with constant load", deployName, initialDesiredReplicas))
 
 			// Verify Prometheus replica metrics
-			_, desiredReplicasProm, _, err = utils.GetInfernoReplicaMetrics(va.Name, namespace, va.Status.CurrentAlloc.Accelerator)
+			// In single-variant architecture, accelerator is in spec
+			_, desiredReplicasProm, _, err = utils.GetInfernoReplicaMetrics(va.Name, namespace, va.Spec.Accelerator, va.Spec.VariantID)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va.Name, err))
 
 			// Verify that the desired number of replicas has same value as Prometheus result
@@ -536,7 +546,8 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - singl
 				fmt.Sprintf("No load should trigger scale-down to %d recommendation for: %s", MinimumReplicas, va.Name))
 
 			// Verify Prometheus replica metrics
-			_, desiredReplicasProm, _, err = utils.GetInfernoReplicaMetrics(va.Name, namespace, va.Status.CurrentAlloc.Accelerator)
+			// In single-variant architecture, accelerator is in spec
+			_, desiredReplicasProm, _, err = utils.GetInfernoReplicaMetrics(va.Name, namespace, va.Spec.Accelerator, va.Spec.VariantID)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va.Name, err))
 
 			// Verify that the desired number of replicas has same value as Prometheus result
@@ -563,7 +574,7 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - singl
 			g.Expect(service.Spec.Ports).To(ContainElement(HaveField("Port", int32(9090))), "Prometheus should be listening on port 9090")
 
 			// Verify TLS secret exists
-			secret, err := k8sClient.CoreV1().Secrets(controllerMonitoringNamespace).Get(ctx, "prometheus-tls", metav1.GetOptions{})
+			secret, err := k8sClient.CoreV1().Secrets(controllerMonitoringNamespace).Get(ctx, "prometheus-web-tls", metav1.GetOptions{})
 			g.Expect(err).NotTo(HaveOccurred(), "TLS secret should exist")
 			g.Expect(secret.Data).To(HaveKey("tls.crt"), "TLS secret should contain certificate")
 			g.Expect(secret.Data).To(HaveKey("tls.key"), "TLS secret should contain private key")
@@ -676,6 +687,11 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - singl
 		err = client.IgnoreNotFound(err)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete Deployment: %s", deployName))
 
+		By("deleting InferenceModel")
+		err = crClient.Delete(ctx, inferenceModel)
+		err = client.IgnoreNotFound(err)
+		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete InferenceModel: %s", modelName))
+
 		By("waiting for all pods to be deleted")
 		Eventually(func(g Gomega) {
 			podList, err := k8sClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: "app=" + appLabel})
@@ -684,13 +700,6 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - singl
 			}
 			g.Expect(podList.Items).To(BeEmpty(), fmt.Sprintf("All Pods labelled: %s should be deleted", appLabel))
 		}, 1*time.Minute, 1*time.Second).Should(Succeed())
-
-		By("cleaning up Prometheus operator resources")
-		cmd := exec.Command("kubectl", "delete", "-f", "deploy/examples/vllm-emulator/prometheus-operator/prometheus-deploy-all-in-one.yaml", "--ignore-not-found=true")
-		output, err := utils.Run(cmd)
-		if err != nil {
-			fmt.Printf("Prometheus cleanup output: %s\n", output)
-		}
 	})
 })
 
@@ -725,7 +734,7 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 		configMapName = "scale-to-zero-config"
 		vaName = "scale-to-zero-va"
 		appLabel = "scale-to-zero-test"
-		modelID = "test/scale-to-zero-model"
+		modelID = "test-scale-to-zero-model"
 		accelerator = a100Acc
 		initialReplicas = 1
 		retentionDuration = 2 * time.Minute // Retention period for scale-to-zero
@@ -800,7 +809,7 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 
 	It("should scale deployment to zero after idle period with no traffic", func() {
 		By("waiting for retention period to pass with zero traffic")
-		fmt.Fprintf(GinkgoWriter, "Waiting %v for retention period (no traffic simulated)...\n", retentionDuration)
+		_, _ = fmt.Fprintf(GinkgoWriter, "Waiting %v for retention period (no traffic simulated)...\n", retentionDuration)
 		time.Sleep(retentionDuration + 30*time.Second) // Add buffer for controller reconciliation
 
 		By("verifying controller sets desiredReplicas to 0 in VariantAutoscaling status")
@@ -811,9 +820,9 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 
 			// Check if status has current allocation with 0 desired replicas
 			if va.Status.CurrentAlloc.NumReplicas == 0 {
-				fmt.Fprintf(GinkgoWriter, "✓ Controller set desiredReplicas to 0 in VariantAutoscaling status\n")
+				_, _ = fmt.Fprintf(GinkgoWriter, "✓ Controller set desiredReplicas to 0 in VariantAutoscaling status\n")
 			} else {
-				fmt.Fprintf(GinkgoWriter, "Current desiredReplicas: %d (expected 0)\n", va.Status.CurrentAlloc.NumReplicas)
+				_, _ = fmt.Fprintf(GinkgoWriter, "Current desiredReplicas: %d (expected 0)\n", va.Status.CurrentAlloc.NumReplicas)
 			}
 
 			g.Expect(va.Status.CurrentAlloc.NumReplicas).To(Equal(int32(0)),
@@ -826,9 +835,9 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to get Deployment")
 
 			if deployment.Status.Replicas == 0 {
-				fmt.Fprintf(GinkgoWriter, "✓ HPA successfully scaled deployment to 0 replicas\n")
+				_, _ = fmt.Fprintf(GinkgoWriter, "✓ HPA successfully scaled deployment to 0 replicas\n")
 			} else {
-				fmt.Fprintf(GinkgoWriter, "Current replicas: %d (expected 0)\n", deployment.Status.Replicas)
+				_, _ = fmt.Fprintf(GinkgoWriter, "Current replicas: %d (expected 0)\n", deployment.Status.Replicas)
 			}
 
 			g.Expect(deployment.Status.Replicas).To(Equal(int32(0)),
@@ -846,7 +855,7 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 			g.Expect(podList.Items).To(BeEmpty(), "No pods should be running after scale-to-zero")
 		}, 2*time.Minute, 10*time.Second).Should(Succeed())
 
-		fmt.Fprintf(GinkgoWriter, "✓ Scale-to-zero flow completed successfully\n")
+		_, _ = fmt.Fprintf(GinkgoWriter, "✓ Scale-to-zero flow completed successfully\n")
 	})
 
 	AfterAll(func() {
@@ -913,7 +922,10 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 		secondServiceMonitorName string
 		firstModelName           string
 		secondModelName          string
-		ctx                      context.Context
+		firstInferenceModel      *unstructured.Unstructured
+		secondInferenceModel     *unstructured.Unstructured
+
+		ctx context.Context
 	)
 
 	BeforeAll(func() {
@@ -959,6 +971,11 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 		err = crClient.Create(ctx, variantAutoscaling)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create first VariantAutoscaling for: %s", firstDeployName))
 
+		By("adding an InferenceModel for the first deployment")
+		firstInferenceModel = utils.CreateInferenceModel(firstDeployName, namespace, firstModelName)
+		err = crClient.Create(ctx, firstInferenceModel)
+		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create first InferenceModel: %s", firstModelName))
+
 		By("creating resources for the second deployment")
 		secondDeployment := utils.CreateVllmeDeployment(namespace, secondDeployName, secondModelName, secondAppLabel)
 		_, err = k8sClient.AppsV1().Deployments(namespace).Create(ctx, secondDeployment, metav1.CreateOptions{})
@@ -976,8 +993,8 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 		err = crClient.Create(ctx, secondServiceMonitor)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create second ServiceMonitor: %s", secondServiceMonitorName))
 
-		By("adding a second InferenceModel")
-		secondInferenceModel := utils.CreateInferenceModel(secondDeployName, namespace, secondModelName)
+		By("adding an InferenceModel for the second deployment")
+		secondInferenceModel = utils.CreateInferenceModel(secondDeployName, namespace, secondModelName)
 		err = crClient.Create(ctx, secondInferenceModel)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create second InferenceModel: %s", secondModelName))
 
@@ -1087,7 +1104,8 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 				fmt.Sprintf("High load should trigger scale-up recommendation for VA: %s", va1.Name))
 
 			// Verify Prometheus replica metrics
-			_, desiredReplicas1, _, err = utils.GetInfernoReplicaMetrics(va1.Name, namespace, va1.Status.CurrentAlloc.Accelerator)
+			// In single-variant architecture, accelerator is in spec
+			_, desiredReplicas1, _, err = utils.GetInfernoReplicaMetrics(va1.Name, namespace, va1.Spec.Accelerator, va1.Spec.VariantID)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va1.Name, err))
 
 			// Verify that the desired number of replicas has same value as Prometheus result
@@ -1106,7 +1124,8 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 				fmt.Sprintf("High load should trigger scale-up recommendation for VA: %s", va2.Name))
 
 			// Verify Prometheus replica metrics
-			_, desiredReplicas2, _, err = utils.GetInfernoReplicaMetrics(va2.Name, namespace, va2.Status.CurrentAlloc.Accelerator)
+			// In single-variant architecture, accelerator is in spec
+			_, desiredReplicas2, _, err = utils.GetInfernoReplicaMetrics(va2.Name, namespace, va2.Spec.Accelerator, va2.Spec.VariantID)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va2.Name, err))
 
 			// Verify that the desired number of replicas has same value as Prometheus result
@@ -1205,7 +1224,8 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 				fmt.Sprintf("High load should trigger scale-up recommendation for VA: %s - actual replicas: %d", firstDeployName, va1.Status.DesiredOptimizedAlloc.NumReplicas))
 
 			// Verify Prometheus replica metrics
-			_, desiredReplicas1, _, err = utils.GetInfernoReplicaMetrics(va1.Name, namespace, va1.Status.CurrentAlloc.Accelerator)
+			// In single-variant architecture, accelerator is in spec
+			_, desiredReplicas1, _, err = utils.GetInfernoReplicaMetrics(va1.Name, namespace, va1.Spec.Accelerator, va1.Spec.VariantID)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va1.Name, err))
 
 			// Verify that the desired number of replicas has same value as Prometheus result
@@ -1224,7 +1244,8 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 				fmt.Sprintf("High load should trigger scale-up recommendation for VA: %s - actual replicas: %d", secondDeployName, va2.Status.DesiredOptimizedAlloc.NumReplicas))
 
 			// Verify Prometheus replica metrics
-			_, desiredReplicas2, _, err = utils.GetInfernoReplicaMetrics(va2.Name, namespace, va2.Status.CurrentAlloc.Accelerator)
+			// In single-variant architecture, accelerator is in spec
+			_, desiredReplicas2, _, err = utils.GetInfernoReplicaMetrics(va2.Name, namespace, va2.Spec.Accelerator, va2.Spec.VariantID)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va2.Name, err))
 
 			// Verify that the desired number of replicas has same value as Prometheus result
@@ -1277,7 +1298,8 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 				fmt.Sprintf("No load should trigger scale-down recommendation to %d for VA: %s - actual replicas: %d", MinimumReplicas, firstDeployName, va1.Status.CurrentAlloc.NumReplicas))
 
 			// Verify Prometheus replica metrics
-			_, desiredReplicas1, _, err = utils.GetInfernoReplicaMetrics(va1.Name, namespace, va1.Status.CurrentAlloc.Accelerator)
+			// In single-variant architecture, accelerator is in spec
+			_, desiredReplicas1, _, err = utils.GetInfernoReplicaMetrics(va1.Name, namespace, va1.Spec.Accelerator, va1.Spec.VariantID)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va1.Name, err))
 
 			// Verify that the desired number of replicas has same value as Prometheus result
@@ -1296,7 +1318,8 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 				fmt.Sprintf("High load should trigger scale-up recommendation to %d for VA: %s - actual replicas: %d", MinimumReplicas, secondDeployName, va2.Status.CurrentAlloc.NumReplicas))
 
 			// Verify Prometheus replica metrics
-			_, desiredReplicas2, _, err = utils.GetInfernoReplicaMetrics(va2.Name, namespace, va2.Status.CurrentAlloc.Accelerator)
+			// In single-variant architecture, accelerator is in spec
+			_, desiredReplicas2, _, err = utils.GetInfernoReplicaMetrics(va2.Name, namespace, va2.Spec.Accelerator, va2.Spec.VariantID)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va2.Name, err))
 
 			// Verify that the desired number of replicas has same value as Prometheus result
@@ -1354,7 +1377,10 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 		err = client.IgnoreNotFound(err)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete Deployment: %s", firstDeployName))
 
-		By("waiting for all pods to be deleted")
+		err = crClient.Delete(ctx, firstInferenceModel)
+		err = client.IgnoreNotFound(err)
+		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete InferenceModel: %s", firstModelName))
+
 		Eventually(func(g Gomega) {
 			podList, err := k8sClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: "app=" + firstAppLabel})
 			if err != nil {
@@ -1386,17 +1412,18 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 		err = client.IgnoreNotFound(err)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete ServiceMonitor: %s", secondServiceMonitorName))
 
-		By("deleting vllme service")
 		err = k8sClient.CoreV1().Services(namespace).Delete(ctx, secondServiceName, metav1.DeleteOptions{})
 		err = client.IgnoreNotFound(err)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete Service: %s", secondServiceName))
 
-		By("deleting vllme deployment")
 		err = k8sClient.AppsV1().Deployments(namespace).Delete(ctx, secondDeployName, metav1.DeleteOptions{})
 		err = client.IgnoreNotFound(err)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete Deployment: %s", secondDeployName))
 
-		By("waiting for all pods to be deleted")
+		err = crClient.Delete(ctx, secondInferenceModel)
+		err = client.IgnoreNotFound(err)
+		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete InferenceModel: %s", secondModelName))
+
 		Eventually(func(g Gomega) {
 			podList, err := k8sClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: "app=" + secondAppLabel})
 			if err != nil {
@@ -1404,13 +1431,6 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 			}
 			g.Expect(podList.Items).To(BeEmpty(), fmt.Sprintf("All Pods labelled: %s should be deleted", secondAppLabel))
 		}, 1*time.Minute, 1*time.Second).Should(Succeed())
-
-		By("cleaning up Prometheus operator resources")
-		cmd := exec.Command("kubectl", "delete", "-f", "deploy/examples/vllm-emulator/prometheus-operator/prometheus-deploy-all-in-one.yaml", "--ignore-not-found=true")
-		output, err := utils.Run(cmd)
-		if err != nil {
-			fmt.Printf("Prometheus cleanup output: %s\n", output)
-		}
 	})
 })
 
@@ -1445,7 +1465,7 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 		configMapName = "scale-to-zero-config"
 		vaName = "scale-to-zero-va"
 		appLabel = "scale-to-zero-test"
-		modelID = "test/scale-to-zero-model"
+		modelID = "test-scale-to-zero-model"
 		accelerator = a100Acc
 		initialReplicas = 1
 		retentionDuration = 2 * time.Minute // Retention period for scale-to-zero
@@ -1520,7 +1540,7 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 
 	It("should scale deployment to zero after idle period with no traffic", func() {
 		By("waiting for retention period to pass with zero traffic")
-		fmt.Fprintf(GinkgoWriter, "Waiting %v for retention period (no traffic simulated)...\n", retentionDuration)
+		_, _ = fmt.Fprintf(GinkgoWriter, "Waiting %v for retention period (no traffic simulated)...\n", retentionDuration)
 		time.Sleep(retentionDuration + 30*time.Second) // Add buffer for controller reconciliation
 
 		By("verifying controller sets desiredReplicas to 0 in VariantAutoscaling status")
@@ -1531,9 +1551,9 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 
 			// Check if status has current allocation with 0 desired replicas
 			if va.Status.CurrentAlloc.NumReplicas == 0 {
-				fmt.Fprintf(GinkgoWriter, "✓ Controller set desiredReplicas to 0 in VariantAutoscaling status\n")
+				_, _ = fmt.Fprintf(GinkgoWriter, "✓ Controller set desiredReplicas to 0 in VariantAutoscaling status\n")
 			} else {
-				fmt.Fprintf(GinkgoWriter, "Current desiredReplicas: %d (expected 0)\n", va.Status.CurrentAlloc.NumReplicas)
+				_, _ = fmt.Fprintf(GinkgoWriter, "Current desiredReplicas: %d (expected 0)\n", va.Status.CurrentAlloc.NumReplicas)
 			}
 
 			g.Expect(va.Status.CurrentAlloc.NumReplicas).To(Equal(int32(0)),
@@ -1546,9 +1566,9 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to get Deployment")
 
 			if deployment.Status.Replicas == 0 {
-				fmt.Fprintf(GinkgoWriter, "✓ HPA successfully scaled deployment to 0 replicas\n")
+				_, _ = fmt.Fprintf(GinkgoWriter, "✓ HPA successfully scaled deployment to 0 replicas\n")
 			} else {
-				fmt.Fprintf(GinkgoWriter, "Current replicas: %d (expected 0)\n", deployment.Status.Replicas)
+				_, _ = fmt.Fprintf(GinkgoWriter, "Current replicas: %d (expected 0)\n", deployment.Status.Replicas)
 			}
 
 			g.Expect(deployment.Status.Replicas).To(Equal(int32(0)),
@@ -1566,7 +1586,7 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 			g.Expect(podList.Items).To(BeEmpty(), "No pods should be running after scale-to-zero")
 		}, 2*time.Minute, 10*time.Second).Should(Succeed())
 
-		fmt.Fprintf(GinkgoWriter, "✓ Scale-to-zero flow completed successfully\n")
+		_, _ = fmt.Fprintf(GinkgoWriter, "✓ Scale-to-zero flow completed successfully\n")
 	})
 
 	AfterAll(func() {

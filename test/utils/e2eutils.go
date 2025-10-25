@@ -579,8 +579,8 @@ func VerifyPortForwardReadiness(ctx context.Context, localPort int, request stri
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
 	}
-	err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 10*time.Second, true, func(ctx context.Context) (bool, error) {
-		client = &http.Client{Transport: tr, Timeout: 2 * time.Second}
+	err := wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+		client = &http.Client{Transport: tr, Timeout: 5 * time.Second}
 		resp, err := client.Get(request)
 		if err != nil {
 			return false, nil // Retrying
@@ -589,7 +589,13 @@ func VerifyPortForwardReadiness(ctx context.Context, localPort int, request stri
 			err := resp.Body.Close()
 			gom.Expect(err).NotTo(gom.HaveOccurred(), "Should be able to close response body")
 		}()
-		return resp.StatusCode < 500, nil // Accept any non-server error status
+		// Retry on 4xx and 5xx errors
+		if resp.StatusCode >= 500 {
+			fmt.Printf("Debug: Error - Returned status code: %d, retrying...\n", resp.StatusCode)
+			return false, nil // Retry on client and server errors
+		}
+
+		return true, nil // Success
 	})
 	return err
 }
@@ -711,15 +717,16 @@ func LogVariantAutoscalingStatus(ctx context.Context, vaName, namespace string, 
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Load Profile for VA: %s - Arrival Rate: %s, Avg Input Tokens: %s, Avg Output Tokens: %s\n",
-		variantAutoscaling.Name,
-		variantAutoscaling.Status.CurrentAlloc.Load.ArrivalRate,
-		variantAutoscaling.Status.CurrentAlloc.Load.AvgInputTokens, variantAutoscaling.Status.CurrentAlloc.Load.AvgOutputTokens)
+	// Load profile is no longer stored in VA status - it's collected separately from Prometheus
 
-	fmt.Printf("Desired Optimized Allocation for VA: %s - Replicas: %d, Accelerator: %s\n",
-		variantAutoscaling.Name,
-		variantAutoscaling.Status.DesiredOptimizedAlloc.NumReplicas,
-		variantAutoscaling.Status.DesiredOptimizedAlloc.Accelerator)
+	// In single-variant architecture, check if optimization has run by checking NumReplicas >= 0
+	// VariantID and Accelerator are in spec, not in OptimizedAlloc
+	if variantAutoscaling.Status.DesiredOptimizedAlloc.NumReplicas >= 0 {
+		fmt.Printf("Desired Optimized Allocation for VA: %s - Replicas: %d, Accelerator: %s (from spec)\n",
+			variantAutoscaling.Name,
+			variantAutoscaling.Status.DesiredOptimizedAlloc.NumReplicas,
+			variantAutoscaling.Spec.Accelerator)
+	}
 	return nil
 }
 
@@ -823,6 +830,31 @@ func CreateVllmeService(namespace, serviceName, appLabel string, nodePort int) *
 
 // creates a VariantAutoscaling resource with owner reference to deployment
 func CreateVariantAutoscalingResource(namespace, resourceName, modelId, acc string) *v1alpha1.VariantAutoscaling {
+	// Performance parameters for different accelerators
+	perfParams := map[string]v1alpha1.PerfParms{
+		"A100": {
+			DecodeParms:  map[string]string{"alpha": "20.58", "beta": "0.41"},
+			PrefillParms: map[string]string{"gamma": "20.58", "delta": "0.041"},
+		},
+		"MI300X": {
+			DecodeParms:  map[string]string{"alpha": "0.77", "beta": "0.15"},
+			PrefillParms: map[string]string{"gamma": "0.77", "delta": "0.15"},
+		},
+		"G2": {
+			DecodeParms:  map[string]string{"alpha": "17.15", "beta": "0.34"},
+			PrefillParms: map[string]string{"gamma": "17.15", "delta": "0.34"},
+		},
+	}
+
+	// Select perf params for the specified accelerator, default to A100 if not found
+	perfParms, ok := perfParams[acc]
+	if !ok {
+		perfParms = perfParams["A100"]
+	}
+
+	// Create variant ID: modelID-accelerator-accCount
+	variantID := fmt.Sprintf("%s-%s-%d", modelId, acc, 1)
+
 	return &v1alpha1.VariantAutoscaling{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      resourceName,
@@ -832,41 +864,17 @@ func CreateVariantAutoscalingResource(namespace, resourceName, modelId, acc stri
 			},
 		},
 		Spec: v1alpha1.VariantAutoscalingSpec{
-			ModelID: modelId,
+			ModelID:          modelId,
+			VariantID:        variantID,
+			Accelerator:      acc,
+			AcceleratorCount: 1,
 			SLOClassRef: v1alpha1.ConfigMapKeyRef{
 				Name: "premium",
 				Key:  "slo",
 			},
-			ModelProfile: v1alpha1.ModelProfile{
-				Accelerators: []v1alpha1.AcceleratorProfile{
-					{
-						Acc:      "A100",
-						AccCount: 1,
-						PerfParms: v1alpha1.PerfParms{
-							DecodeParms:  map[string]string{"alpha": "20.58", "beta": "0.41"},
-							PrefillParms: map[string]string{"gamma": "20.58", "delta": "0.041"},
-						},
-						MaxBatchSize: 4,
-					},
-					{
-						Acc:      "MI300X",
-						AccCount: 1,
-						PerfParms: v1alpha1.PerfParms{
-							DecodeParms:  map[string]string{"alpha": "0.77", "beta": "0.15"},
-							PrefillParms: map[string]string{"gamma": "0.77", "delta": "0.15"},
-						},
-						MaxBatchSize: 4,
-					},
-					{
-						Acc:      "G2",
-						AccCount: 1,
-						PerfParms: v1alpha1.PerfParms{
-							DecodeParms:  map[string]string{"alpha": "17.15", "beta": "0.34"},
-							PrefillParms: map[string]string{"gamma": "17.15", "delta": "0.34"},
-						},
-						MaxBatchSize: 4,
-					},
-				},
+			VariantProfile: v1alpha1.VariantProfile{
+				PerfParms:    perfParms,
+				MaxBatchSize: 4,
 			},
 		},
 	}
@@ -1074,7 +1082,7 @@ func isPermanentPrometheusError(err error) bool {
 }
 
 // GetInfernoReplicaMetrics queries Prometheus for metrics emitted by the Inferno autoscaler
-func GetInfernoReplicaMetrics(variantName, namespace, acceleratorType string) (currentReplicas, desiredReplicas, desiredRatio float64, err error) {
+func GetInfernoReplicaMetrics(variantName, namespace, acceleratorType, variantID string) (currentReplicas, desiredReplicas, desiredRatio float64, err error) {
 
 	client, err := NewPrometheusClient("https://localhost:9090", true)
 	if err != nil {
@@ -1084,7 +1092,7 @@ func GetInfernoReplicaMetrics(variantName, namespace, acceleratorType string) (c
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	labels := fmt.Sprintf(`variant_name="%s",exported_namespace="%s",accelerator_type="%s"`, variantName, namespace, acceleratorType)
+	labels := fmt.Sprintf(`variant_name="%s",exported_namespace="%s",accelerator_type="%s",variant_id="%s"`, variantName, namespace, acceleratorType, variantID)
 
 	// Query both metrics with retries
 	currentQuery := fmt.Sprintf(`%s{%s}`, constants.InfernoCurrentReplicas, labels)
@@ -1106,4 +1114,31 @@ func GetInfernoReplicaMetrics(variantName, namespace, acceleratorType string) (c
 	}
 
 	return currentReplicas, desiredReplicas, desiredRatio, nil
+}
+
+// setupEnvironment sets up necessary environment variables for the E2E tests
+func SetupTestEnvironment(image string, numNodes, gpusPerNode int, gpuTypes string) {
+	// Set default environment variables for Kind cluster creation
+	gom.Expect(os.Setenv("IMG", image)).To(gom.Succeed())
+	gom.Expect(os.Setenv("CLUSTER_NAME", clusterName)).To(gom.Succeed())
+	gom.Expect(os.Setenv("CLUSTER_NODES", fmt.Sprintf("%d", numNodes))).To(gom.Succeed())
+	gom.Expect(os.Setenv("CLUSTER_GPUS", fmt.Sprintf("%d", gpusPerNode))).To(gom.Succeed())
+	gom.Expect(os.Setenv("CLUSTER_TYPE", gpuTypes)).To(gom.Succeed())
+	gom.Expect(os.Setenv("WVA_IMAGE_PULL_POLICY", "IfNotPresent")).To(gom.Succeed()) // The image is built locally by the tests
+	gom.Expect(os.Setenv("CREATE_CLUSTER", "true")).To(gom.Succeed())                // Always create a new cluster for E2E tests
+
+	// Enable components needed for the tests
+	gom.Expect(os.Setenv("DEPLOY_LLM_D", "true")).To(gom.Succeed())
+	gom.Expect(os.Setenv("DEPLOY_WVA", "true")).To(gom.Succeed())
+	gom.Expect(os.Setenv("DEPLOY_PROMETHEUS", "true")).To(gom.Succeed())
+	gom.Expect(os.Setenv("APPLY_VLLM_EMULATOR_FIXES", "true")).To(gom.Succeed())
+
+	// Disable components not needed to be deployed by the script
+	// Tests create their own vLLM deployments, but script still patches InferencePool
+	gom.Expect(os.Setenv("DEPLOY_VLLM_EMULATOR", "false")).To(gom.Succeed())      // we deploy our own vLLM deployments in the tests
+	gom.Expect(os.Setenv("DEPLOY_VA", "false")).To(gom.Succeed())                 // we create our own VariantAutoscaling resources in the tests
+	gom.Expect(os.Setenv("DEPLOY_HPA", "false")).To(gom.Succeed())                // HPA is not needed for these tests
+	gom.Expect(os.Setenv("DEPLOY_PROMETHEUS_ADAPTER", "false")).To(gom.Succeed()) // Prometheus Adapter is not needed for these tests
+	gom.Expect(os.Setenv("VLLM_SVC_ENABLED", "false")).To(gom.Succeed())          // we deploy our own Service in the tests
+	gom.Expect(os.Setenv("DEPLOY_INFERENCE_MODEL", "false")).To(gom.Succeed())    // we create our own InferenceModel resources in the tests
 }

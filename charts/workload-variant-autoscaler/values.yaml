@@ -29,10 +29,32 @@ llmd:
 
 variantAutoscaling:
   enabled: true
-  accelerator: H100
   modelID: "unsloth/Meta-Llama-3.1-8B"
   sloTpot: 9
   sloTtft: 1000
+  # Define multiple variants - one for each accelerator type
+  # Each variant will create a separate VariantAutoscaling resource
+  variants:
+    - accelerator: "L40S"
+      acceleratorCount: 1
+      maxBatchSize: 512
+      perfParms:
+        decodeParms:
+          alpha: "22.619"
+          beta: "0.181"
+        prefillParms:
+          gamma: "226.19"
+          delta: "0.018"
+    - accelerator: "H100"
+      acceleratorCount: 1
+      maxBatchSize: 512
+      perfParms:
+        decodeParms:
+          alpha: "6.958"
+          beta: "0.042"
+        prefillParms:
+          gamma: "5.2"
+          delta: "0.1"
 
 hpa:
   maxReplicas: 10
