@@ -809,7 +809,7 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 
 	It("should scale deployment to zero after idle period with no traffic", func() {
 		By("waiting for retention period to pass with zero traffic")
-		fmt.Fprintf(GinkgoWriter, "Waiting %v for retention period (no traffic simulated)...\n", retentionDuration)
+		_, _ = fmt.Fprintf(GinkgoWriter, "Waiting %v for retention period (no traffic simulated)...\n", retentionDuration)
 		time.Sleep(retentionDuration + 30*time.Second) // Add buffer for controller reconciliation
 
 		By("verifying controller sets desiredReplicas to 0 in VariantAutoscaling status")
@@ -820,9 +820,9 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 
 			// Check if status has current allocation with 0 desired replicas
 			if va.Status.CurrentAlloc.NumReplicas == 0 {
-				fmt.Fprintf(GinkgoWriter, "✓ Controller set desiredReplicas to 0 in VariantAutoscaling status\n")
+				_, _ = fmt.Fprintf(GinkgoWriter, "✓ Controller set desiredReplicas to 0 in VariantAutoscaling status\n")
 			} else {
-				fmt.Fprintf(GinkgoWriter, "Current desiredReplicas: %d (expected 0)\n", va.Status.CurrentAlloc.NumReplicas)
+				_, _ = fmt.Fprintf(GinkgoWriter, "Current desiredReplicas: %d (expected 0)\n", va.Status.CurrentAlloc.NumReplicas)
 			}
 
 			g.Expect(va.Status.CurrentAlloc.NumReplicas).To(Equal(int32(0)),
@@ -1540,7 +1540,7 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 
 	It("should scale deployment to zero after idle period with no traffic", func() {
 		By("waiting for retention period to pass with zero traffic")
-		fmt.Fprintf(GinkgoWriter, "Waiting %v for retention period (no traffic simulated)...\n", retentionDuration)
+		_, _ = fmt.Fprintf(GinkgoWriter, "Waiting %v for retention period (no traffic simulated)...\n", retentionDuration)
 		time.Sleep(retentionDuration + 30*time.Second) // Add buffer for controller reconciliation
 
 		By("verifying controller sets desiredReplicas to 0 in VariantAutoscaling status")
@@ -1551,9 +1551,9 @@ var _ = Describe("Test scale-to-zero flow - E2E integration", Ordered, func() {
 
 			// Check if status has current allocation with 0 desired replicas
 			if va.Status.CurrentAlloc.NumReplicas == 0 {
-				fmt.Fprintf(GinkgoWriter, "✓ Controller set desiredReplicas to 0 in VariantAutoscaling status\n")
+				_, _ = fmt.Fprintf(GinkgoWriter, "✓ Controller set desiredReplicas to 0 in VariantAutoscaling status\n")
 			} else {
-				fmt.Fprintf(GinkgoWriter, "Current desiredReplicas: %d (expected 0)\n", va.Status.CurrentAlloc.NumReplicas)
+				_, _ = fmt.Fprintf(GinkgoWriter, "Current desiredReplicas: %d (expected 0)\n", va.Status.CurrentAlloc.NumReplicas)
 			}
 
 			g.Expect(va.Status.CurrentAlloc.NumReplicas).To(Equal(int32(0)),
