@@ -81,6 +81,7 @@ spec:
                   MaxReplicas specifies the maximum number of replicas for this variant.
                   The optimizer will never scale above this value.
                   If not specified, no upper bound is enforced (unlimited scaling).
+                format: int32
                 minimum: 1
                 type: integer
               minReplicas:
@@ -91,6 +92,7 @@ spec:
                   If not specified, defaults to 0.
                   Warning: Setting minReplicas > 0 for multiple variants may lead to unnecessary GPU utilization.
                   Warning: Setting minReplicas > 0 prevents the model from scaling to zero even if scaleToZero is enabled.
+                format: int32
                 minimum: 0
                 type: integer
               modelID:
@@ -272,6 +274,7 @@ spec:
                 properties:
                   numReplicas:
                     description: NumReplicas is the number of replicas currently allocated.
+                    format: int32
                     minimum: 0
                     type: integer
                 required:
@@ -289,6 +292,7 @@ spec:
                   numReplicas:
                     description: NumReplicas is the number of replicas for the optimized
                       allocation.
+                    format: int32
                     minimum: 0
                     type: integer
                 required:

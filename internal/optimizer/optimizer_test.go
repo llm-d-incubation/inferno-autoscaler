@@ -61,7 +61,7 @@ var _ = Describe("Optimizer", Ordered, func() {
 
 		acceleratorCm  map[string]map[string]string
 		serviceClassCm map[string]string
-		minNumReplicas = 1
+		minNumReplicas int32 = 1
 	)
 
 	Context("Testing optimization", func() {

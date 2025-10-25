@@ -778,7 +778,7 @@ data:
 				Expect(updatedVa.Status.CurrentAlloc.NumReplicas).To(BeNumerically(">=", 0), fmt.Sprintf("CurrentAlloc should be populated for %s after preparation", updatedVa.Name))
 				// In single-variant architecture, accelerator is in spec, not in status
 				Expect(updatedVa.Spec.Accelerator).To(Equal("A100"), fmt.Sprintf("Accelerator in spec for %s should be \"A100\" after preparation", updatedVa.Name))
-				Expect(updatedVa.Status.CurrentAlloc.NumReplicas).To(Equal(1), fmt.Sprintf("Current NumReplicas for %s should be 1 after preparation", updatedVa.Name))
+				Expect(updatedVa.Status.CurrentAlloc.NumReplicas).To(Equal(int32(1)), fmt.Sprintf("Current NumReplicas for %s should be 1 after preparation", updatedVa.Name))
 
 				// DesiredOptimizedAlloc may be empty initially after preparation
 				// In single-variant architecture, check NumReplicas > 0 to see if optimization has run

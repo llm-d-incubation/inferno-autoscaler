@@ -181,12 +181,12 @@ func (in *VariantAutoscalingSpec) DeepCopyInto(out *VariantAutoscalingSpec) {
 	in.VariantProfile.DeepCopyInto(&out.VariantProfile)
 	if in.MinReplicas != nil {
 		in, out := &in.MinReplicas, &out.MinReplicas
-		*out = new(int)
+		*out = new(int32)
 		**out = **in
 	}
 	if in.MaxReplicas != nil {
 		in, out := &in.MaxReplicas, &out.MaxReplicas
-		*out = new(int)
+		*out = new(int32)
 		**out = **in
 	}
 }

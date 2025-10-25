@@ -475,7 +475,7 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - singl
 		}()
 
 		By("getting the current number of replicas")
-		var initialDesiredReplicas int
+		var initialDesiredReplicas int32
 		va := &v1alpha1.VariantAutoscaling{}
 		err = crClient.Get(ctx, client.ObjectKey{
 			Namespace: namespace,

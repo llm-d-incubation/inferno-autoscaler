@@ -272,6 +272,7 @@ spec:
                 properties:
                   numReplicas:
                     description: NumReplicas is the number of replicas currently allocated.
+                    format: int32
                     minimum: 0
                     type: integer
                 required:
@@ -289,6 +290,7 @@ spec:
                   numReplicas:
                     description: NumReplicas is the number of replicas for the optimized
                       allocation.
+                    format: int32
                     minimum: 0
                     type: integer
                 required:

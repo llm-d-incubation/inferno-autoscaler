@@ -284,9 +284,9 @@ func CollectAllocationForDeployment(
 ) (llmdVariantAutoscalingV1alpha1.Allocation, error) {
 
 	// number of replicas
-	numReplicas := 0 // Default to 0 if not specified
+	numReplicas := int32(0) // Default to 0 if not specified
 	if deployment.Spec.Replicas != nil {
-		numReplicas = int(*deployment.Spec.Replicas)
+		numReplicas = *deployment.Spec.Replicas
 	}
 
 	// populate allocation (without aggregate metrics)
@@ -351,7 +351,7 @@ func AddMetricsToOptStatus(ctx context.Context,
 	}
 
 	// number of replicas
-	numReplicas := int(*deployment.Spec.Replicas)
+	numReplicas := *deployment.Spec.Replicas
 
 	// populate current alloc (refactored: metrics are passed separately, not stored in allocation)
 	// Note: In single-variant architecture, variantID, accelerator, maxBatch, and variantCost

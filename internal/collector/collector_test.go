@@ -293,7 +293,7 @@ var _ = Describe("Collector", func() {
 			Expect(err).NotTo(HaveOccurred())
 			// Note: In single-variant architecture, Accelerator, VariantID, MaxBatch, and VariantCost
 			// are in the VA spec, not in the Allocation status
-			Expect(allocation.NumReplicas).To(Equal(2))
+			Expect(allocation.NumReplicas).To(Equal(int32(2)))
 
 			// Test new API - CollectAggregateMetrics
 			load, ttftAvg, itlAvg, err := CollectAggregateMetrics(ctx, modelID, testNamespace, mockProm)
@@ -309,7 +309,7 @@ var _ = Describe("Collector", func() {
 			allocation, err := CollectAllocationForDeployment(variantID, "", deployment)
 			Expect(err).NotTo(HaveOccurred())
 			// Note: In single-variant architecture, Accelerator is in the VA spec, not Allocation status
-			Expect(allocation.NumReplicas).To(Equal(2))
+			Expect(allocation.NumReplicas).To(Equal(int32(2)))
 		})
 
 		It("should handle Prometheus query errors", func() {

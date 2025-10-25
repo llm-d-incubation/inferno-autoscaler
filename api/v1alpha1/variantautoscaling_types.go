@@ -69,14 +69,14 @@ type VariantAutoscalingSpec struct {
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:default=0
 	// +optional
-	MinReplicas *int `json:"minReplicas,omitempty"`
+	MinReplicas *int32 `json:"minReplicas,omitempty"`
 
 	// MaxReplicas specifies the maximum number of replicas for this variant.
 	// The optimizer will never scale above this value.
 	// If not specified, no upper bound is enforced (unlimited scaling).
 	// +kubebuilder:validation:Minimum=1
 	// +optional
-	MaxReplicas *int `json:"maxReplicas,omitempty"`
+	MaxReplicas *int32 `json:"maxReplicas,omitempty"`
 }
 
 // ConfigMapKeyRef references a specific key within a ConfigMap.
@@ -143,7 +143,7 @@ type VariantAutoscalingStatus struct {
 type Allocation struct {
 	// NumReplicas is the number of replicas currently allocated.
 	// +kubebuilder:validation:Minimum=0
-	NumReplicas int `json:"numReplicas"`
+	NumReplicas int32 `json:"numReplicas"`
 }
 
 // OptimizedAlloc describes the target optimized allocation for a model variant.
@@ -155,7 +155,7 @@ type OptimizedAlloc struct {
 
 	// NumReplicas is the number of replicas for the optimized allocation.
 	// +kubebuilder:validation:Minimum=0
-	NumReplicas int `json:"numReplicas"`
+	NumReplicas int32 `json:"numReplicas"`
 }
 
 // ActuationStatus provides details about the actuation process and its current status.

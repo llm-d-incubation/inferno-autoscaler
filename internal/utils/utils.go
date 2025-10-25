@@ -206,9 +206,9 @@ func GetMinNumReplicas(configData ScaleToZeroConfigData, modelID string) int {
 // GetVariantMinReplicas returns the minimum number of replicas for a specific variant.
 // If va.Spec.MinReplicas is set, returns that value.
 // Otherwise, returns 0 (default).
-func GetVariantMinReplicas(va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling) int {
+func GetVariantMinReplicas(va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling) int32 {
 	if va.Spec.MinReplicas != nil {
-		return *va.Spec.MinReplicas
+		return int32(*va.Spec.MinReplicas)
 	}
 	return 0 // Default value
 }
@@ -216,9 +216,9 @@ func GetVariantMinReplicas(va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling
 // GetVariantMaxReplicas returns the maximum number of replicas for a specific variant.
 // If va.Spec.MaxReplicas is set, returns that value.
 // Otherwise, returns -1 to indicate no upper bound (unlimited).
-func GetVariantMaxReplicas(va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling) int {
+func GetVariantMaxReplicas(va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling) int32 {
 	if va.Spec.MaxReplicas != nil {
-		return *va.Spec.MaxReplicas
+		return int32(*va.Spec.MaxReplicas)
 	}
 	return -1 // No upper bound
 }
@@ -467,7 +467,7 @@ func AddServerInfoToSystemData(
 		Class:           className,
 		Model:           va.Spec.ModelID,
 		KeepAccelerator: true,
-		MinNumReplicas:  minNumReplicas,
+		MinNumReplicas:  int(minNumReplicas),
 		CurrentAlloc:    *AllocationData,
 		DesiredAlloc:    infernoConfig.AllocationData{},
 	}

@@ -526,8 +526,8 @@ func TestVariantIDPatternValidation(t *testing.T) {
 func TestReplicaBoundsEdgeCases(t *testing.T) {
 	tests := []struct {
 		name        string
-		minReplicas *int
-		maxReplicas *int
+		minReplicas *int32
+		maxReplicas *int32
 		expectValid bool
 		description string
 	}{
@@ -627,7 +627,7 @@ func TestReplicaBoundsEdgeCases(t *testing.T) {
 func TestReplicaBoundsWithScaleToZero(t *testing.T) {
 	tests := []struct {
 		name               string
-		minReplicas        *int
+		minReplicas        *int32
 		scaleToZeroEnabled bool
 		canScaleToZero     bool
 		description        string
@@ -675,7 +675,7 @@ func TestReplicaBoundsWithScaleToZero(t *testing.T) {
 			va.Spec.MinReplicas = tt.minReplicas
 
 			// Determine effective minReplicas
-			effectiveMin := 0
+			effectiveMin := int32(0)
 			if tt.minReplicas != nil {
 				effectiveMin = *tt.minReplicas
 			}
@@ -698,8 +698,8 @@ func TestReplicaBoundsWithScaleToZero(t *testing.T) {
 func TestReplicaBoundsJSONRoundTrip(t *testing.T) {
 	tests := []struct {
 		name        string
-		minReplicas *int
-		maxReplicas *int
+		minReplicas *int32
+		maxReplicas *int32
 	}{
 		{name: "both nil", minReplicas: nil, maxReplicas: nil},
 		{name: "only min set", minReplicas: intPtr(2), maxReplicas: nil},
@@ -747,11 +747,11 @@ func TestReplicaBoundsJSONRoundTrip(t *testing.T) {
 
 // Helper functions for tests
 
-func intPtr(i int) *int {
+func intPtr(i int32) *int32 {
 	return &i
 }
 
-func intPtrEqual(a, b *int) bool {
+func intPtrEqual(a, b *int32) bool {
 	if a == nil && b == nil {
 		return true
 	}
@@ -761,7 +761,7 @@ func intPtrEqual(a, b *int) bool {
 	return *a == *b
 }
 
-func ptrToString(p *int) string {
+func ptrToString(p *int32) string {
 	if p == nil {
 		return "nil"
 	}
