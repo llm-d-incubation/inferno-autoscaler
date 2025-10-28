@@ -9,6 +9,7 @@ import (
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/constants"
+	interfaces "github.com/llm-d-incubation/workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/logger"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
@@ -127,12 +128,176 @@ func ValidateMetricsAvailability(ctx context.Context, promAPI promv1.API, modelN
 	}
 }
 
+// CollectAggregateMetricsWithCache collects aggregate metrics for a model,
+// using cache to avoid redundant Prometheus queries.
+// If cache is nil, behaves like CollectAggregateMetrics (no caching).
+func CollectAggregateMetricsWithCache(ctx context.Context,
+	modelName string,
+	namespace string,
+	promAPI promv1.API,
+	cache *ModelMetricsCache) (interfaces.LoadProfile, string, string, error) {
+
+	// Check cache first if available
+	if cache != nil {
+		if cached, found := cache.Get(modelName, namespace); found && cached.Valid {
+			logger.Log.Debug("Using cached metrics for model", "model", modelName, "namespace", namespace)
+			return cached.Load, cached.TTFTAverage, cached.ITLAverage, nil
+		}
+	}
+
+	// Cache miss or disabled - query Prometheus
+	logger.Log.Debug("Querying Prometheus for model metrics", "model", modelName, "namespace", namespace)
+	load, ttftAvg, itlAvg, err := CollectAggregateMetrics(ctx, modelName, namespace, promAPI)
+
+	// Update cache even on error (mark as invalid) to prevent thundering herd
+	if cache != nil {
+		cache.Set(modelName, namespace, load, ttftAvg, itlAvg, err == nil)
+	}
+
+	return load, ttftAvg, itlAvg, err
+}
+
+// CollectAggregateMetrics collects aggregate metrics (Load, ITL, TTFT) for a modelID
+// across all deployments serving that model. These metrics are shared across all variants.
+//
+// Note: For production use, prefer CollectAggregateMetricsWithCache to avoid redundant queries.
+func CollectAggregateMetrics(ctx context.Context,
+	modelName string,
+	namespace string,
+	promAPI promv1.API) (interfaces.LoadProfile, string, string, error) {
+
+	// Query 1: Arrival rate (requests per minute)
+	arrivalQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m])) * 60`,
+		constants.VLLMRequestSuccessTotal,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, namespace)
+	arrivalVal := 0.0
+	if val, warn, err := promAPI.Query(ctx, arrivalQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+		vec := val.(model.Vector)
+		if len(vec) > 0 {
+			arrivalVal = float64(vec[0].Value)
+		}
+		if warn != nil {
+			logger.Log.Warn("Prometheus warnings - ", "warnings: ", warn)
+		}
+	} else {
+		return interfaces.LoadProfile{}, "", "", err
+	}
+	FixValue(&arrivalVal)
+
+	// TODO: add query to get prompt tokens
+	avgInputTokens := 0.0
+
+	// Query 2: Average token length
+	// TODO: split composite query to individual queries
+	avgDecToksQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
+		constants.VLLMRequestGenerationTokensSum,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, namespace,
+		constants.VLLMRequestGenerationTokensCount,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, namespace)
+	avgOutputTokens := 0.0
+	if val, _, err := promAPI.Query(ctx, avgDecToksQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+		vec := val.(model.Vector)
+		if len(vec) > 0 {
+			avgOutputTokens = float64(vec[0].Value)
+		}
+	} else {
+		return interfaces.LoadProfile{}, "", "", err
+	}
+	FixValue(&avgOutputTokens)
+
+	// TODO: change waiting time to TTFT
+
+	// Query 3: Average waiting time
+	ttftQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
+		constants.VLLMRequestQueueTimeSecondsSum,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, namespace,
+		constants.VLLMRequestQueueTimeSecondsCount,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, namespace)
+	ttftAverageTime := 0.0
+	if val, _, err := promAPI.Query(ctx, ttftQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+		vec := val.(model.Vector)
+		if len(vec) > 0 {
+			ttftAverageTime = float64(vec[0].Value) * 1000 //msec
+		}
+	} else {
+		logger.Log.Warn("failed to get avg wait time, using 0: ", "model: ", modelName)
+	}
+	FixValue(&ttftAverageTime)
+
+	// Query 4: Average ITL
+	itlQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
+		constants.VLLMTimePerOutputTokenSecondsSum,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, namespace,
+		constants.VLLMTimePerOutputTokenSecondsCount,
+		constants.LabelModelName, modelName,
+		constants.LabelNamespace, namespace)
+	itlAverage := 0.0
+	if val, _, err := promAPI.Query(ctx, itlQuery, time.Now()); err == nil && val.Type() == model.ValVector {
+		vec := val.(model.Vector)
+		if len(vec) > 0 {
+			itlAverage = float64(vec[0].Value) * 1000 //msec
+		}
+	} else {
+		logger.Log.Warn("failed to get avg itl time, using 0: ", "model: ", modelName)
+	}
+	FixValue(&itlAverage)
+
+	// Return aggregate metrics
+	load := interfaces.LoadProfile{
+		ArrivalRate:     strconv.FormatFloat(float64(arrivalVal), 'f', 2, 32),
+		AvgInputTokens:  strconv.FormatFloat(float64(avgInputTokens), 'f', 2, 32),
+		AvgOutputTokens: strconv.FormatFloat(float64(avgOutputTokens), 'f', 2, 32),
+	}
+	ttftAvg := strconv.FormatFloat(float64(ttftAverageTime), 'f', 2, 32)
+	itlAvg := strconv.FormatFloat(float64(itlAverage), 'f', 2, 32)
+
+	return load, ttftAvg, itlAvg, nil
+}
+
+// CollectAllocationForDeployment collects allocation information for a single deployment.
+// This includes replica count. Other allocation details (cost, max batch) are in the VA spec.
+// Aggregate metrics (Load, ITL, TTFT) are collected separately via CollectAggregateMetrics.
+func CollectAllocationForDeployment(
+	variantID string,
+	accelerator string,
+	deployment appsv1.Deployment,
+) (llmdVariantAutoscalingV1alpha1.Allocation, error) {
+
+	// number of replicas
+	numReplicas := 0 // Default to 0 if not specified
+	if deployment.Spec.Replicas != nil {
+		numReplicas = int(*deployment.Spec.Replicas)
+	}
+
+	// populate allocation (without aggregate metrics)
+	// Note: In single-variant architecture, variantID, accelerator, maxBatch, and variantCost
+	// are not needed here as they are already defined in the parent VariantAutoscaling spec.
+	allocation := llmdVariantAutoscalingV1alpha1.Allocation{
+		NumReplicas: numReplicas,
+	}
+	return allocation, nil
+}
+
+// Helper to handle if a value is NaN or infinite
+func FixValue(x *float64) {
+	if math.IsNaN(*x) || math.IsInf(*x, 0) {
+		*x = 0
+	}
+}
+
+// AddMetricsToOptStatus collects allocation and scale-to-zero metrics for a variant.
+// This function combines allocation collection with scale-to-zero request tracking.
 func AddMetricsToOptStatus(ctx context.Context,
 	opt *llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
 	deployment appsv1.Deployment,
-	acceleratorCostVal float64,
 	promAPI promv1.API,
-	metricsCache *ModelMetricsCache,
+	metricsCache *ScaleToZeroMetricsCache,
 	retentionPeriod time.Duration) (llmdVariantAutoscalingV1alpha1.Allocation, error) {
 
 	deployNamespace := deployment.Namespace
@@ -159,8 +324,7 @@ func AddMetricsToOptStatus(ctx context.Context,
 	}
 	FixValue(&arrivalVal)
 
-	// TODO: add query to get prompt tokens
-	avgInputTokens := 0.0
+	// TODO: add query to get prompt tokens (avgInputTokens not yet collected - will be needed later)
 
 	// Query 2: Average token length
 	// TODO: split composite query to individual queries
@@ -245,7 +409,7 @@ func AddMetricsToOptStatus(ctx context.Context,
 
 	// Store total requests in internal metrics cache
 	if metricsCache != nil {
-		metricsCache.Set(modelName, &ModelMetrics{
+		metricsCache.Set(modelName, &ScaleToZeroMetrics{
 			TotalRequestsOverRetentionPeriod: totalRequestsOverRetention,
 			RetentionPeriod:                  retentionPeriod,
 		})
@@ -254,42 +418,13 @@ func AddMetricsToOptStatus(ctx context.Context,
 	// number of replicas
 	numReplicas := int(*deployment.Spec.Replicas)
 
-	// accelerator type
-	acc := ""
-	var ok bool
-	if acc, ok = opt.Labels["inference.optimization/acceleratorName"]; !ok {
-		logger.Log.Warn("acceleratorName label not found on deployment - ", "deployment-name: ", deployment.Name)
-	}
-
-	// cost
-	discoveredCost := float64(*deployment.Spec.Replicas) * acceleratorCostVal
-
-	// max batch size
-	// TODO: collect value from server
-	maxBatch := 256
-
-	// populate current alloc
+	// populate current alloc (refactored: metrics are passed separately, not stored in allocation)
+	// Note: In single-variant architecture, variantID, accelerator, maxBatch, and variantCost
+	// are not needed here as they are already defined in the parent VariantAutoscaling spec.
 	currentAlloc := llmdVariantAutoscalingV1alpha1.Allocation{
-		Accelerator: acc,
 		NumReplicas: numReplicas,
-		MaxBatch:    maxBatch,
-		VariantCost: strconv.FormatFloat(float64(discoveredCost), 'f', 2, 32),
-		TTFTAverage: strconv.FormatFloat(float64(ttftAverageTime), 'f', 2, 32),
-		ITLAverage:  strconv.FormatFloat(float64(itlAverage), 'f', 2, 32),
-		Load: llmdVariantAutoscalingV1alpha1.LoadProfile{
-			ArrivalRate:     strconv.FormatFloat(float64(arrivalVal), 'f', 2, 32),
-			AvgInputTokens:  strconv.FormatFloat(float64(avgInputTokens), 'f', 2, 32),
-			AvgOutputTokens: strconv.FormatFloat(float64(avgOutputTokens), 'f', 2, 32),
-		},
 	}
 	return currentAlloc, nil
-}
-
-// Helper to handle if a value is NaN or infinite
-func FixValue(x *float64) {
-	if math.IsNaN(*x) || math.IsInf(*x, 0) {
-		*x = 0
-	}
 }
 
 // formatPrometheusDuration converts a Go time.Duration to Prometheus duration format

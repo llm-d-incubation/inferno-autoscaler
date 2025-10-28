@@ -62,6 +62,8 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 			Name:      deployment,
 		}, va)
 		Expect(err).NotTo(HaveOccurred(), "Should be able to get VariantAutoscaling")
+		// In single-variant architecture, check that optimization has run by verifying NumReplicas > 0
+		Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(BeNumerically(">", 0), "DesiredOptimizedAlloc should have replicas set")
 		initialOptimized = int32(va.Status.DesiredOptimizedAlloc.NumReplicas)
 		_, _ = fmt.Fprintf(GinkgoWriter, "Initial optimized replicas: %d\n", initialOptimized)
 
@@ -131,10 +133,11 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 			}, va)
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to get VariantAutoscaling")
 
+			// In single-variant architecture, check that optimization has run by verifying NumReplicas > 0
+			g.Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(BeNumerically(">", 0), "DesiredOptimizedAlloc should have replicas set")
 			scaledOptimized = int32(va.Status.DesiredOptimizedAlloc.NumReplicas)
-			currentRateStr := va.Status.CurrentAlloc.Load.ArrivalRate
-			_, _ = fmt.Fprintf(GinkgoWriter, "Current optimized replicas: %d (initial: %d), arrival rate: %s\n",
-				scaledOptimized, initialOptimized, currentRateStr)
+			_, _ = fmt.Fprintf(GinkgoWriter, "Current optimized replicas: %d (initial: %d)\n",
+				scaledOptimized, initialOptimized)
 
 			// Expect scale-up recommendation (more than initial)
 			g.Expect(scaledOptimized).To(BeNumerically(">", initialOptimized),

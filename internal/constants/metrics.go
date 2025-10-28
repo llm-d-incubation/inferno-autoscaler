@@ -61,6 +61,7 @@ const (
 	LabelModelName       = "model_name"
 	LabelNamespace       = "namespace"
 	LabelVariantName     = "variant_name"
+	LabelVariantID       = "variant_id"
 	LabelDirection       = "direction"
 	LabelReason          = "reason"
 	LabelAcceleratorType = "accelerator_type"
