@@ -96,10 +96,10 @@ jobs:
         run: |
           echo "========== Verifying CRD YAML file before E2E tests =========="
           echo ""
-          echo "Checking config/crd/bases/llm-d.llm-manager.io_variantautoscalings.yaml for required fields..."
+          echo "Checking config/crd/bases/llmd.ai_variantautoscalings.yaml for required fields..."
           echo ""
 
-          CRD_FILE="config/crd/bases/llm-d.llm-manager.io_variantautoscalings.yaml"
+          CRD_FILE="config/crd/bases/llmd.ai_variantautoscalings.yaml"
 
           if [ ! -f "$CRD_FILE" ]; then
             echo "❌ ERROR: CRD file not found at $CRD_FILE"
@@ -165,15 +165,15 @@ jobs:
           echo ""
 
           # Check if CRD exists
-          if ! kubectl get crd variantautoscalings.llm-d.llm-manager.io >/dev/null 2>&1; then
-            echo "❌ ERROR: CRD variantautoscalings.llm-d.llm-manager.io not found!"
+          if ! kubectl get crd variantautoscalings.llmd.ai >/dev/null 2>&1; then
+            echo "❌ ERROR: CRD variantautoscalings.llmd.ai not found!"
             echo "## ❌ CRD Not Found" >> $GITHUB_STEP_SUMMARY
             echo "The VariantAutoscaling CRD was not deployed to the cluster." >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
 
           # Extract desiredOptimizedAlloc section
-          DESIRED_ALLOC_SCHEMA=$(kubectl get crd variantautoscalings.llm-d.llm-manager.io -o yaml | \
+          DESIRED_ALLOC_SCHEMA=$(kubectl get crd variantautoscalings.llmd.ai -o yaml | \
             grep -A 30 "desiredOptimizedAlloc:")
 
           echo "$DESIRED_ALLOC_SCHEMA"

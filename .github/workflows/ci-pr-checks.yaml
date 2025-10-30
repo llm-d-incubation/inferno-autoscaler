@@ -57,10 +57,10 @@ jobs:
         run: |
           echo "========== Verifying CRD YAML file before E2E tests =========="
           echo ""
-          echo "Checking config/crd/bases/llm-d.llm-manager.io_variantautoscalings.yaml for required fields..."
+          echo "Checking config/crd/bases/llmd.ai_variantautoscalings.yaml for required fields..."
           echo ""
 
-          CRD_FILE="config/crd/bases/llm-d.llm-manager.io_variantautoscalings.yaml"
+          CRD_FILE="config/crd/bases/llmd.ai_variantautoscalings.yaml"
 
           if [ ! -f "$CRD_FILE" ]; then
             echo "❌ ERROR: CRD file not found at $CRD_FILE"
@@ -121,12 +121,12 @@ jobs:
         run: |
           echo "========== Checking deployed CRD schema =========="
 
-          if ! kubectl get crd variantautoscalings.llm-d.llm-manager.io >/dev/null 2>&1; then
+          if ! kubectl get crd variantautoscalings.llmd.ai >/dev/null 2>&1; then
             echo "⚠️ WARNING: CRD not found (cluster may not be running)"
             exit 0
           fi
 
-          DESIRED_ALLOC_SCHEMA=$(kubectl get crd variantautoscalings.llm-d.llm-manager.io -o yaml | grep -A 30 "desiredOptimizedAlloc:")
+          DESIRED_ALLOC_SCHEMA=$(kubectl get crd variantautoscalings.llmd.ai -o yaml | grep -A 30 "desiredOptimizedAlloc:")
 
           HAS_REASON=$(echo "$DESIRED_ALLOC_SCHEMA" | grep -c "reason:" || true)
           HAS_LASTUPDATE=$(echo "$DESIRED_ALLOC_SCHEMA" | grep -c "lastUpdate:" || true)

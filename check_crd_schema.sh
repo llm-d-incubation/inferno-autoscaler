@@ -6,7 +6,7 @@ echo ""
 echo "Looking for 'desiredOptimizedAlloc' fields in CRD..."
 echo ""
 
-kubectl get crd variantautoscalings.llm-d.llm-manager.io -o yaml 2>/dev/null | \
+kubectl get crd variantautoscalings.llmd.ai -o yaml 2>/dev/null | \
   grep -A 30 "desiredOptimizedAlloc:" | \
   grep -E "(properties:|lastRunTime:|lastUpdate:|numReplicas:|reason:)" || \
   echo "ERROR: CRD not found or desiredOptimizedAlloc section not found"

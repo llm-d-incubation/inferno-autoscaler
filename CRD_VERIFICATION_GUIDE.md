@@ -88,7 +88,7 @@ The Kubernetes API server silently drops fields not defined in the CRD schema.
 ### Solution:
 1. Run `make manifests` to regenerate CRDs
 2. Ensure E2E tests deploy the latest CRD from `config/crd/bases/`
-3. Verify with: `kubectl apply -f config/crd/bases/llm-d.llm-manager.io_variantautoscalings.yaml`
+3. Verify with: `kubectl apply -f config/crd/bases/llmd.ai_variantautoscalings.yaml`
 ```
 
 ## How to Use
@@ -116,13 +116,13 @@ The verification results appear in two places:
 
 2. **Verify the generated CRD has the fields:**
    ```bash
-   grep -A 30 "desiredOptimizedAlloc:" config/crd/bases/llm-d.llm-manager.io_variantautoscalings.yaml | grep -E "(reason:|lastUpdate:)"
+   grep -A 30 "desiredOptimizedAlloc:" config/crd/bases/llmd.ai_variantautoscalings.yaml | grep -E "(reason:|lastUpdate:)"
    ```
 
 3. **Ensure E2E tests deploy the latest CRD**
    Check that your E2E test setup scripts run:
    ```bash
-   kubectl apply -f config/crd/bases/llm-d.llm-manager.io_variantautoscalings.yaml
+   kubectl apply -f config/crd/bases/llmd.ai_variantautoscalings.yaml
    ```
 
 4. **Commit and push the updated CRD:**
@@ -167,4 +167,4 @@ But when saving to the API:
 - **Manual Workflow**: `.github/workflows/ci-manual-trigger.yaml`
 - **PR Checks Workflow**: `.github/workflows/ci-pr-checks.yaml`
 - **CRD Definition**: `api/v1alpha1/variantautoscaling_types.go:167` (Reason field)
-- **CRD YAML**: `config/crd/bases/llm-d.llm-manager.io_variantautoscalings.yaml`
+- **CRD YAML**: `config/crd/bases/llmd.ai_variantautoscalings.yaml`
