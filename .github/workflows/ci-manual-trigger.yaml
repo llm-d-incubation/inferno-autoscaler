@@ -60,7 +60,7 @@ jobs:
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v1.63.4
+          version: v2.1.6
           args: ""
 
       - name: Run make lint
@@ -90,6 +90,63 @@ jobs:
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/kubectl
           kubectl version --client
+
+      - name: Verify CRD YAML Schema (Pre-E2E)
+        if: ${{ !github.event.inputs.skip_e2e }}
+        run: |
+          echo "========== Verifying CRD YAML file before E2E tests =========="
+          echo ""
+          echo "Checking config/crd/bases/llm-d.llm-manager.io_variantautoscalings.yaml for required fields..."
+          echo ""
+
+          CRD_FILE="config/crd/bases/llm-d.llm-manager.io_variantautoscalings.yaml"
+
+          if [ ! -f "$CRD_FILE" ]; then
+            echo "❌ ERROR: CRD file not found at $CRD_FILE"
+            exit 1
+          fi
+
+          # Extract desiredOptimizedAlloc section
+          DESIRED_ALLOC_SCHEMA=$(grep -A 30 "desiredOptimizedAlloc:" "$CRD_FILE")
+
+          # Check for required fields
+          HAS_REASON=$(echo "$DESIRED_ALLOC_SCHEMA" | grep -c "reason:" || true)
+          HAS_LASTUPDATE=$(echo "$DESIRED_ALLOC_SCHEMA" | grep -c "lastUpdate:" || true)
+          HAS_NUMREPLICAS=$(echo "$DESIRED_ALLOC_SCHEMA" | grep -c "numReplicas:" || true)
+          HAS_LASTRUNTIME=$(echo "$DESIRED_ALLOC_SCHEMA" | grep -c "lastRunTime:" || true)
+
+          echo "Field verification results:"
+          echo "  numReplicas: $([ $HAS_NUMREPLICAS -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING')"
+          echo "  lastRunTime: $([ $HAS_LASTRUNTIME -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING')"
+          echo "  reason: $([ $HAS_REASON -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING')"
+          echo "  lastUpdate: $([ $HAS_LASTUPDATE -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING')"
+          echo ""
+
+          # Report to GitHub Actions Summary
+          echo "## 🔍 CRD YAML Pre-Verification" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Verified CRD file **before** E2E tests:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| \`numReplicas\` | $([ $HAS_NUMREPLICAS -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING') |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`lastRunTime\` | $([ $HAS_LASTRUNTIME -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING') |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`reason\` | $([ $HAS_REASON -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING') |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`lastUpdate\` | $([ $HAS_LASTUPDATE -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING') |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Fail fast if critical fields are missing
+          if [ $HAS_REASON -eq 0 ] || [ $HAS_LASTUPDATE -eq 0 ]; then
+            echo "❌ CRITICAL: CRD YAML is missing required fields!"
+            echo "   E2E tests will fail because these fields will be dropped by the API server."
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **CRD YAML missing required fields!** Run \`make manifests\` to regenerate." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "✅ All required fields present in CRD YAML"
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **All required fields present in CRD YAML**" >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Run make test-e2e
         if: ${{ !github.event.inputs.skip_e2e }}
