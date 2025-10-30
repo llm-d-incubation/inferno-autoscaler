@@ -39,6 +39,7 @@ jobs:
 
       - name: Install Kind
         run: |
+          echo "Installing Kind..."
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
@@ -46,6 +47,7 @@ jobs:
 
       - name: Install kubectl
         run: |
+          echo "Installing kubectl..."
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/kubectl
@@ -53,10 +55,35 @@ jobs:
 
       - name: Run make test-e2e
         shell: bash
+        timeout-minutes: 35
         run: |
-          mkdir -p $HOME/.kube
-          export KUBECONFIG=$HOME/.kube/config
           make test-e2e
+
+      - name: Verify CRD Schema (Diagnostic)
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "========== Checking deployed CRD schema =========="
+
+          if ! kubectl get crd variantautoscalings.llm-d.llm-manager.io >/dev/null 2>&1; then
+            echo "⚠️ WARNING: CRD not found (cluster may not be running)"
+            exit 0
+          fi
+
+          DESIRED_ALLOC_SCHEMA=$(kubectl get crd variantautoscalings.llm-d.llm-manager.io -o yaml | grep -A 30 "desiredOptimizedAlloc:")
+
+          HAS_REASON=$(echo "$DESIRED_ALLOC_SCHEMA" | grep -c "reason:" || true)
+          HAS_LASTUPDATE=$(echo "$DESIRED_ALLOC_SCHEMA" | grep -c "lastUpdate:" || true)
+
+          echo "## 🔍 CRD Schema Check" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| \`reason\` | $([ $HAS_REASON -gt 0 ] && echo '✅' || echo '❌') |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`lastUpdate\` | $([ $HAS_LASTUPDATE -gt 0 ] && echo '✅' || echo '❌') |" >> $GITHUB_STEP_SUMMARY
+
+          if [ $HAS_REASON -eq 0 ] || [ $HAS_LASTUPDATE -eq 0 ]; then
+            echo "⚠️ **CRD missing required fields!** See manual trigger workflow for details." >> $GITHUB_STEP_SUMMARY
+          fi
           
       - name: Run make build
         shell: bash
