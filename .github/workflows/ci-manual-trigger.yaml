@@ -74,7 +74,7 @@ jobs:
 
       # E2E tests (optional, can be skipped to save minutes)
       - name: Install Kind
-        if: ${{ !github.event.inputs.skip_e2e }}
+        if: ${{ github.event.inputs.skip_e2e != 'true' }}
         run: |
           echo "Installing Kind..."
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
@@ -83,7 +83,7 @@ jobs:
           kind version
 
       - name: Install kubectl
-        if: ${{ !github.event.inputs.skip_e2e }}
+        if: ${{ github.event.inputs.skip_e2e != 'true' }}
         run: |
           echo "Installing kubectl..."
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -92,7 +92,7 @@ jobs:
           kubectl version --client
 
       - name: Verify CRD YAML Schema (Pre-E2E)
-        if: ${{ !github.event.inputs.skip_e2e }}
+        if: ${{ github.event.inputs.skip_e2e != 'true' }}
         run: |
           echo "========== Verifying CRD YAML file before E2E tests =========="
           echo ""
@@ -149,14 +149,14 @@ jobs:
           fi
 
       - name: Run make test-e2e
-        if: ${{ !github.event.inputs.skip_e2e }}
+        if: ${{ github.event.inputs.skip_e2e != 'true' }}
         timeout-minutes: 35
         run: |
           echo "Running E2E tests..."
           make test-e2e
 
       - name: Verify CRD Schema (Diagnostic)
-        if: ${{ !github.event.inputs.skip_e2e && always() }}
+        if: ${{ github.event.inputs.skip_e2e != 'true' && always() }}
         continue-on-error: true
         run: |
           echo "========== Checking deployed CRD schema =========="
@@ -230,7 +230,7 @@ jobs:
           fi
 
       - name: E2E tests skipped
-        if: ${{ github.event.inputs.skip_e2e }}
+        if: ${{ github.event.inputs.skip_e2e == 'true' }}
         run: echo "E2E tests were skipped to save CI minutes"
 
       - name: Summary
