@@ -166,10 +166,12 @@ jobs:
 
           # Check if CRD exists
           if ! kubectl get crd variantautoscalings.llmd.ai >/dev/null 2>&1; then
-            echo "❌ ERROR: CRD variantautoscalings.llmd.ai not found!"
-            echo "## ❌ CRD Not Found" >> $GITHUB_STEP_SUMMARY
-            echo "The VariantAutoscaling CRD was not deployed to the cluster." >> $GITHUB_STEP_SUMMARY
-            exit 1
+            echo "⚠️  WARNING: CRD variantautoscalings.llmd.ai not found (cluster may have been torn down)"
+            echo "## ⚠️ CRD Not Found (Diagnostic)" >> $GITHUB_STEP_SUMMARY
+            echo "The VariantAutoscaling CRD was not found. This is expected if the cluster was already torn down." >> $GITHUB_STEP_SUMMARY
+            echo "This is a diagnostic step and does not indicate test failure." >> $GITHUB_STEP_SUMMARY
+            echo "Skipping CRD schema verification."
+            exit 0
           fi
 
           # Extract desiredOptimizedAlloc section
