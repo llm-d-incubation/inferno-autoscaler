@@ -206,9 +206,9 @@ func GetMinNumReplicas(configData ScaleToZeroConfigData, modelID string) int {
 // GetVariantMinReplicas returns the minimum number of replicas for a specific variant.
 // If va.Spec.MinReplicas is set, returns that value.
 // Otherwise, returns 0 (default).
-func GetVariantMinReplicas(va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling) int {
+func GetVariantMinReplicas(va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling) int32 {
 	if va.Spec.MinReplicas != nil {
-		return *va.Spec.MinReplicas
+		return int32(*va.Spec.MinReplicas)
 	}
 	return 0 // Default value
 }
@@ -216,9 +216,9 @@ func GetVariantMinReplicas(va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling
 // GetVariantMaxReplicas returns the maximum number of replicas for a specific variant.
 // If va.Spec.MaxReplicas is set, returns that value.
 // Otherwise, returns -1 to indicate no upper bound (unlimited).
-func GetVariantMaxReplicas(va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling) int {
+func GetVariantMaxReplicas(va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling) int32 {
 	if va.Spec.MaxReplicas != nil {
-		return *va.Spec.MaxReplicas
+		return int32(*va.Spec.MaxReplicas)
 	}
 	return -1 // No upper bound
 }
@@ -467,7 +467,7 @@ func AddServerInfoToSystemData(
 		Class:           className,
 		Model:           va.Spec.ModelID,
 		KeepAccelerator: true,
-		MinNumReplicas:  minNumReplicas,
+		MinNumReplicas:  int(minNumReplicas),
 		CurrentAlloc:    *AllocationData,
 		DesiredAlloc:    infernoConfig.AllocationData{},
 	}
@@ -501,6 +501,7 @@ func CreateOptimizedAlloc(name string,
 	optimizedAlloc := &llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 		LastRunTime: metav1.NewTime(time.Now()),
 		NumReplicas: allocationData.NumReplicas,
+		Reason:      "Optimizer solution: cost and latency optimized allocation",
 	}
 	return optimizedAlloc, nil
 }
@@ -541,7 +542,9 @@ func MarshalStructToJsonString(t any) string {
 }
 
 // Helper to find SLOs for a model variant
+// If the specified model is not found, falls back to "default/default" SLO
 func FindModelSLO(cmData map[string]string, targetModel string) (*interfaces.ServiceClassEntry, string /* class name */, error) {
+	// First pass: try to find exact match for targetModel
 	for key, val := range cmData {
 		var sc interfaces.ServiceClass
 		if err := yaml.Unmarshal([]byte(val), &sc); err != nil {
@@ -554,7 +557,32 @@ func FindModelSLO(cmData map[string]string, targetModel string) (*interfaces.Ser
 			}
 		}
 	}
-	return nil, "", fmt.Errorf("model %q not found in any service class", targetModel)
+
+	// Model not found, try fallback to default/default
+	logger.Log.Info("Model SLO not found, attempting fallback to default/default",
+		"model", targetModel)
+
+	// Second pass: try to find default/default
+	for _, val := range cmData {
+		var sc interfaces.ServiceClass
+		if err := yaml.Unmarshal([]byte(val), &sc); err != nil {
+			continue // Skip unparseable entries
+		}
+
+		for _, entry := range sc.Data {
+			if entry.Model == "default/default" {
+				logger.Log.Info("Using fallback SLO from default/default",
+					"original-model", targetModel,
+					"service-class", sc.Name,
+					"slo-tpot", entry.SLOTPOT,
+					"slo-ttft", entry.SLOTTFT)
+				return &entry, sc.Name, nil
+			}
+		}
+	}
+
+	// Neither targetModel nor default/default found
+	return nil, "", fmt.Errorf("model %q not found in any service class and default/default fallback not found", targetModel)
 }
 
 func Ptr[T any](v T) *T {

@@ -252,14 +252,15 @@ var _ = Describe("Actuator", func() {
 			// but we can verify the method completed without error
 		})
 
-		It("should skip metrics emission when desired replicas is 0", func() {
+		It("should emit metrics for scale-to-zero case (desired replicas = 0)", func() {
 			va.Status.DesiredOptimizedAlloc.NumReplicas = 0
 			replicas := va.Status.DesiredOptimizedAlloc.NumReplicas
 			fmt.Printf("Emitting metrics for variantAutoscaling - name: %s\n numReplicas: %d\n", va.Name, replicas)
 			err := actuator.EmitMetrics(ctx, va)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Method should succeed but skip metrics emission
+			// Method should succeed and emit metrics even for scale-to-zero (NumReplicas=0)
+			// This is critical for KEDA to function properly in scale-to-zero scenarios
 		})
 
 		It("should use fallback replicas when deployment retrieval fails", func() {

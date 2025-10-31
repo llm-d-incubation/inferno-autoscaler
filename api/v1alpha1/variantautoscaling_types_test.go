@@ -526,8 +526,8 @@ func TestVariantIDPatternValidation(t *testing.T) {
 func TestReplicaBoundsEdgeCases(t *testing.T) {
 	tests := []struct {
 		name        string
-		minReplicas *int
-		maxReplicas *int
+		minReplicas *int32
+		maxReplicas *int32
 		expectValid bool
 		description string
 	}{
@@ -627,7 +627,7 @@ func TestReplicaBoundsEdgeCases(t *testing.T) {
 func TestReplicaBoundsWithScaleToZero(t *testing.T) {
 	tests := []struct {
 		name               string
-		minReplicas        *int
+		minReplicas        *int32
 		scaleToZeroEnabled bool
 		canScaleToZero     bool
 		description        string
@@ -675,7 +675,7 @@ func TestReplicaBoundsWithScaleToZero(t *testing.T) {
 			va.Spec.MinReplicas = tt.minReplicas
 
 			// Determine effective minReplicas
-			effectiveMin := 0
+			effectiveMin := int32(0)
 			if tt.minReplicas != nil {
 				effectiveMin = *tt.minReplicas
 			}
@@ -698,8 +698,8 @@ func TestReplicaBoundsWithScaleToZero(t *testing.T) {
 func TestReplicaBoundsJSONRoundTrip(t *testing.T) {
 	tests := []struct {
 		name        string
-		minReplicas *int
-		maxReplicas *int
+		minReplicas *int32
+		maxReplicas *int32
 	}{
 		{name: "both nil", minReplicas: nil, maxReplicas: nil},
 		{name: "only min set", minReplicas: intPtr(2), maxReplicas: nil},
@@ -745,13 +745,241 @@ func TestReplicaBoundsJSONRoundTrip(t *testing.T) {
 	}
 }
 
+// TestOptimizedAllocReasonField tests the Reason field in OptimizedAlloc
+func TestOptimizedAllocReasonField(t *testing.T) {
+	tests := []struct {
+		name         string
+		reason       string
+		expectInJSON bool
+	}{
+		{
+			name:         "optimizer reason",
+			reason:       "Optimizer solution: cost and latency optimized allocation",
+			expectInJSON: true,
+		},
+		{
+			name:         "fallback reason",
+			reason:       "Fallback: metrics unavailable, using max(minReplicas=2, current=3) = 3",
+			expectInJSON: true,
+		},
+		{
+			name:         "scale-to-zero reason",
+			reason:       "Fallback: scale-to-zero after retention period (no metrics for >5m)",
+			expectInJSON: true,
+		},
+		{
+			name:         "empty reason - should be omitted",
+			reason:       "",
+			expectInJSON: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			va := makeValidVA()
+			va.Status.DesiredOptimizedAlloc.Reason = tt.reason
+
+			data, err := json.Marshal(va)
+			if err != nil {
+				t.Fatalf("Failed to marshal: %v", err)
+			}
+
+			var decoded VariantAutoscaling
+			if err := json.Unmarshal(data, &decoded); err != nil {
+				t.Fatalf("Failed to unmarshal: %v", err)
+			}
+
+			if tt.expectInJSON {
+				if decoded.Status.DesiredOptimizedAlloc.Reason != tt.reason {
+					t.Errorf("Reason mismatch: expected=%q, got=%q", tt.reason, decoded.Status.DesiredOptimizedAlloc.Reason)
+				}
+			} else {
+				// Check if field is omitted in JSON
+				var raw map[string]interface{}
+				if err := json.Unmarshal(data, &raw); err != nil {
+					t.Fatalf("Failed to unmarshal to map: %v", err)
+				}
+				status := raw["status"].(map[string]interface{})
+				optimizedAlloc := status["desiredOptimizedAlloc"].(map[string]interface{})
+				if _, exists := optimizedAlloc["reason"]; exists {
+					t.Errorf("Expected reason to be omitted when empty, but it exists")
+				}
+			}
+		})
+	}
+}
+
+// TestOptimizedAllocLastUpdateField tests the LastUpdate field in OptimizedAlloc
+func TestOptimizedAllocLastUpdateField(t *testing.T) {
+	tests := []struct {
+		name           string
+		setLastUpdate  bool
+		lastUpdateTime time.Time
+	}{
+		{
+			name:           "with lastUpdate timestamp",
+			setLastUpdate:  true,
+			lastUpdateTime: time.Unix(1730000000, 0).UTC(),
+		},
+		{
+			name:          "without lastUpdate - should be omitted",
+			setLastUpdate: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			va := makeValidVA()
+
+			if tt.setLastUpdate {
+				va.Status.DesiredOptimizedAlloc.LastUpdate = metav1.NewTime(tt.lastUpdateTime)
+			} else {
+				va.Status.DesiredOptimizedAlloc.LastUpdate = metav1.Time{}
+			}
+
+			data, err := json.Marshal(va)
+			if err != nil {
+				t.Fatalf("Failed to marshal: %v", err)
+			}
+
+			var decoded VariantAutoscaling
+			if err := json.Unmarshal(data, &decoded); err != nil {
+				t.Fatalf("Failed to unmarshal: %v", err)
+			}
+
+			if tt.setLastUpdate {
+				if !decoded.Status.DesiredOptimizedAlloc.LastUpdate.Time.Equal(tt.lastUpdateTime) {
+					t.Errorf("LastUpdate mismatch: expected=%v, got=%v",
+						tt.lastUpdateTime, decoded.Status.DesiredOptimizedAlloc.LastUpdate.Time)
+				}
+			} else {
+				// Verify zero time
+				if !decoded.Status.DesiredOptimizedAlloc.LastUpdate.IsZero() {
+					t.Errorf("Expected LastUpdate to be zero, but got %v",
+						decoded.Status.DesiredOptimizedAlloc.LastUpdate)
+				}
+			}
+		})
+	}
+}
+
+// TestOptimizedAllocDeepCopyWithReasonAndLastUpdate tests DeepCopy for new fields
+func TestOptimizedAllocDeepCopyWithReasonAndLastUpdate(t *testing.T) {
+	orig := makeValidVA()
+	orig.Status.DesiredOptimizedAlloc.Reason = "Optimizer solution: cost-optimal allocation"
+	orig.Status.DesiredOptimizedAlloc.LastUpdate = metav1.NewTime(time.Unix(1730100000, 0).UTC())
+	orig.Status.DesiredOptimizedAlloc.NumReplicas = 5
+
+	cp := orig.DeepCopy()
+
+	// Mutate the copy
+	cp.Status.DesiredOptimizedAlloc.Reason = "Fallback: metrics unavailable"
+	cp.Status.DesiredOptimizedAlloc.LastUpdate = metav1.NewTime(time.Unix(1730200000, 0).UTC())
+	cp.Status.DesiredOptimizedAlloc.NumReplicas = 3
+
+	// Verify original is unchanged
+	if orig.Status.DesiredOptimizedAlloc.Reason == cp.Status.DesiredOptimizedAlloc.Reason {
+		t.Errorf("DeepCopy did not create independent copy for Reason")
+	}
+	if orig.Status.DesiredOptimizedAlloc.LastUpdate.Equal(&cp.Status.DesiredOptimizedAlloc.LastUpdate) {
+		t.Errorf("DeepCopy did not create independent copy for LastUpdate")
+	}
+	if orig.Status.DesiredOptimizedAlloc.NumReplicas == cp.Status.DesiredOptimizedAlloc.NumReplicas {
+		t.Errorf("DeepCopy did not create independent copy for NumReplicas")
+	}
+
+	// Verify copy has expected values
+	if cp.Status.DesiredOptimizedAlloc.Reason != "Fallback: metrics unavailable" {
+		t.Errorf("Copy has unexpected Reason: %q", cp.Status.DesiredOptimizedAlloc.Reason)
+	}
+	if cp.Status.DesiredOptimizedAlloc.NumReplicas != 3 {
+		t.Errorf("Copy has unexpected NumReplicas: %d", cp.Status.DesiredOptimizedAlloc.NumReplicas)
+	}
+}
+
+// TestOptimizedAllocJSONRoundTripWithAllFields tests JSON round trip with all fields populated
+func TestOptimizedAllocJSONRoundTripWithAllFields(t *testing.T) {
+	orig := makeValidVA()
+	orig.Status.DesiredOptimizedAlloc.LastRunTime = metav1.NewTime(time.Unix(1730000000, 0).UTC())
+	orig.Status.DesiredOptimizedAlloc.NumReplicas = 4
+	orig.Status.DesiredOptimizedAlloc.Reason = "Optimizer solution: cost and latency optimized allocation"
+	orig.Status.DesiredOptimizedAlloc.LastUpdate = metav1.NewTime(time.Unix(1730010000, 0).UTC())
+
+	data, err := json.Marshal(orig)
+	if err != nil {
+		t.Fatalf("Failed to marshal: %v", err)
+	}
+
+	var decoded VariantAutoscaling
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Failed to unmarshal: %v", err)
+	}
+
+	// Verify all fields
+	origAlloc := orig.Status.DesiredOptimizedAlloc
+	decodedAlloc := decoded.Status.DesiredOptimizedAlloc
+
+	if !origAlloc.LastRunTime.Equal(&decodedAlloc.LastRunTime) {
+		t.Errorf("LastRunTime mismatch: expected=%v, got=%v", origAlloc.LastRunTime, decodedAlloc.LastRunTime)
+	}
+	if origAlloc.NumReplicas != decodedAlloc.NumReplicas {
+		t.Errorf("NumReplicas mismatch: expected=%d, got=%d", origAlloc.NumReplicas, decodedAlloc.NumReplicas)
+	}
+	if origAlloc.Reason != decodedAlloc.Reason {
+		t.Errorf("Reason mismatch: expected=%q, got=%q", origAlloc.Reason, decodedAlloc.Reason)
+	}
+	if !origAlloc.LastUpdate.Equal(&decodedAlloc.LastUpdate) {
+		t.Errorf("LastUpdate mismatch: expected=%v, got=%v", origAlloc.LastUpdate, decodedAlloc.LastUpdate)
+	}
+}
+
+// TestConditionConstants verifies that condition type and reason constants are defined
+func TestConditionConstants(t *testing.T) {
+	// Verify TypeMetricsAvailable constant
+	if TypeMetricsAvailable != "MetricsAvailable" {
+		t.Errorf("TypeMetricsAvailable constant mismatch: expected=%q, got=%q", "MetricsAvailable", TypeMetricsAvailable)
+	}
+
+	// Verify TypeOptimizationReady constant
+	if TypeOptimizationReady != "OptimizationReady" {
+		t.Errorf("TypeOptimizationReady constant mismatch: expected=%q, got=%q", "OptimizationReady", TypeOptimizationReady)
+	}
+
+	// Verify MetricsAvailable reason constants
+	expectedReasons := map[string]string{
+		"ReasonMetricsFound":    ReasonMetricsFound,
+		"ReasonMetricsMissing":  ReasonMetricsMissing,
+		"ReasonMetricsStale":    ReasonMetricsStale,
+		"ReasonPrometheusError": ReasonPrometheusError,
+	}
+
+	for name, value := range expectedReasons {
+		if value != name[len("Reason"):] {
+			t.Logf("Verified constant %s = %q", name, value)
+		}
+	}
+
+	// Verify OptimizationReady reason constants
+	expectedOptReasons := map[string]string{
+		"ReasonOptimizationSucceeded": ReasonOptimizationSucceeded,
+		"ReasonOptimizationFailed":    ReasonOptimizationFailed,
+		"ReasonMetricsUnavailable":    ReasonMetricsUnavailable,
+	}
+
+	for name, value := range expectedOptReasons {
+		if value != name[len("Reason"):] {
+			t.Logf("Verified constant %s = %q", name, value)
+		}
+	}
+}
+
 // Helper functions for tests
 
-func intPtr(i int) *int {
+func intPtr(i int32) *int32 {
 	return &i
 }
 
-func intPtrEqual(a, b *int) bool {
+func intPtrEqual(a, b *int32) bool {
 	if a == nil && b == nil {
 		return true
 	}
@@ -761,7 +989,7 @@ func intPtrEqual(a, b *int) bool {
 	return *a == *b
 }
 
-func ptrToString(p *int) string {
+func ptrToString(p *int32) string {
 	if p == nil {
 		return "nil"
 	}

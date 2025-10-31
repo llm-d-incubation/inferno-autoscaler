@@ -267,17 +267,21 @@ var _ = Describe("Collector", func() {
 		It("should collect allocation and metrics successfully", func() {
 			// Setup mock responses for aggregate metrics
 			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
-			tokenQuery := utils.CreateTokenQuery(modelID, testNamespace)
-			waitQuery := utils.CreateWaitQuery(modelID, testNamespace)
+			promptTokensQuery := utils.CreatePromptToksQuery(modelID, testNamespace)
+			tokenQuery := utils.CreateDecToksQuery(modelID, testNamespace)
+			ttftQuery := utils.CreateTTFTQuery(modelID, testNamespace)
 			itlQuery := utils.CreateITLQuery(modelID, testNamespace)
 
 			mockProm.QueryResults[arrivalQuery] = model.Vector{
-				&model.Sample{Value: model.SampleValue(10.5)}, // 10.5 requests/min
+				&model.Sample{Value: model.SampleValue(0.175)}, // 0.175 requests/sec (will be * 60 = 10.5 req/min)
+			}
+			mockProm.QueryResults[promptTokensQuery] = model.Vector{
+				&model.Sample{Value: model.SampleValue(100.0)}, // 100 input tokens per request
 			}
 			mockProm.QueryResults[tokenQuery] = model.Vector{
-				&model.Sample{Value: model.SampleValue(150.0)}, // 150 tokens per request
+				&model.Sample{Value: model.SampleValue(150.0)}, // 150 output tokens per request
 			}
-			mockProm.QueryResults[waitQuery] = model.Vector{
+			mockProm.QueryResults[ttftQuery] = model.Vector{
 				&model.Sample{Value: model.SampleValue(0.5)}, // 0.5 seconds
 			}
 			mockProm.QueryResults[itlQuery] = model.Vector{
@@ -289,7 +293,7 @@ var _ = Describe("Collector", func() {
 			Expect(err).NotTo(HaveOccurred())
 			// Note: In single-variant architecture, Accelerator, VariantID, MaxBatch, and VariantCost
 			// are in the VA spec, not in the Allocation status
-			Expect(allocation.NumReplicas).To(Equal(2))
+			Expect(allocation.NumReplicas).To(Equal(int32(2)))
 
 			// Test new API - CollectAggregateMetrics
 			load, ttftAvg, itlAvg, err := CollectAggregateMetrics(ctx, modelID, testNamespace, mockProm)
@@ -305,7 +309,7 @@ var _ = Describe("Collector", func() {
 			allocation, err := CollectAllocationForDeployment(variantID, "", deployment)
 			Expect(err).NotTo(HaveOccurred())
 			// Note: In single-variant architecture, Accelerator is in the VA spec, not Allocation status
-			Expect(allocation.NumReplicas).To(Equal(2))
+			Expect(allocation.NumReplicas).To(Equal(int32(2)))
 		})
 
 		It("should handle Prometheus query errors", func() {
@@ -322,14 +326,16 @@ var _ = Describe("Collector", func() {
 		It("should handle empty metric results gracefully", func() {
 			// Setup empty responses (no data points)
 			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
-			tokenQuery := utils.CreateTokenQuery(modelID, testNamespace)
-			waitQuery := utils.CreateWaitQuery(modelID, testNamespace)
+			promptTokensQuery := utils.CreatePromptToksQuery(modelID, testNamespace)
+			tokenQuery := utils.CreateDecToksQuery(modelID, testNamespace)
+			ttftQuery := utils.CreateTTFTQuery(modelID, testNamespace)
 			itlQuery := utils.CreateITLQuery(modelID, testNamespace)
 
 			// Empty vectors (no data)
 			mockProm.QueryResults[arrivalQuery] = model.Vector{}
+			mockProm.QueryResults[promptTokensQuery] = model.Vector{}
 			mockProm.QueryResults[tokenQuery] = model.Vector{}
-			mockProm.QueryResults[waitQuery] = model.Vector{}
+			mockProm.QueryResults[ttftQuery] = model.Vector{}
 			mockProm.QueryResults[itlQuery] = model.Vector{}
 
 			// CollectAggregateMetrics should handle empty data gracefully

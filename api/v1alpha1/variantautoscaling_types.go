@@ -69,14 +69,14 @@ type VariantAutoscalingSpec struct {
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:default=0
 	// +optional
-	MinReplicas *int `json:"minReplicas,omitempty"`
+	MinReplicas *int32 `json:"minReplicas,omitempty"`
 
 	// MaxReplicas specifies the maximum number of replicas for this variant.
 	// The optimizer will never scale above this value.
 	// If not specified, no upper bound is enforced (unlimited scaling).
 	// +kubebuilder:validation:Minimum=1
 	// +optional
-	MaxReplicas *int `json:"maxReplicas,omitempty"`
+	MaxReplicas *int32 `json:"maxReplicas,omitempty"`
 }
 
 // ConfigMapKeyRef references a specific key within a ConfigMap.
@@ -143,7 +143,7 @@ type VariantAutoscalingStatus struct {
 type Allocation struct {
 	// NumReplicas is the number of replicas currently allocated.
 	// +kubebuilder:validation:Minimum=0
-	NumReplicas int `json:"numReplicas"`
+	NumReplicas int32 `json:"numReplicas"`
 }
 
 // OptimizedAlloc describes the target optimized allocation for a model variant.
@@ -155,7 +155,22 @@ type OptimizedAlloc struct {
 
 	// NumReplicas is the number of replicas for the optimized allocation.
 	// +kubebuilder:validation:Minimum=0
-	NumReplicas int `json:"numReplicas"`
+	NumReplicas int32 `json:"numReplicas"`
+
+	// Reason provides a human-readable explanation for the allocation decision.
+	// This field indicates whether the allocation came from the optimizer,
+	// fallback logic, scale-to-zero enforcement, or bounds clamping.
+	// Examples: "Optimizer solution: cost-optimal allocation",
+	// "Fallback: metrics unavailable, using max(minReplicas=2, current=3)",
+	// "Scale-to-zero: no load detected"
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// LastUpdate is the timestamp when NumReplicas or Reason changed from the previous state.
+	// This field tracks when the allocation decision actually changed, which may be
+	// different from LastRunTime (which is updated on every reconciliation).
+	// +optional
+	LastUpdate metav1.Time `json:"lastUpdate,omitempty"`
 }
 
 // ActuationStatus provides details about the actuation process and its current status.
@@ -230,4 +245,6 @@ const (
 	ReasonOptimizationFailed = "OptimizationFailed"
 	// ReasonMetricsUnavailable indicates optimization cannot run due to missing metrics
 	ReasonMetricsUnavailable = "MetricsUnavailable"
+	// ReasonFallbackUsed indicates fallback allocation is being used
+	ReasonFallbackUsed = "FallbackUsed"
 )

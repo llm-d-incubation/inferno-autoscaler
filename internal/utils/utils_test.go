@@ -247,7 +247,7 @@ func TestCreateOptimizedAlloc(t *testing.T) {
 		vaNamespace   string
 		variantID     string
 		accelerator   string
-		numReplicas   int
+		numReplicas   int32
 		expectError   bool
 		errorContains string
 	}{
@@ -350,7 +350,7 @@ func TestCreateOptimizedAlloc(t *testing.T) {
 			// not in OptimizedAlloc. These assertions have been removed.
 
 			// Verify NumReplicas
-			if result.NumReplicas != tt.numReplicas {
+			if result.NumReplicas != int32(tt.numReplicas) {
 				t.Errorf("NumReplicas mismatch: got %d, expected %d", result.NumReplicas, tt.numReplicas)
 			}
 
@@ -373,8 +373,8 @@ func TestCreateOptimizedAlloc(t *testing.T) {
 func TestGetVariantMinReplicas(t *testing.T) {
 	tests := []struct {
 		name        string
-		minReplicas *int
-		expected    int
+		minReplicas *int32
+		expected    int32
 	}{
 		{
 			name:        "MinReplicas is nil (should default to 0)",
@@ -422,8 +422,8 @@ func TestGetVariantMinReplicas(t *testing.T) {
 func TestGetVariantMaxReplicas(t *testing.T) {
 	tests := []struct {
 		name        string
-		maxReplicas *int
-		expected    int
+		maxReplicas *int32
+		expected    int32
 	}{
 		{
 			name:        "MaxReplicas is nil (should return -1 for unlimited)",
@@ -469,7 +469,7 @@ func TestGetVariantMaxReplicas(t *testing.T) {
 }
 
 // intPtr is a helper function to create a pointer to an int value
-func intPtr(i int) *int {
+func intPtr(i int32) *int32 {
 	return &i
 }
 
@@ -477,10 +477,10 @@ func intPtr(i int) *int {
 func TestReplicaBoundsIntegration(t *testing.T) {
 	tests := []struct {
 		name               string
-		minReplicas        *int
-		maxReplicas        *int
-		optimizedReplicas  int
-		expectedAfterClamp int
+		minReplicas        *int32
+		maxReplicas        *int32
+		optimizedReplicas  int32
+		expectedAfterClamp int32
 		description        string
 	}{
 		{
@@ -592,8 +592,8 @@ func TestReplicaBoundsIntegration(t *testing.T) {
 func TestAddServerInfoWithReplicaBounds(t *testing.T) {
 	tests := []struct {
 		name                string
-		minReplicas         *int
-		expectedMinInSystem int
+		minReplicas         *int32
+		expectedMinInSystem int32
 		description         string
 	}{
 		{

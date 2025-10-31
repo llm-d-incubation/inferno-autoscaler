@@ -17,7 +17,7 @@ spec:
   # OpenAI API compatible name of the model
   modelID: {{ $.Values.variantAutoscaling.modelID | quote }}
   # Unique identifier for this variant: modelID-accelerator-accCount
-  variantID: {{ printf "%s-%s-%d" $.Values.variantAutoscaling.modelID .accelerator (.acceleratorCount | default 1) }}
+  variantID: {{ printf "%s-%s-%d" $.Values.variantAutoscaling.modelID .accelerator (int (.acceleratorCount | default 1)) }}
   # Accelerator type for this variant
   accelerator: {{ .accelerator }}
   # Number of accelerators per replica

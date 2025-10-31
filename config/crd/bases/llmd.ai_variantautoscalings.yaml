@@ -81,6 +81,7 @@ spec:
                   MaxReplicas specifies the maximum number of replicas for this variant.
                   The optimizer will never scale above this value.
                   If not specified, no upper bound is enforced (unlimited scaling).
+                format: int32
                 minimum: 1
                 type: integer
               minReplicas:
@@ -91,6 +92,7 @@ spec:
                   If not specified, defaults to 0.
                   Warning: Setting minReplicas > 0 for multiple variants may lead to unnecessary GPU utilization.
                   Warning: Setting minReplicas > 0 prevents the model from scaling to zero even if scaleToZero is enabled.
+                format: int32
                 minimum: 0
                 type: integer
               modelID:
@@ -272,6 +274,7 @@ spec:
                 properties:
                   numReplicas:
                     description: NumReplicas is the number of replicas currently allocated.
+                    format: int32
                     minimum: 0
                     type: integer
                 required:
@@ -286,11 +289,28 @@ spec:
                       run.
                     format: date-time
                     type: string
+                  lastUpdate:
+                    description: |-
+                      LastUpdate is the timestamp when NumReplicas or Reason changed from the previous state.
+                      This field tracks when the allocation decision actually changed, which may be
+                      different from LastRunTime (which is updated on every reconciliation).
+                    format: date-time
+                    type: string
                   numReplicas:
                     description: NumReplicas is the number of replicas for the optimized
                       allocation.
+                    format: int32
                     minimum: 0
                     type: integer
+                  reason:
+                    description: |-
+                      Reason provides a human-readable explanation for the allocation decision.
+                      This field indicates whether the allocation came from the optimizer,
+                      fallback logic, scale-to-zero enforcement, or bounds clamping.
+                      Examples: "Optimizer solution: cost-optimal allocation",
+                      "Fallback: metrics unavailable, using max(minReplicas=2, current=3)",
+                      "Scale-to-zero: no load detected"
+                    type: string
                 required:
                 - numReplicas
                 type: object
