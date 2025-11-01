@@ -2289,8 +2289,7 @@ retentionPeriod: "not-a-duration"`,
 						if timeSinceLastUpdate <= retentionPeriod {
 							// Preserve previous allocation
 							newAlloc.NumReplicas = previousAlloc.NumReplicas
-							newAlloc.Reason = fmt.Sprintf("Optimizer returned 0 but retention period not exceeded (%v < %v), preserving allocation",
-								timeSinceLastUpdate.Round(time.Second), retentionPeriod)
+							newAlloc.Reason = "Optimizer returned 0 but retention period not exceeded, preserving allocation"
 						}
 					}
 				}
@@ -2325,8 +2324,7 @@ retentionPeriod: "not-a-duration"`,
 						if timeSinceLastUpdate <= retentionPeriod {
 							// Preserve previous allocation
 							newAlloc.NumReplicas = previousAlloc.NumReplicas
-							newAlloc.Reason = fmt.Sprintf("Optimizer returned 0 but retention period not exceeded (%v < %v), preserving allocation",
-								timeSinceLastUpdate.Round(time.Second), retentionPeriod)
+							newAlloc.Reason = "Optimizer returned 0 but retention period not exceeded, preserving allocation"
 						}
 					}
 				}
@@ -2368,8 +2366,7 @@ retentionPeriod: "not-a-duration"`,
 						if timeSinceLastUpdate <= retentionPeriod {
 							// Preserve previous allocation
 							newAlloc.NumReplicas = previousAlloc.NumReplicas
-							newAlloc.Reason = fmt.Sprintf("Optimizer returned 0 but retention period not exceeded (%v < %v), preserving allocation",
-								timeSinceLastUpdate.Round(time.Second), retentionPeriod)
+							newAlloc.Reason = "Optimizer returned 0 but retention period not exceeded, preserving allocation"
 						}
 					}
 				}
@@ -2404,8 +2401,7 @@ retentionPeriod: "not-a-duration"`,
 						if timeSinceLastUpdate <= retentionPeriod {
 							// Preserve previous allocation
 							newAlloc.NumReplicas = previousAlloc.NumReplicas
-							newAlloc.Reason = fmt.Sprintf("Optimizer returned 0 but retention period not exceeded (%v < %v), preserving allocation",
-								timeSinceLastUpdate.Round(time.Second), retentionPeriod)
+							newAlloc.Reason = "Optimizer returned 0 but retention period not exceeded, preserving allocation"
 						}
 					}
 				}

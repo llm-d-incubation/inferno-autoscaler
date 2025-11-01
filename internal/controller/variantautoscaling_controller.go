@@ -1366,8 +1366,9 @@ func (r *VariantAutoscalingReconciler) applyOptimizedAllocations(
 
 						// Preserve previous allocation (don't scale to zero yet)
 						newAlloc.NumReplicas = previousAlloc.NumReplicas
-						newAlloc.Reason = fmt.Sprintf("Optimizer returned 0 but retention period not exceeded (%v < %v), preserving allocation",
-							timeSinceLastUpdate.Round(time.Second), retentionPeriod)
+						// Use static reason to avoid changing Reason on every reconciliation
+						// (which would reset LastUpdate and prevent retention period from being exceeded)
+						newAlloc.Reason = "Optimizer returned 0 but retention period not exceeded, preserving allocation"
 					} else {
 						logger.Log.Info("Optimizer returned 0 replicas and retention period exceeded, scaling to zero",
 							"variantName", updateVa.Name,

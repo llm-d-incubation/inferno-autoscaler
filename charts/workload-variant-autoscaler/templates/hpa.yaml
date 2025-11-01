@@ -10,7 +10,7 @@ spec:
     kind: Deployment
     name: {{ printf "%s-decode" .Values.llmd.modelName }}
   # minReplicas: 0  # scale to zero - alpha feature
-  maxReplicas: {{ .Values.hpa.maxReplicas }}
+  maxReplicas: {{ int .Values.hpa.maxReplicas }}
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 0 # tune this value 

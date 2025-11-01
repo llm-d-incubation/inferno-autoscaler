@@ -21,7 +21,7 @@ spec:
   # Accelerator type for this variant
   accelerator: {{ .accelerator }}
   # Number of accelerators per replica
-  acceleratorCount: {{ .acceleratorCount | default 1 }}
+  acceleratorCount: {{ int (.acceleratorCount | default 1) }}
   # Add SLOs in configmap, add reference to this per model data
   # to avoid duplication and Move to ISOs when available
   sloClassRef:
@@ -41,6 +41,6 @@ spec:
       prefillParms:
         gamma: {{ .perfParms.prefillParms.gamma | quote }}
         delta: {{ .perfParms.prefillParms.delta | quote }}
-    maxBatchSize: {{ .maxBatchSize | default 512 }}
+    maxBatchSize: {{ int (.maxBatchSize | default 512) }}
 {{- end }}
 {{- end }}

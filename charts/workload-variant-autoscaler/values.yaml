@@ -7,8 +7,6 @@ wva:
   replicaCount: 1
   modelName: ms-inference-scheduling-llm-d-modelservice
 
-  monitoringNamespace: openshift-user-workload-monitoring
-
   metrics:
     enabled: true
     port: 8443
@@ -20,12 +18,27 @@ wva:
   va:
     enabled: true
 
+  prometheus:
+    monitoringNamespace: openshift-user-workload-monitoring
+    baseURL: "https://thanos-querier.openshift-monitoring.svc.cluster.local:9091"
+    caCert: |
+      -----BEGIN CERTIFICATE-----
+      placeholder...
+      -----END CERTIFICATE-----
+
 prometheusAdapter:
   enabled: true
   namespaceOverride: openshift-user-workload-monitoring
 
 llmd:
   namespace: llm-d-inference-scheduling
+  modelID: "unsloth/Meta-Llama-3.1-8B"
+
+va:
+  enabled: true
+  accelerator: H100
+  sloTpot: 10
+  sloTtft: 1000
 
 variantAutoscaling:
   enabled: true
@@ -70,10 +83,4 @@ vllmService:
   enabled: true
   nodePort: 30000
   interval: 15s
-
-prometheus:
-  baseURL: "https://thanos-querier.openshift-monitoring.svc.cluster.local:9091"
-  caCert: |
-    -----BEGIN CERTIFICATE-----
-    placeholder...
-    -----END CERTIFICATE-----
+  scheme: http  # vLLM emulator runs on HTTP
