@@ -256,6 +256,11 @@ retentionPeriod: "4m"`, modelID),
 	})
 
 	AfterAll(func() {
+		// Skip cleanup if test was skipped (k8sClient will be nil)
+		if k8sClient == nil {
+			return
+		}
+
 		By("cleaning up HPA")
 		err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Delete(ctx, deployName+"-hpa", metav1.DeleteOptions{})
 		err = client.IgnoreNotFound(err)
@@ -589,6 +594,11 @@ retentionPeriod: "4m"`, modelID),
 	})
 
 	AfterAll(func() {
+		// Skip cleanup if test was skipped (k8sClient will be nil)
+		if k8sClient == nil {
+			return
+		}
+
 		By("cleaning up HPA")
 		err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Delete(ctx, deployName+"-hpa", metav1.DeleteOptions{})
 		err = client.IgnoreNotFound(err)
