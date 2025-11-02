@@ -82,6 +82,10 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 					},
 					// TODO(user): Specify other spec details if needed.
 					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							Kind: "Deployment",
+							Name: "test-deployment",
+						},
 						// Example spec fields, adjust as necessary
 						ModelID:          "default/default",
 						VariantID:        "default/default-A100-1",
@@ -415,6 +419,10 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:          "default/default",
 					VariantID:        "default/default-INVALID_GPU--1",
 					Accelerator:      "INVALID_GPU",
@@ -445,6 +453,10 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:          "", // Empty ModelID
 					VariantID:        "-A100-1",
 					Accelerator:      "A100",
@@ -476,6 +488,10 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:          "default/default",
 					VariantID:        "default/default--1",
 					Accelerator:      "", // Empty accelerator
@@ -507,6 +523,10 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:          "default/default",
 					VariantID:        "default/default-A100-1",
 					Accelerator:      "A100",
@@ -630,6 +650,10 @@ data:
 						},
 					},
 					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							Kind: "Deployment",
+							Name: name,
+						},
 						ModelID:          modelID,
 						VariantID:        fmt.Sprintf("%s-A100-1", modelID),
 						Accelerator:      "A100",
@@ -1560,6 +1584,10 @@ retentionPeriod: "not-a-duration"`,
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:   "test-model",
 					VariantID: "test-variant",
 				},
@@ -1600,6 +1628,10 @@ retentionPeriod: "not-a-duration"`,
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:   "test-model",
 					VariantID: "test-variant",
 				},
@@ -1644,6 +1676,10 @@ retentionPeriod: "not-a-duration"`,
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:   "test-model",
 					VariantID: "test-variant",
 				},
@@ -1689,6 +1725,10 @@ retentionPeriod: "not-a-duration"`,
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:     "test-model",
 					VariantID:   "test-variant",
 					MinReplicas: &minReplicas,
@@ -1733,6 +1773,10 @@ retentionPeriod: "not-a-duration"`,
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:     "test-model",
 					VariantID:   "test-variant",
 					MaxReplicas: &maxReplicas,
@@ -1769,6 +1813,10 @@ retentionPeriod: "not-a-duration"`,
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:   "test-model",
 					VariantID: "test-variant",
 				},
@@ -1805,6 +1853,10 @@ retentionPeriod: "not-a-duration"`,
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:   "test-model",
 					VariantID: "test-variant",
 				},
@@ -1828,6 +1880,10 @@ retentionPeriod: "not-a-duration"`,
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:   "test-model",
 					VariantID: "test-variant",
 				},
@@ -1864,6 +1920,10 @@ retentionPeriod: "not-a-duration"`,
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:     "test-model",
 					VariantID:   "test-variant",
 					MinReplicas: &minReplicas,
@@ -1903,6 +1963,10 @@ retentionPeriod: "not-a-duration"`,
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:     "test-model",
 					VariantID:   "test-variant",
 					MinReplicas: &minReplicas,
@@ -1947,6 +2011,10 @@ retentionPeriod: "not-a-duration"`,
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:     "test-model",
 					VariantID:   "test-variant",
 					MinReplicas: &minReplicas,
@@ -1985,6 +2053,10 @@ retentionPeriod: "not-a-duration"`,
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:     "test-model",
 					VariantID:   "test-variant",
 					MinReplicas: &minReplicas,
@@ -2029,6 +2101,10 @@ retentionPeriod: "not-a-duration"`,
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:     "test-model",
 					VariantID:   "test-variant",
 					MinReplicas: &minReplicas,
@@ -2077,6 +2153,10 @@ retentionPeriod: "not-a-duration"`,
 						Name: "test-va",
 					},
 					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							Kind: "Deployment",
+							Name: "test-deployment",
+						},
 						ModelID:          "test-model",
 						MinReplicas:      &minReplicas,
 						AcceleratorCount: 4,
@@ -2507,6 +2587,10 @@ retentionPeriod: "not-a-duration"`,
 			BeforeEach(func() {
 				updateVa = &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							Kind: "Deployment",
+							Name: "test-deployment",
+						},
 						Accelerator: "A100",
 					},
 					Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
@@ -2601,6 +2685,10 @@ retentionPeriod: "not-a-duration"`,
 					Namespace: "default",
 				},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+					ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+						Kind: "Deployment",
+						Name: "test-deployment",
+					},
 					ModelID:     "test-model",
 					MinReplicas: &minReplicas,
 				},
@@ -2766,6 +2854,10 @@ retentionPeriod: "not-a-duration"`,
 						Namespace: "default",
 					},
 					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							Kind: "Deployment",
+							Name: "test-deployment",
+						},
 						ModelID:          "test-model",
 						Accelerator:      "A100",
 						AcceleratorCount: 1,
@@ -2881,6 +2973,318 @@ retentionPeriod: "not-a-duration"`,
 				hasPreviousAllocation := !vaWithOptimizerSolution.Status.DesiredOptimizedAlloc.LastRunTime.IsZero()
 				Expect(hasPreviousAllocation).To(BeTrue(),
 					"Should detect previous optimizer solution when LastRunTime is set")
+			})
+		})
+
+		Context("Conflict Resolution with Arbitration", func() {
+			It("should resolve conflicts by selecting oldest VA as winner", func() {
+				now := metav1.Now()
+				olderTime := metav1.NewTime(now.Add(-2 * time.Hour))
+				newerTime := metav1.NewTime(now.Add(-5 * time.Minute))
+
+				// Create 2 VAs targeting same deployment with different creation times
+				va1 := llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "va-older",
+						Namespace:         "test",
+						CreationTimestamp: olderTime, // Older
+					},
+					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							Kind: "Deployment",
+							Name: "shared-deployment",
+						},
+						ModelID:          "model-a",
+						VariantID:        "variant-1",
+						Accelerator:      "H100",
+						AcceleratorCount: 1,
+					},
+				}
+
+				va2 := llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "va-newer",
+						Namespace:         "test",
+						CreationTimestamp: newerTime, // Newer
+					},
+					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							Kind: "Deployment",
+							Name: "shared-deployment", // Same deployment
+						},
+						ModelID:          "model-a",
+						VariantID:        "variant-2",
+						Accelerator:      "L40S",
+						AcceleratorCount: 1,
+					},
+				}
+
+				activeVAs := []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{va1, va2}
+
+				// Detect duplicates
+				duplicateTargets := detectDuplicateDeploymentTargets(activeVAs)
+				Expect(len(duplicateTargets)).To(Equal(1))
+
+				// Resolve conflicts
+				filteredVAs, resolutions := resolveDeploymentConflicts(activeVAs, duplicateTargets)
+
+				// Should have 1 winner (oldest)
+				Expect(len(filteredVAs)).To(Equal(1))
+				Expect(filteredVAs[0].Name).To(Equal("va-older"))
+
+				// Check resolution details
+				Expect(len(resolutions)).To(Equal(1))
+				resolution := resolutions["test/shared-deployment"]
+				Expect(resolution.Winner).To(Equal("va-older"))
+				Expect(resolution.Losers).To(ContainElement("va-newer"))
+				Expect(resolution.TotalVAs).To(Equal(2))
+			})
+
+			It("should handle non-conflicting VAs normally", func() {
+				va1 := llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "va-1",
+						Namespace: "test",
+					},
+					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							Kind: "Deployment",
+							Name: "deployment-1",
+						},
+						ModelID:          "model-a",
+						VariantID:        "variant-1",
+						Accelerator:      "H100",
+						AcceleratorCount: 1,
+					},
+				}
+
+				va2 := llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "va-2",
+						Namespace: "test",
+					},
+					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							Kind: "Deployment",
+							Name: "deployment-2", // Different deployment
+						},
+						ModelID:          "model-a",
+						VariantID:        "variant-2",
+						Accelerator:      "L40S",
+						AcceleratorCount: 1,
+					},
+				}
+
+				activeVAs := []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{va1, va2}
+
+				duplicateTargets := detectDuplicateDeploymentTargets(activeVAs)
+				Expect(len(duplicateTargets)).To(Equal(0))
+
+				filteredVAs, resolutions := resolveDeploymentConflicts(activeVAs, duplicateTargets)
+
+				// All VAs should pass through
+				Expect(len(filteredVAs)).To(Equal(2))
+				Expect(resolutions).To(BeNil())
+			})
+
+			It("should resolve conflicts with 3 VAs targeting same deployment", func() {
+				now := metav1.Now()
+				oldest := metav1.NewTime(now.Add(-3 * time.Hour))
+				middle := metav1.NewTime(now.Add(-1 * time.Hour))
+				newest := metav1.NewTime(now.Add(-10 * time.Minute))
+
+				vas := []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:              "va-middle",
+							Namespace:         "test",
+							CreationTimestamp: middle,
+						},
+						Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+							ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+								Kind: "Deployment",
+								Name: "shared-deployment",
+							},
+							ModelID:          "model-a",
+							VariantID:        "variant-2",
+							Accelerator:      "L40S",
+							AcceleratorCount: 1,
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:              "va-oldest",
+							Namespace:         "test",
+							CreationTimestamp: oldest,
+						},
+						Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+							ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+								Kind: "Deployment",
+								Name: "shared-deployment",
+							},
+							ModelID:          "model-a",
+							VariantID:        "variant-1",
+							Accelerator:      "H100",
+							AcceleratorCount: 1,
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:              "va-newest",
+							Namespace:         "test",
+							CreationTimestamp: newest,
+						},
+						Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+							ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+								Kind: "Deployment",
+								Name: "shared-deployment",
+							},
+							ModelID:          "model-a",
+							VariantID:        "variant-3",
+							Accelerator:      "A100",
+							AcceleratorCount: 1,
+						},
+					},
+				}
+
+				duplicateTargets := detectDuplicateDeploymentTargets(vas)
+				Expect(len(duplicateTargets)).To(Equal(1))
+
+				filteredVAs, resolutions := resolveDeploymentConflicts(vas, duplicateTargets)
+
+				// Should have 1 winner (oldest)
+				Expect(len(filteredVAs)).To(Equal(1))
+				Expect(filteredVAs[0].Name).To(Equal("va-oldest"))
+
+				// Check resolution
+				resolution := resolutions["test/shared-deployment"]
+				Expect(resolution.Winner).To(Equal("va-oldest"))
+				Expect(resolution.Losers).To(ConsistOf("va-middle", "va-newest"))
+				Expect(resolution.TotalVAs).To(Equal(3))
+			})
+		})
+
+		Context("Duplicate Deployment Target Detection", func() {
+			It("should detect when multiple VAs target the same deployment", func() {
+				va1 := llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "va-h100",
+						Namespace: "test-ns",
+					},
+					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							APIVersion: "apps/v1",
+							Kind:       "Deployment",
+							Name:       "vllm-deployment-decode",
+						},
+						ModelID:     "test-model",
+						VariantID:   "test-model-H100-1",
+						Accelerator: "H100",
+					},
+				}
+
+				va2 := llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "va-l40s",
+						Namespace: "test-ns",
+					},
+					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							APIVersion: "apps/v1",
+							Kind:       "Deployment",
+							Name:       "vllm-deployment-decode", // Same deployment!
+						},
+						ModelID:     "test-model",
+						VariantID:   "test-model-L40S-1",
+						Accelerator: "L40S",
+					},
+				}
+
+				duplicates := detectDuplicateDeploymentTargets([]llmdVariantAutoscalingV1alpha1.VariantAutoscaling{va1, va2})
+
+				Expect(duplicates).To(HaveLen(1), "Should detect one duplicate deployment target")
+				Expect(duplicates).To(HaveKey("test-ns/vllm-deployment-decode"), "Should identify the conflicting deployment")
+				Expect(duplicates["test-ns/vllm-deployment-decode"]).To(ConsistOf("va-h100", "va-l40s"), "Should list both conflicting VAs")
+			})
+
+			It("should not detect duplicates when VAs target different deployments", func() {
+				va1 := llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "va-h100",
+						Namespace: "test-ns",
+					},
+					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							APIVersion: "apps/v1",
+							Kind:       "Deployment",
+							Name:       "vllm-h100-decode",
+						},
+						ModelID:     "test-model",
+						VariantID:   "test-model-H100-1",
+						Accelerator: "H100",
+					},
+				}
+
+				va2 := llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "va-l40s",
+						Namespace: "test-ns",
+					},
+					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							APIVersion: "apps/v1",
+							Kind:       "Deployment",
+							Name:       "vllm-l40s-decode", // Different deployment
+						},
+						ModelID:     "test-model",
+						VariantID:   "test-model-L40S-1",
+						Accelerator: "L40S",
+					},
+				}
+
+				duplicates := detectDuplicateDeploymentTargets([]llmdVariantAutoscalingV1alpha1.VariantAutoscaling{va1, va2})
+
+				Expect(duplicates).To(BeEmpty(), "Should not detect duplicates when deployments are different")
+			})
+
+			It("should handle VAs in different namespaces targeting deployments with same name", func() {
+				va1 := llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "va-h100",
+						Namespace: "namespace-a",
+					},
+					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							APIVersion: "apps/v1",
+							Kind:       "Deployment",
+							Name:       "vllm-decode",
+						},
+						ModelID:     "test-model",
+						VariantID:   "test-model-H100-1",
+						Accelerator: "H100",
+					},
+				}
+
+				va2 := llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "va-l40s",
+						Namespace: "namespace-b", // Different namespace
+					},
+					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							APIVersion: "apps/v1",
+							Kind:       "Deployment",
+							Name:       "vllm-decode", // Same name, different namespace
+						},
+						ModelID:     "test-model",
+						VariantID:   "test-model-L40S-1",
+						Accelerator: "L40S",
+					},
+				}
+
+				duplicates := detectDuplicateDeploymentTargets([]llmdVariantAutoscalingV1alpha1.VariantAutoscaling{va1, va2})
+
+				Expect(duplicates).To(BeEmpty(), "Should not detect duplicates for same deployment name in different namespaces")
 			})
 		})
 	})

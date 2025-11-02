@@ -1,46 +1,81 @@
 {{- if .Values.wva.va.enabled }}
+{{- if eq .Values.variantAutoscaling.deploymentMode "single" }}
+{{- /* Single mode: Create one VA for the active accelerator (va.accelerator) */ -}}
+{{- $activeVariant := dict }}
+{{- range .Values.variantAutoscaling.variants }}
+  {{- if eq .accelerator $.Values.va.accelerator }}
+    {{- $activeVariant = . }}
+  {{- end }}
+{{- end }}
+{{- if $activeVariant }}
+---
+apiVersion: llmd.ai/v1alpha1
+kind: VariantAutoscaling
+metadata:
+  # In single mode: VA name includes accelerator for uniqueness
+  name: {{ printf "%s-%s" $.Values.wva.modelName $.Values.va.accelerator | lower }}
+  namespace: {{ $.Values.llmd.namespace }}
+  labels:
+    inference.optimization/acceleratorName: {{ $.Values.va.accelerator }}
+spec:
+  # Reference to the single deployment created by deployment scripts
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ printf "%s-decode" $.Values.wva.modelName }}
+  modelID: {{ $.Values.variantAutoscaling.modelID | quote }}
+  variantID: {{ printf "%s-%s-%d" $.Values.variantAutoscaling.modelID $.Values.va.accelerator (int ($activeVariant.acceleratorCount | default 1)) }}
+  accelerator: {{ $.Values.va.accelerator }}
+  acceleratorCount: {{ int ($activeVariant.acceleratorCount | default 1) }}
+  sloClassRef:
+    name: premium-slo
+    key: opt-125m
+  variantProfile:
+    perfParms:
+      decodeParms:
+        alpha: {{ $activeVariant.perfParms.decodeParms.alpha | quote }}
+        beta: {{ $activeVariant.perfParms.decodeParms.beta | quote }}
+      prefillParms:
+        gamma: {{ $activeVariant.perfParms.prefillParms.gamma | quote }}
+        delta: {{ $activeVariant.perfParms.prefillParms.delta | quote }}
+    maxBatchSize: {{ int ($activeVariant.maxBatchSize | default 512) }}
+{{- end }}
+{{- else if eq .Values.variantAutoscaling.deploymentMode "multi" }}
+{{- /* Multi mode: Create one VA + Deployment for each variant */ -}}
 {{- range .Values.variantAutoscaling.variants }}
 ---
 apiVersion: llmd.ai/v1alpha1
-# Optimizing a variant, create only when the model is deployed and serving traffic
-# this is for the collector the collect existing (previous) running metrics of the variant.
-# NOTE: In the new architecture, each accelerator type requires a separate VariantAutoscaling resource
 kind: VariantAutoscaling
 metadata:
-  # Unique name of the variant - includes accelerator type for uniqueness
+  # In multi mode: VA name includes accelerator for uniqueness
   name: {{ printf "%s-%s" $.Values.wva.modelName .accelerator | lower }}
   namespace: {{ $.Values.llmd.namespace }}
   labels:
     inference.optimization/acceleratorName: {{ .accelerator }}
-# This is essentially static input to the optimizer
 spec:
+  # Reference to accelerator-specific deployment
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ printf "%s-%s-decode" $.Values.wva.modelName (.accelerator | lower) }}
   # OpenAI API compatible name of the model
   modelID: {{ $.Values.variantAutoscaling.modelID | quote }}
   # Unique identifier for this variant: modelID-accelerator-accCount
   variantID: {{ printf "%s-%s-%d" $.Values.variantAutoscaling.modelID .accelerator (int (.acceleratorCount | default 1)) }}
-  # Accelerator type for this variant
   accelerator: {{ .accelerator }}
-  # Number of accelerators per replica
   acceleratorCount: {{ int (.acceleratorCount | default 1) }}
-  # Add SLOs in configmap, add reference to this per model data
-  # to avoid duplication and Move to ISOs when available
   sloClassRef:
-    # Configmap name to load in the same namespace as optimizer object
-    # we start with static (non-changing) ConfigMaps (for ease of implementation only)
     name: premium-slo
-    # Key (modelID) present inside configmap
     key: opt-125m
-  # Static profiled benchmarked data for this variant
   variantProfile:
     perfParms:
       decodeParms:
-        # Decode parameters for ITL equation: itl = alpha + beta * maxBatchSize
         alpha: {{ .perfParms.decodeParms.alpha | quote }}
         beta: {{ .perfParms.decodeParms.beta | quote }}
-      # Prefill parameters for TTFT equation: ttft = gamma + delta * tokens * maxBatchSize
       prefillParms:
         gamma: {{ .perfParms.prefillParms.gamma | quote }}
         delta: {{ .perfParms.prefillParms.delta | quote }}
     maxBatchSize: {{ int (.maxBatchSize | default 512) }}
+{{- end }}
 {{- end }}
 {{- end }}

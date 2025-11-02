@@ -187,6 +187,10 @@ var _ = Describe("Optimizer", Ordered, func() {
 						},
 					},
 					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							Kind: "Deployment",
+							Name: fmt.Sprintf("test-deployment-%d", i),
+						},
 						ModelID:          "meta/llama0-70b",
 						VariantID:        "meta/llama0-70b-A100-1",
 						Accelerator:      "A100",

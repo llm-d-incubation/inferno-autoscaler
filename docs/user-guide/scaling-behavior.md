@@ -328,6 +328,10 @@ kind: VariantAutoscaling
 metadata:
   name: llama-3-1-8b-a100-4
 spec:
+  scaleTargetRef:
+    kind: Deployment
+    name: llama-deployment
+
   modelID: "meta/llama-3.1-8b"
   variantID: "meta/llama-3.1-8b-A100-4"
   minReplicas: 3      # Ensure at least 3 replicas always

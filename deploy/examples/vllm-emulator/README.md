@@ -74,11 +74,30 @@ metadata:
   name: vllme-deployment
   namespace: llm-d-sim
 spec:
-  modelName: "default/default"
-  serviceClass: "Premium"
-  acceleratorType: "A100"
+  scaleTargetRef:
+    kind: Deployment
+    name: vllme-deployment
+
+  modelID: "default/default"
+  variantID: "default-default-A100-1"
+  accelerator: "A100"
+  acceleratorCount: 1
+
+  sloClassRef:
+    name: premium
+    key: opt-125m
+
+  variantProfile:
+    perfParms:
+      decodeParms:
+        alpha: "20.58"
+        beta: "0.41"
+      prefillParms:
+        gamma: "5.2"
+        delta: "0.1"
+    maxBatchSize: 256
+
   minReplicas: 1
-  maxBatchSize: 256
 ```
 
 ## Testing

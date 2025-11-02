@@ -65,6 +65,25 @@ _Appears in:_
 | `key` _string_ | Key is the key within the ConfigMap. |  | MinLength: 1 <br /> |
 
 
+#### CrossVersionObjectReference
+
+
+
+CrossVersionObjectReference contains enough information to let you identify the target resource.
+This is the same structure as used in HorizontalPodAutoscaler.
+
+
+
+_Appears in:_
+- [VariantAutoscalingSpec](#variantautoscalingspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | APIVersion is the API version of the target resource. |  | MinLength: 1 <br /> |
+| `kind` _string_ | Kind is the kind of the target resource (e.g., "Deployment"). |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `name` _string_ | Name is the name of the target resource. |  | MinLength: 1 <br />Required: \{\} <br /> |
+
+
 #### OptimizedAlloc
 
 
@@ -82,6 +101,8 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.32/#time-v1-meta)_ | LastRunTime is the timestamp of the last optimization run. |  |  |
 | `numReplicas` _integer_ | NumReplicas is the number of replicas for the optimized allocation. |  | Minimum: 0 <br /> |
+| `reason` _string_ | Reason provides a human-readable explanation for the allocation decision.<br />This field indicates whether the allocation came from the optimizer,<br />fallback logic, scale-to-zero enforcement, or bounds clamping.<br />Examples: "Optimizer solution: cost-optimal allocation",<br />"Fallback: metrics unavailable, using max(minReplicas=2, current=3)",<br />"Scale-to-zero: no load detected" |  |  |
+| `lastUpdate` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.32/#time-v1-meta)_ | LastUpdate is the timestamp when NumReplicas or Reason changed from the previous state.<br />This field tracks when the allocation decision actually changed, which may be<br />different from LastRunTime (which is updated on every reconciliation). |  |  |
 
 
 #### PerfParms
@@ -157,6 +178,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
+| `scaleTargetRef` _[CrossVersionObjectReference](#crossversionobjectreference)_ | ScaleTargetRef references the target resource (Deployment) to scale.<br />This allows the VariantAutoscaling resource name to be independent of the Deployment name,<br />enabling multiple variants (e.g., different accelerators) to target the same deployment. |  | Required: \{\} <br /> |
 | `modelID` _string_ | ModelID specifies the unique identifier of the model to be autoscaled. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `variantID` _string_ | VariantID uniquely identifies this variant (model + accelerator + acceleratorCount combination).<br />This is a business identifier that may contain slashes, dots, and mixed case.<br />Format: \{modelID\}-\{accelerator\}-\{acceleratorCount\}<br />Example: "meta/llama-3.1-8b-A100-4" or "model-H100-SXM4-80GB-2"<br />The accelerator portion supports alphanumeric characters, hyphens, and underscores<br />to accommodate complex GPU names like "H100-SXM", "A100_80GB", etc.<br />Note: VariantID (variant_id) is distinct from the VariantAutoscaling resource name (variant_name):<br />  - variant_id (this field): Business identifier, may contain non-K8s-compliant characters<br />  - variant_name (resource.Name): Kubernetes resource name (DNS-1123 compliant)<br />Both identifiers are exposed as Prometheus labels for flexible querying:<br />  - Use variant_name to query by Kubernetes resource (typically matches Deployment name)<br />  - Use variant_id to query by business identifier (model/variant naming) |  | MinLength: 1 <br />Pattern: `^.+-[A-Za-z0-9_-]+-[1-9][0-9]*$` <br />Required: \{\} <br /> |
 | `accelerator` _string_ | Accelerator specifies the accelerator type for this variant (e.g., "A100", "L40S"). |  | MinLength: 1 <br />Required: \{\} <br /> |

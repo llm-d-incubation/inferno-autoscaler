@@ -10,6 +10,11 @@ metadata:
     inference.optimization/acceleratorName: A100
 # This is essentially static input to the optimizer
 spec:
+  # REQUIRED: Reference to the Deployment to scale
+  scaleTargetRef:
+    kind: Deployment
+    name: vllme-deployment
+
   # OpenAI API compatible name of the model
   modelID: default/default
   # Unique identifier for this variant: modelID-accelerator-accCount

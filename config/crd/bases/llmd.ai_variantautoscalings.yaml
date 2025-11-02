@@ -100,6 +100,28 @@ spec:
                   to be autoscaled.
                 minLength: 1
                 type: string
+              scaleTargetRef:
+                description: |-
+                  ScaleTargetRef references the target resource (Deployment) to scale.
+                  This allows the VariantAutoscaling resource name to be independent of the Deployment name,
+                  enabling multiple variants (e.g., different accelerators) to target the same deployment.
+                properties:
+                  apiVersion:
+                    description: APIVersion is the API version of the target resource.
+                    minLength: 1
+                    type: string
+                  kind:
+                    description: Kind is the kind of the target resource (e.g., "Deployment").
+                    minLength: 1
+                    type: string
+                  name:
+                    description: Name is the name of the target resource.
+                    minLength: 1
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
               sloClassRef:
                 description: SLOClassRef references the ConfigMap key containing Service
                   Level Objective (SLO) configuration.
@@ -188,6 +210,7 @@ spec:
             - accelerator
             - acceleratorCount
             - modelID
+            - scaleTargetRef
             - sloClassRef
             - variantID
             - variantProfile

@@ -18,6 +18,12 @@ metadata:
   labels:
     inference.optimization/acceleratorName: "A100"
 spec:
+  # scaleTargetRef specifies the Deployment to scale (REQUIRED)
+  # This allows the VariantAutoscaling name to be independent of the Deployment name
+  scaleTargetRef:
+    kind: Deployment
+    name: llama-8b-deployment
+
   # This variant uses model "meta/llama-3.1-8b"
   # Scale-to-zero configuration for this model is defined in the
   # model-scale-to-zero-config ConfigMap
@@ -52,6 +58,11 @@ metadata:
   labels:
     inference.optimization/acceleratorName: "L40S"
 spec:
+  # scaleTargetRef specifies the Deployment to scale (REQUIRED)
+  scaleTargetRef:
+    kind: Deployment
+    name: llama-8b-deployment  # Can target same deployment as llama-8b-a100 (conflict resolution applies)
+
   # This variant also uses model "meta/llama-3.1-8b" but with a different accelerator.
   # Both variants will share the same scale-to-zero configuration defined in the ConfigMap.
   modelID: "meta/llama-3.1-8b"
@@ -85,6 +96,11 @@ metadata:
   labels:
     inference.optimization/acceleratorName: "A100"
 spec:
+  # scaleTargetRef specifies the Deployment to scale (REQUIRED)
+  scaleTargetRef:
+    kind: Deployment
+    name: llama-70b-deployment
+
   # This variant uses model "meta/llama-3.1-70b"
   # Scale-to-zero configuration for this model is defined in the
   # model-scale-to-zero-config ConfigMap
@@ -119,6 +135,11 @@ metadata:
   labels:
     inference.optimization/acceleratorName: "A100"
 spec:
+  # scaleTargetRef specifies the Deployment to scale (REQUIRED)
+  scaleTargetRef:
+    kind: Deployment
+    name: llama-13b-deployment
+
   # This variant uses model "meta/llama-3.1-13b"
   # No scale-to-zero configuration is defined for this model in the ConfigMap,
   # so it will use the global WVA_SCALE_TO_ZERO environment variable setting

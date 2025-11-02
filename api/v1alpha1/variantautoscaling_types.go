@@ -6,6 +6,12 @@ import (
 
 // VariantAutoscalingSpec defines the desired state for autoscaling a model variant.
 type VariantAutoscalingSpec struct {
+	// ScaleTargetRef references the target resource (Deployment) to scale.
+	// This allows the VariantAutoscaling resource name to be independent of the Deployment name,
+	// enabling multiple variants (e.g., different accelerators) to target the same deployment.
+	// +kubebuilder:validation:Required
+	ScaleTargetRef CrossVersionObjectReference `json:"scaleTargetRef"`
+
 	// ModelID specifies the unique identifier of the model to be autoscaled.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:Required
@@ -77,6 +83,25 @@ type VariantAutoscalingSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	MaxReplicas *int32 `json:"maxReplicas,omitempty"`
+}
+
+// CrossVersionObjectReference contains enough information to let you identify the target resource.
+// This is the same structure as used in HorizontalPodAutoscaler.
+type CrossVersionObjectReference struct {
+	// APIVersion is the API version of the target resource.
+	// +kubebuilder:validation:MinLength=1
+	// +optional
+	APIVersion string `json:"apiVersion,omitempty"`
+
+	// Kind is the kind of the target resource (e.g., "Deployment").
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:Required
+	Kind string `json:"kind"`
+
+	// Name is the name of the target resource.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
 }
 
 // ConfigMapKeyRef references a specific key within a ConfigMap.

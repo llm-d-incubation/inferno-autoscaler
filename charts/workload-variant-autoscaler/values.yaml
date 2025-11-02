@@ -45,8 +45,38 @@ variantAutoscaling:
   modelID: "unsloth/Meta-Llama-3.1-8B"
   sloTpot: 9
   sloTtft: 1000
+
+  # ============================================================================
+  # Deployment Mode Configuration
+  # ============================================================================
+  # Controls how VariantAutoscaling resources and vLLM deployments are managed.
+  # This chart supports two deployment patterns to accommodate different use cases.
+  #
+  # MODE: "single" (Default - Recommended for most deployments)
+  # ---------------------------------------------------------------
+  # - Use Case: Single accelerator type per cluster, or deployment managed externally
+  # - Deployment: Created by external scripts (deploy-llm-d.sh, OpenShift install.sh, etc.)
+  # - VariantAutoscaling: Creates ONE VA resource matching va.accelerator
+  # - Target: Points to existing {modelName}-decode deployment
+  # - Compatibility: Works with all current deployment workflows
+  # - Example: Deploy with ACCELERATOR_TYPE=H100, creates VA for H100 variant only
+  #
+  # MODE: "multi" (Advanced - For heterogeneous GPU clusters)
+  # ---------------------------------------------------------------
+  # - Use Case: Multiple accelerator types in same cluster (e.g., H100 + L40S nodes)
+  # - Deployment: Helm creates N deployments (one per variant in variants[] array)
+  # - VariantAutoscaling: Creates N VA resources (one per deployment)
+  # - Naming: Deployments named {modelName}-{accelerator}-decode
+  # - Node Affinity: Each deployment scheduled on nodes with matching GPU type
+  # - Compatibility: Standalone Helm deployment, no external scripts needed
+  # - Example: Creates vllm-h100-decode + vllm-l40s-decode with matching VAs
+  #
+  deploymentMode: "single"  # Options: "single" or "multi"
+
   # Define multiple variants - one for each accelerator type
   # Each variant will create a separate VariantAutoscaling resource
+  # In "single" mode: only the variant matching va.accelerator is used
+  # In "multi" mode: all variants create separate deployments + VAs
   variants:
     - accelerator: "L40S"
       acceleratorCount: 1

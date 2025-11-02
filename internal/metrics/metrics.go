@@ -13,12 +13,14 @@ import (
 
 var (
 	// Package-level metric collectors
-	replicaScalingTotal *prometheus.CounterVec
-	desiredReplicas     *prometheus.GaugeVec
-	currentReplicas     *prometheus.GaugeVec
-	desiredRatio        *prometheus.GaugeVec
-	predictedTTFT       *prometheus.GaugeVec
-	predictedITL        *prometheus.GaugeVec
+	replicaScalingTotal      *prometheus.CounterVec
+	desiredReplicas          *prometheus.GaugeVec
+	currentReplicas          *prometheus.GaugeVec
+	desiredRatio             *prometheus.GaugeVec
+	predictedTTFT            *prometheus.GaugeVec
+	predictedITL             *prometheus.GaugeVec
+	deploymentConflicts      *prometheus.GaugeVec
+	conflictResolutionStatus *prometheus.GaugeVec
 
 	// Thread-safe initialization guards
 	initOnce sync.Once
@@ -104,6 +106,20 @@ func InitMetrics(registry prometheus.Registerer) error {
 			},
 			[]string{constants.LabelModelName, constants.LabelVariantName, constants.LabelVariantID, constants.LabelNamespace, constants.LabelAcceleratorType},
 		)
+		deploymentConflicts = prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "wva_deployment_target_conflicts_total",
+				Help: "Number of VAs in conflict for each deployment (value > 1 indicates conflict)",
+			},
+			[]string{"deployment", "namespace"},
+		)
+		conflictResolutionStatus = prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "wva_conflict_resolution_status",
+				Help: "Conflict resolution status: 1=winner (active), 0=suppressed",
+			},
+			[]string{"variant_name", "namespace", "deployment", "resolution"},
+		)
 
 		// Register metrics with the registry
 		if err := registry.Register(replicaScalingTotal); err != nil {
@@ -128,6 +144,14 @@ func InitMetrics(registry prometheus.Registerer) error {
 		}
 		if err := registry.Register(predictedITL); err != nil {
 			initErr = fmt.Errorf("failed to register predictedITL metric: %w", err)
+			return
+		}
+		if err := registry.Register(deploymentConflicts); err != nil {
+			initErr = fmt.Errorf("failed to register deploymentConflicts metric: %w", err)
+			return
+		}
+		if err := registry.Register(conflictResolutionStatus); err != nil {
+			initErr = fmt.Errorf("failed to register conflictResolutionStatus metric: %w", err)
 			return
 		}
 	})
@@ -226,5 +250,61 @@ func (m *MetricsEmitter) EmitPredictionMetrics(ctx context.Context, va *llmdOptv
 
 	predictedTTFT.With(labels).Set(predictedTTFTValue)
 	predictedITL.With(labels).Set(predictedITLValue)
+	return nil
+}
+
+// EmitConflictMetrics emits metrics for deployment target conflicts.
+// deploymentKey format: "namespace/deploymentName"
+// totalVAs is the total number of VAs targeting this deployment (should be > 1 for conflicts)
+func EmitConflictMetrics(deploymentKey string, totalVAs int) error {
+	parts := strings.Split(deploymentKey, "/")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid deployment key format: %s", deploymentKey)
+	}
+	namespace, deployment := parts[0], parts[1]
+
+	if deploymentConflicts == nil {
+		return fmt.Errorf("deploymentConflicts metric not initialized")
+	}
+
+	deploymentConflicts.WithLabelValues(deployment, namespace).Set(float64(totalVAs))
+	return nil
+}
+
+// EmitConflictResolutionMetrics emits metrics for conflict resolution status.
+// resolution should be "winner" or "suppressed"
+func EmitConflictResolutionMetrics(variantName, namespace, deployment, resolution string) error {
+	if conflictResolutionStatus == nil {
+		return fmt.Errorf("conflictResolutionStatus metric not initialized")
+	}
+
+	value := 0.0
+	if resolution == "winner" {
+		value = 1.0
+	}
+
+	conflictResolutionStatus.WithLabelValues(
+		sanitizeLabel(variantName),
+		sanitizeLabel(namespace),
+		sanitizeLabel(deployment),
+		sanitizeLabel(resolution),
+	).Set(value)
+	return nil
+}
+
+// ClearConflictMetrics clears conflict metrics for a deployment (called when conflict is resolved)
+func ClearConflictMetrics(deploymentKey string) error {
+	parts := strings.Split(deploymentKey, "/")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid deployment key format: %s", deploymentKey)
+	}
+	namespace, deployment := parts[0], parts[1]
+
+	if deploymentConflicts == nil {
+		return fmt.Errorf("deploymentConflicts metric not initialized")
+	}
+
+	// Set to 1 (no conflict) or delete the metric
+	deploymentConflicts.WithLabelValues(deployment, namespace).Set(1)
 	return nil
 }

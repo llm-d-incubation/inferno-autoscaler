@@ -15,6 +15,12 @@ metadata:
   name: llama-8b-autoscaler
   namespace: llm-inference
 spec:
+  # REQUIRED: Reference to the Deployment to scale
+  # This allows the VariantAutoscaling name to be independent of the Deployment name
+  scaleTargetRef:
+    kind: Deployment
+    name: llama-8b-deployment
+
   # Model identifier (OpenAI API compatible name)
   modelID: "meta/llama-3.1-8b"
 

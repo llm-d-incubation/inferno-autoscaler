@@ -65,6 +65,10 @@ metadata:
   name: llama-a100-variant
   namespace: llm-inference
 spec:
+  scaleTargetRef:
+    kind: Deployment
+    name: llama-deployment
+
   modelID: "meta/llama-3.1-8b"
   variantID: "meta/llama-3.1-8b-A100-1"
   accelerator: "A100"
@@ -85,6 +89,10 @@ kind: VariantAutoscaling
 metadata:
   name: critical-model
 spec:
+  scaleTargetRef:
+    kind: Deployment
+    name: critical-model-deployment
+
   modelID: "critical-model"
   variantID: "critical-model-H100-4"
 

@@ -1,3 +1,15 @@
+# Example: HorizontalPodAutoscaler consuming metrics from VariantAutoscaling
+#
+# NOTE: With scaleTargetRef, the VariantAutoscaling resource name is now independent
+# of the Deployment name. The HPA should match the Deployment name (from scaleTargetRef),
+# not necessarily the VariantAutoscaling resource name.
+#
+# In this example:
+#   - VariantAutoscaling resource: any name (e.g., "llama-8b-a100")
+#   - scaleTargetRef.name: "vllme-deployment"
+#   - HPA scaleTargetRef.name: "vllme-deployment" (must match!)
+#   - Metric label variant_name: matches VariantAutoscaling resource name
+
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -7,7 +19,7 @@ spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: vllme-deployment
+    name: vllme-deployment  # Must match the Deployment being scaled
   # minReplicas: 0  # scale to zero - alpha feature
   maxReplicas: 10
   behavior:

@@ -182,6 +182,9 @@ metadata:
   name: llama-8b-a100
   namespace: default
 spec:
+  scaleTargetRef:
+    kind: Deployment
+    name: llama-8b-deployment
   modelID: "meta/llama-3.1-8b"
   # ... other config ...
 
@@ -192,6 +195,9 @@ metadata:
   name: llama-8b-l40s
   namespace: default
 spec:
+  scaleTargetRef:
+    kind: Deployment
+    name: llama-8b-deployment  # Can target same deployment (conflict resolution applies)
   modelID: "meta/llama-3.1-8b"  # Same modelID
   # ... other config ...
 ```

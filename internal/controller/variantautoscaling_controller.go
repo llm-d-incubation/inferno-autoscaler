@@ -53,7 +53,9 @@ import (
 	"github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -182,6 +184,59 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if len(activeVAs) == 0 {
 		logger.Log.Info("No active VariantAutoscalings found, skipping optimization")
 		return ctrl.Result{}, nil
+	}
+
+	// Check for multiple VAs targeting the same deployment (conflict detection and resolution)
+	duplicateTargets := detectDuplicateDeploymentTargets(activeVAs)
+	var conflictResolutions map[string]ConflictResolution
+
+	if len(duplicateTargets) > 0 {
+		// RESOLVE CONFLICTS - pick oldest as winner, suppress others
+		activeVAs, conflictResolutions = resolveDeploymentConflicts(activeVAs, duplicateTargets)
+
+		// Emit conflict metrics for alerting
+		for deploymentKey, resolution := range conflictResolutions {
+			if err := metrics.EmitConflictMetrics(deploymentKey, resolution.TotalVAs); err != nil {
+				logger.Log.Error(err, "Failed to emit conflict metrics", "deployment", deploymentKey)
+			}
+
+			// Extract namespace and deployment from key
+			parts := strings.Split(deploymentKey, "/")
+			if len(parts) == 2 {
+				namespace, deployment := parts[0], parts[1]
+
+				// Emit winner metric
+				if err := metrics.EmitConflictResolutionMetrics(resolution.Winner, namespace, deployment, "winner"); err != nil {
+					logger.Log.Error(err, "Failed to emit winner resolution metric")
+				}
+
+				// Emit loser metrics
+				for _, loser := range resolution.Losers {
+					if err := metrics.EmitConflictResolutionMetrics(loser, namespace, deployment, "suppressed"); err != nil {
+						logger.Log.Error(err, "Failed to emit loser resolution metric", "loser", loser)
+					}
+				}
+			}
+		}
+
+		// Update status conditions for ALL VAs involved in conflicts
+		if err := updateConflictConditions(ctx, r.Client, conflictResolutions); err != nil {
+			logger.Log.Error(err, "Failed to update conflict status conditions")
+		}
+
+		// Log actionable summary
+		logger.Log.Error(nil, "⚠️⚠️⚠️ DEPLOYMENT TARGET CONFLICTS DETECTED ⚠️⚠️⚠️",
+			"conflictCount", len(duplicateTargets),
+			"activeVAsAfterArbitration", len(activeVAs),
+			"status", "DEGRADED - System functioning but requires immediate attention",
+			"action", fmt.Sprintf("kubectl get va -A | grep -E '%s'", getConflictingVAPattern(conflictResolutions)))
+
+		// If all VAs were conflicting, we cannot proceed
+		if len(activeVAs) == 0 {
+			logger.Log.Error(nil, "All VAs are in conflict - cannot proceed with optimization")
+			return ctrl.Result{RequeueAfter: requeueDuration},
+				fmt.Errorf("all VAs are in conflict, cannot proceed")
+		}
 	}
 
 	// Check for variants using default variantCost and log warnings
@@ -1051,10 +1106,10 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 			"sloTTFT", entry.SLOTTFT)
 
 		var deploy appsv1.Deployment
-		err = utils.GetDeploymentWithBackoff(ctx, r.Client, va.Name, va.Namespace, &deploy)
+		err = utils.GetDeploymentWithBackoff(ctx, r.Client, va.Spec.ScaleTargetRef.Name, va.Namespace, &deploy)
 		if err != nil {
 			logger.Log.Error(err, "Failed to get Deployment, adding with failed condition",
-				"name", va.Name)
+				"name", va.Spec.ScaleTargetRef.Name)
 			r.addFailedVariant(ctx, va,
 				llmdVariantAutoscalingV1alpha1.ReasonOptimizationFailed,
 				"Deployment not found",
@@ -1306,11 +1361,11 @@ func (r *VariantAutoscalingReconciler) applyOptimizedAllocations(
 		// This ensures Status.CurrentAlloc reflects reality, not stale data
 		var currentReplicas int32
 		var deploy appsv1.Deployment
-		if err := utils.GetDeploymentWithBackoff(ctx, r.Client, va.Name, va.Namespace, &deploy); err != nil {
+		if err := utils.GetDeploymentWithBackoff(ctx, r.Client, va.Spec.ScaleTargetRef.Name, va.Namespace, &deploy); err != nil {
 			// Deployment doesn't exist yet (first reconciliation) or error occurred
 			// Use existing status value, or 0 if never initialized
 			logger.Log.Debug("Could not get deployment for CurrentAlloc initialization, using existing status",
-				"variant", va.Name, "error", err)
+				"variant", va.Name, "deploymentName", va.Spec.ScaleTargetRef.Name, "error", err)
 			currentReplicas = va.Status.CurrentAlloc.NumReplicas
 		} else {
 			// Use actual deployment replicas
@@ -1886,4 +1941,209 @@ func (r *VariantAutoscalingReconciler) readScaleToZeroConfig(ctx context.Context
 		"namespace", cmNamespace,
 		"modelCount", len(out))
 	return out, nil
+}
+
+// detectDuplicateDeploymentTargets checks if multiple VAs target the same deployment
+// Returns a map of deployment keys (namespace/name) to list of VA names targeting them
+func detectDuplicateDeploymentTargets(vas []llmdVariantAutoscalingV1alpha1.VariantAutoscaling) map[string][]string {
+	deploymentTargets := make(map[string][]string)
+
+	for _, va := range vas {
+		// Create unique deployment key: namespace/name
+		deploymentKey := fmt.Sprintf("%s/%s", va.Namespace, va.Spec.ScaleTargetRef.Name)
+		deploymentTargets[deploymentKey] = append(deploymentTargets[deploymentKey], va.Name)
+	}
+
+	// Filter to only duplicates (more than 1 VA per deployment)
+	duplicates := make(map[string][]string)
+	for deploymentKey, vaNames := range deploymentTargets {
+		if len(vaNames) > 1 {
+			duplicates[deploymentKey] = vaNames
+		}
+	}
+
+	return duplicates
+}
+
+// ConflictResolution represents the resolution of a deployment target conflict
+type ConflictResolution struct {
+	DeploymentKey string
+	Winner        string
+	Losers        []string
+	WinnerAge     time.Duration
+	TotalVAs      int
+}
+
+// resolveDeploymentConflicts resolves conflicts by selecting the oldest VA as winner
+// and suppressing all other VAs targeting the same deployment.
+// This ensures service continuity while providing maximum visibility into the conflict.
+func resolveDeploymentConflicts(
+	activeVAs []llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
+	duplicateTargets map[string][]string,
+) ([]llmdVariantAutoscalingV1alpha1.VariantAutoscaling, map[string]ConflictResolution) {
+
+	if len(duplicateTargets) == 0 {
+		return activeVAs, nil
+	}
+
+	// Map to track conflict resolutions
+	resolutions := make(map[string]ConflictResolution)
+
+	// Map VAs by name for quick lookup
+	vaMap := make(map[string]*llmdVariantAutoscalingV1alpha1.VariantAutoscaling)
+	for i := range activeVAs {
+		vaMap[activeVAs[i].Name] = &activeVAs[i]
+	}
+
+	// For each conflict, pick the oldest VA as winner
+	suppressedVAs := make(map[string]bool)
+
+	for deploymentKey, conflictingVANames := range duplicateTargets {
+		// Find oldest VA by CreationTimestamp
+		var winner *llmdVariantAutoscalingV1alpha1.VariantAutoscaling
+		var winnerName string
+
+		for _, vaName := range conflictingVANames {
+			va := vaMap[vaName]
+			if va == nil {
+				continue
+			}
+
+			if winner == nil || va.CreationTimestamp.Before(&winner.CreationTimestamp) {
+				winner = va
+				winnerName = vaName
+			}
+		}
+
+		// All others are suppressed
+		losers := []string{}
+		for _, vaName := range conflictingVANames {
+			if vaName != winnerName {
+				suppressedVAs[vaName] = true
+				losers = append(losers, vaName)
+			}
+		}
+
+		// Record resolution
+		resolutions[deploymentKey] = ConflictResolution{
+			DeploymentKey: deploymentKey,
+			Winner:        winnerName,
+			Losers:        losers,
+			WinnerAge:     time.Since(winner.CreationTimestamp.Time),
+			TotalVAs:      len(conflictingVANames),
+		}
+
+		// LOUD ERROR LOGGING
+		logger.Log.Error(nil, "⚠️ CONFLICT RESOLVED BY ARBITRATION ⚠️",
+			"deployment", deploymentKey,
+			"totalConflictingVAs", len(conflictingVANames),
+			"WINNER", winnerName,
+			"winnerAge", time.Since(winner.CreationTimestamp.Time),
+			"SUPPRESSED", strings.Join(losers, ", "),
+			"strategy", "oldest-wins",
+			"ACTION_REQUIRED", "Fix configuration - delete or reassign duplicate VAs")
+	}
+
+	// Filter out suppressed VAs
+	filteredVAs := []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{}
+	for _, va := range activeVAs {
+		if !suppressedVAs[va.Name] {
+			filteredVAs = append(filteredVAs, va)
+		}
+	}
+
+	logger.Log.Error(nil, "CONFLICT SUMMARY - System degraded, immediate action required",
+		"totalConflicts", len(duplicateTargets),
+		"healthyVAs", len(filteredVAs),
+		"suppressedVAs", len(suppressedVAs))
+
+	return filteredVAs, resolutions
+}
+
+// updateConflictConditions updates status conditions for all VAs involved in conflicts
+func updateConflictConditions(
+	ctx context.Context,
+	k8sClient client.Client,
+	resolutions map[string]ConflictResolution,
+) error {
+	for _, resolution := range resolutions {
+		// Extract namespace from deployment key (format: "namespace/name")
+		parts := strings.Split(resolution.DeploymentKey, "/")
+		if len(parts) != 2 {
+			logger.Log.Error(nil, "Invalid deployment key format", "key", resolution.DeploymentKey)
+			continue
+		}
+		namespace := parts[0]
+
+		// Update WINNER's status - mark as degraded
+		winnerVA := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{
+			Name:      resolution.Winner,
+			Namespace: namespace,
+		}, winnerVA); err != nil {
+			logger.Log.Error(err, "Failed to get winner VA for condition update", "va", resolution.Winner)
+			continue
+		}
+
+		meta.SetStatusCondition(&winnerVA.Status.Conditions, metav1.Condition{
+			Type:   "DeploymentTargetConflict",
+			Status: metav1.ConditionTrue,
+			Reason: "ConflictResolvedByArbitration",
+			Message: fmt.Sprintf("This VA won arbitration (oldest) but %d other VA(s) also target the same deployment: %s. DELETE OR REASSIGN: %s",
+				len(resolution.Losers),
+				resolution.DeploymentKey,
+				strings.Join(resolution.Losers, ", ")),
+			ObservedGeneration: winnerVA.Generation,
+		})
+
+		if err := k8sClient.Status().Update(ctx, winnerVA); err != nil {
+			logger.Log.Error(err, "Failed to update winner VA condition", "va", resolution.Winner)
+		}
+
+		// Update LOSERS' status - mark as suppressed
+		for _, loserName := range resolution.Losers {
+			loserVA := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      loserName,
+				Namespace: namespace,
+			}, loserVA); err != nil {
+				logger.Log.Error(err, "Failed to get loser VA for condition update", "va", loserName)
+				continue
+			}
+
+			meta.SetStatusCondition(&loserVA.Status.Conditions, metav1.Condition{
+				Type:   "DeploymentTargetConflict",
+				Status: metav1.ConditionTrue,
+				Reason: "SuppressedDueToConflict",
+				Message: fmt.Sprintf("SUPPRESSED: This VA targets deployment %s which is already managed by %s (older VA). No optimization/metrics for this VA. ACTION: Delete this VA or change scaleTargetRef to a unique deployment.",
+					resolution.DeploymentKey,
+					resolution.Winner),
+				ObservedGeneration: loserVA.Generation,
+			})
+
+			// Also set Ready=False
+			meta.SetStatusCondition(&loserVA.Status.Conditions, metav1.Condition{
+				Type:               "Ready",
+				Status:             metav1.ConditionFalse,
+				Reason:             "DeploymentTargetConflict",
+				Message:            "Suppressed due to deployment target conflict",
+				ObservedGeneration: loserVA.Generation,
+			})
+
+			if err := k8sClient.Status().Update(ctx, loserVA); err != nil {
+				logger.Log.Error(err, "Failed to update loser VA condition", "va", loserName)
+			}
+		}
+	}
+	return nil
+}
+
+// getConflictingVAPattern generates a grep pattern for all VAs involved in conflicts
+func getConflictingVAPattern(resolutions map[string]ConflictResolution) string {
+	allVAs := []string{}
+	for _, resolution := range resolutions {
+		allVAs = append(allVAs, resolution.Winner)
+		allVAs = append(allVAs, resolution.Losers...)
+	}
+	return strings.Join(allVAs, "|")
 }

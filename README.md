@@ -122,11 +122,36 @@ metadata:
   name: llama-8b-autoscaler
   namespace: llm-inference
 spec:
-  modelName: "meta/llama-3.1-8b"
-  serviceClass: "Premium"
-  acceleratorType: "A100"
+  # REQUIRED: Reference to the Deployment to scale
+  scaleTargetRef:
+    kind: Deployment
+    name: llama-8b-deployment
+
+  # Model and variant identification
+  modelID: "meta/llama-3.1-8b"
+  variantID: "meta/llama-3.1-8b-A100-1"
+  accelerator: "A100"
+  acceleratorCount: 1
+
+  # SLO configuration reference
+  sloClassRef:
+    name: service-classes-config
+    key: premium.yaml
+
+  # Variant performance profile
+  variantProfile:
+    perfParms:
+      decodeParms:
+        alpha: "20.58"
+        beta: "0.41"
+      prefillParms:
+        gamma: "5.2"
+        delta: "0.1"
+    maxBatchSize: 256
+
+  # Replica bounds
   minReplicas: 1
-  maxBatchSize: 256
+  maxReplicas: 10
 ```
 
 More examples in [config/samples/](config/samples/).
