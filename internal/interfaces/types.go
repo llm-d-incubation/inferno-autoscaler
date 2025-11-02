@@ -25,9 +25,10 @@ type ModelAcceleratorAllocation struct {
 }
 
 type ServiceClassEntry struct {
-	Model   string `yaml:"model"`
-	SLOTPOT int    `yaml:"slo-tpot"`
-	SLOTTFT int    `yaml:"slo-ttft"`
+	Namespace string `yaml:"namespace,omitempty"` // Kubernetes namespace this entry applies to. Empty = global.
+	Model     string `yaml:"model"`
+	SLOTPOT   int    `yaml:"slo-tpot"`
+	SLOTTFT   int    `yaml:"slo-ttft"`
 }
 
 type ServiceClass struct {

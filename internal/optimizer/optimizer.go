@@ -60,10 +60,26 @@ func (engine *VariantAutoscalingsEngine) validateReplicaBounds(
 
 	// Check for conflict between scaleToZero and minReplicas > 0
 	if scaleToZeroConfigData != nil {
+		// Build a map from modelID to the first variant (to get namespace)
+		modelToVariant := make(map[string]*llmdOptv1alpha1.VariantAutoscaling)
+		for i := range vaList.Items {
+			va := &vaList.Items[i]
+			modelID := va.Spec.ModelID
+			if _, exists := modelToVariant[modelID]; !exists {
+				modelToVariant[modelID] = va
+			}
+		}
+
 		for modelID, variantNames := range modelVariantsWithMin {
-			if utils.IsScaleToZeroEnabled(*scaleToZeroConfigData, modelID) {
+			// Get namespace from the first variant for this model
+			va, exists := modelToVariant[modelID]
+			if !exists {
+				continue
+			}
+			if utils.IsScaleToZeroEnabled(*scaleToZeroConfigData, va.Namespace, modelID) {
 				logger.Log.Warn("Model has scaleToZero enabled but variants have minReplicas > 0, preventing scale-to-zero",
 					"modelID", modelID,
+					"namespace", va.Namespace,
 					"variants", variantNames,
 					"scaleToZeroEnabled", true)
 			}
@@ -181,7 +197,12 @@ func (engine *VariantAutoscalingsEngine) applyZeroRateHandling(
 			logger.Log.Warn("Scale-to-zero config is nil, treating as disabled", "modelID", modelID)
 			scaleToZeroEnabled = false
 		} else {
-			scaleToZeroEnabled = utils.IsScaleToZeroEnabled(*scaleToZeroConfigData, modelID)
+			// Get namespace from first variant (all variants for same model should be in same namespace)
+			namespace := ""
+			if len(variants) > 0 {
+				namespace = variants[0].Namespace
+			}
+			scaleToZeroEnabled = utils.IsScaleToZeroEnabled(*scaleToZeroConfigData, namespace, modelID)
 		}
 
 		// Get total requests over retention period from scale-to-zero cache
@@ -387,7 +408,12 @@ func (engine *VariantAutoscalingsEngine) applyFinalScaleToZeroCheck(
 		if scaleToZeroConfigData == nil {
 			scaleToZeroEnabled = false
 		} else {
-			scaleToZeroEnabled = utils.IsScaleToZeroEnabled(*scaleToZeroConfigData, modelID)
+			// Get namespace from first variant (all variants for same model should be in same namespace)
+			namespace := ""
+			if len(variants) > 0 {
+				namespace = variants[0].Namespace
+			}
+			scaleToZeroEnabled = utils.IsScaleToZeroEnabled(*scaleToZeroConfigData, namespace, modelID)
 		}
 
 		// If scale-to-zero not enabled, skip

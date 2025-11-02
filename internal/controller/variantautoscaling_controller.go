@@ -445,7 +445,7 @@ func addVariantWithFallbackAllocation(
 	// Priority 3: Enforce maxReplicas (always respected)
 
 	var desiredReplicas int32
-	scaleToZeroEnabled := utils.IsScaleToZeroEnabled(scaleToZeroConfigData, modelName)
+	scaleToZeroEnabled := utils.IsScaleToZeroEnabled(scaleToZeroConfigData, updateVA.Namespace, modelName)
 
 	// Step 1: Determine desired replicas based on load conditions
 	if aggregateLoad == nil {
@@ -642,7 +642,7 @@ func applyRetentionPeriodScaling(
 	pathName string, // "Fallback" or "Last resort" for logging
 ) (desiredReplicas int32, reason string) {
 	modelName := va.Spec.ModelID
-	scaleToZeroEnabled := utils.IsScaleToZeroEnabled(scaleToZeroConfigData, modelName)
+	scaleToZeroEnabled := utils.IsScaleToZeroEnabled(scaleToZeroConfigData, va.Namespace, modelName)
 	allMinReplicasZero := allVariantsHaveMinReplicasZero(allVariants, modelName)
 	isCheapest := isCheapestVariantForModel(va, allVariants, modelName)
 
@@ -744,7 +744,7 @@ func applyFallbackAllocation(
 	pathLabel string, // "Fallback" or "Last resort"
 ) {
 	modelName := updateVa.Spec.ModelID
-	retentionPeriod := utils.GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, modelName)
+	retentionPeriod := utils.GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, updateVa.Namespace, modelName)
 	previousAlloc := updateVa.Status.DesiredOptimizedAlloc
 
 	// Check if retention period has been exceeded
@@ -1088,10 +1088,11 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 			continue
 		}
 
-		entry, className, err := utils.FindModelSLO(serviceClassCm, modelName)
+		entry, className, err := utils.FindModelSLO(serviceClassCm, va.Namespace, modelName)
 		if err != nil {
 			logger.Log.Error(err, "Failed to locate SLO for model, adding with failed condition",
 				"name", va.Name,
+				"namespace", va.Namespace,
 				"model", modelName)
 			r.addFailedVariant(ctx, va,
 				llmdVariantAutoscalingV1alpha1.ReasonOptimizationFailed,
@@ -1100,6 +1101,7 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 			continue
 		}
 		logger.Log.Info("Found SLO for model",
+			"namespace", va.Namespace,
 			"model", modelName,
 			"class", className,
 			"sloTPOT", entry.SLOTPOT,
@@ -1181,7 +1183,7 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 		}
 
 		// Get retention period for this model from scale-to-zero config
-		retentionPeriod := utils.GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, modelName)
+		retentionPeriod := utils.GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, updateVA.Namespace, modelName)
 
 		// Collect allocation and scale-to-zero metrics for this variant
 		allocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, r.PromAPI, r.ScaleToZeroMetricsCache, retentionPeriod)
@@ -1398,7 +1400,7 @@ func (r *VariantAutoscalingReconciler) applyOptimizedAllocations(
 				// IMPORTANT: Use updateVa (fresh from API) for previous allocation state
 				previousAlloc := updateVa.Status.DesiredOptimizedAlloc
 				modelName := updateVa.Spec.ModelID
-				retentionPeriod := utils.GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, modelName)
+				retentionPeriod := utils.GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, updateVa.Namespace, modelName)
 
 				// Check if this is first run (LastUpdate is zero) or retention period not exceeded
 				if previousAlloc.LastUpdate.IsZero() {

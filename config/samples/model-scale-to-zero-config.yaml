@@ -7,29 +7,29 @@
 # Key Format:
 #   - Global defaults: "__defaults__" (special key)
 #   - Per-model configs: "model.<safe-key>" where safe-key uses dots instead of slashes/colons
-#   - Each value is JSON containing the original modelID and configuration
+#   - Each value is YAML containing the namespace, original modelID, and configuration
 #
 # Benefits of this approach:
 #   Independently editable - Change one model without touching others
 #   Easy kubectl operations - Add/update/remove individual models
 #   Better Git diffs - Only changed models show in version control
-#   No collision risk - Original modelID preserved in JSON value
+#   No collision risk - Original modelID preserved in YAML value
 #   Semi-human-readable - Keys like "model.meta.llama-3.1-8b" are recognizable
+#   Namespace-aware - Same modelID can have different configs in different namespaces
 #
 # Configuration fields:
+#   - namespace (string): Kubernetes namespace (omit for global/all namespaces)
 #   - modelID (string): Original model ID with any characters (/, :, @, etc.)
 #   - enableScaleToZero (boolean): Enables scale-to-zero for this model
 #   - retentionPeriod (string): Duration after last request before scaling to zero
 #                                (e.g., "5m", "1h", "30s"). Optional, defaults to 10 minutes.
 #
-# All VariantAutoscaling resources with the same modelID share the configuration
-# defined here, regardless of accelerator.
-#
 # Configuration priority (highest to lowest):
-#   1. Per-model configuration (specific modelID in "model.*" key)
-#   2. Global defaults in this ConfigMap (key: "__defaults__")
-#   3. WVA_SCALE_TO_ZERO environment variable
-#   4. System default (disabled, 10-minute retention)
+#   1. Namespace-specific model configuration (namespace + modelID match)
+#   2. Global model configuration (modelID match, no namespace specified)
+#   3. Global defaults in this ConfigMap (key: "__defaults__")
+#   4. WVA_SCALE_TO_ZERO environment variable
+#   5. System default (disabled, 10-minute retention)
 #
 # Easy Operations:
 #   # Update a single model (use YAML format):
@@ -54,51 +54,74 @@ data:
     enableScaleToZero: true
     retentionPeriod: "15m"
 
-  # Example 1: PARTIAL OVERRIDE
-  # Only override retentionPeriod, inherit enableScaleToZero from defaults
-  # Result: scale-to-zero ENABLED (from defaults) with 5-minute retention
-  # Key uses dots for slashes, but value preserves original model ID
-  model.meta.llama-3.1-8b: |
+  # Example 1: NAMESPACE-SPECIFIC CONFIGURATION (Production)
+  # Same model ID in production namespace with strict settings
+  # Result: Production instance has scale-to-zero DISABLED (always available)
+  model.prod.meta.llama-3.1-8b: |
+    namespace: "production"
     modelID: "meta/llama-3.1-8b"
-    retentionPeriod: "5m"
-
-  # Example 2: DISABLE SCALE-TO-ZERO
-  # Explicitly disable scale-to-zero for this model
-  # Result: minimum 1 replica maintained at all times
-  model.meta.llama-3.1-70b: |
-    modelID: "meta/llama-3.1-70b"
     enableScaleToZero: false
 
-  # Example 3: FULL OVERRIDE
-  # Specify both fields explicitly
-  # Result: scale-to-zero ENABLED with 15-minute retention
-  model.mistralai.Mistral-7B-v0.1: |
-    modelID: "mistralai/Mistral-7B-v0.1"
+  # Example 2: NAMESPACE-SPECIFIC CONFIGURATION (Development)
+  # Same model ID in development namespace with relaxed settings
+  # Result: Development instance can scale to zero after 5 minutes
+  model.dev.meta.llama-3.1-8b: |
+    namespace: "development"
+    modelID: "meta/llama-3.1-8b"
+    enableScaleToZero: true
+    retentionPeriod: "5m"
+
+  # Example 3: GLOBAL MODEL CONFIGURATION
+  # No namespace specified - applies to all namespaces (unless overridden)
+  # Result: Any namespace using this model will scale to zero after 15 minutes
+  model.meta.llama-3.1-70b: |
+    modelID: "meta/llama-3.1-70b"
     enableScaleToZero: true
     retentionPeriod: "15m"
 
-  # Example 4: ENABLE WITH DEFAULT RETENTION
-  # Only enable scale-to-zero, inherit retention from defaults
-  # Result: scale-to-zero ENABLED with 15m retention (from defaults)
-  model.meta.llama-2-7b: |
-    modelID: "meta/llama-2-7b"
-    enableScaleToZero: true
+  # Example 4: NAMESPACE-SPECIFIC OVERRIDE OF GLOBAL
+  # This overrides the global config for meta/llama-3.1-70b in staging
+  model.staging.meta.llama-3.1-70b: |
+    namespace: "staging"
+    modelID: "meta/llama-3.1-70b"
+    enableScaleToZero: false  # Staging needs to stay up
 
-  # Example 5: MODEL ID WITH COLON (vllm prefix)
-  # Demonstrates that any characters are supported
-  # Key uses dots, but value preserves colon and slash
-  model.vllm.meta.llama-3.1-8b: |
-    modelID: "vllm:meta/llama-3.1-8b"
-    enableScaleToZero: true
+  # Example 5: PARTIAL OVERRIDE (inherits from defaults)
+  # Only override retentionPeriod, inherit enableScaleToZero from defaults
+  # Result: scale-to-zero ENABLED (from defaults) with 3-minute retention
+  model.mistralai.Mistral-7B-v0.1: |
+    modelID: "mistralai/Mistral-7B-v0.1"
     retentionPeriod: "3m"
 
-  # Example 6: NO COLLISION RISK
-  # This model ID differs from "meta/llama-3.1-8b" by having underscore instead of slash
-  # Both can coexist without collision because original IDs are preserved in value
-  model.meta_llama-3.1-8b: |
-    modelID: "meta_llama-3.1-8b"
+  # Example 6: MODEL ID WITH COLON (vllm prefix) IN SPECIFIC NAMESPACE
+  # Demonstrates namespace-awareness with complex model IDs
+  model.test.vllm.meta.llama-3.1-8b: |
+    namespace: "test"
+    modelID: "vllm:meta/llama-3.1-8b"
+    enableScaleToZero: true
+    retentionPeriod: "1m"
+
+  # Example 7: MULTI-NAMESPACE DEPLOYMENT
+  # Same base model in three different namespaces with different behaviors:
+  # - production: Always on (no scale-to-zero)
+  # - staging: Scale to zero after 30 minutes
+  # - development: Scale to zero after 5 minutes
+  model.prod.meta.llama-2-7b: |
+    namespace: "production"
+    modelID: "meta/llama-2-7b"
     enableScaleToZero: false
-    retentionPeriod: "10m"
+
+  model.staging.meta.llama-2-7b: |
+    namespace: "staging"
+    modelID: "meta/llama-2-7b"
+    enableScaleToZero: true
+    retentionPeriod: "30m"
+
+  model.dev.meta.llama-2-7b: |
+    namespace: "development"
+    modelID: "meta/llama-2-7b"
+    enableScaleToZero: true
+    retentionPeriod: "5m"
 
 # Note: Models not explicitly listed (e.g., "meta/llama-3.1-13b") will inherit
 # settings from "__defaults__". If "__defaults__" is not specified, models fall back to

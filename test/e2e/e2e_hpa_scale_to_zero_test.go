@@ -49,10 +49,12 @@ var _ = Describe("Test idle scale-to-zero with HPA", Ordered, func() {
 		initialReplicas   int32
 		retentionDuration time.Duration
 		inferenceModel    *unstructured.Unstructured
+		testSkipped       bool
 	)
 
 	BeforeAll(func() {
 		Skip("HPA scale-to-zero requires minReplicas: 0 (alpha feature) and Prometheus Adapter - skipping until enabled")
+		testSkipped = true
 
 		initializeK8sClient()
 
@@ -256,8 +258,8 @@ retentionPeriod: "4m"`, modelID),
 	})
 
 	AfterAll(func() {
-		// Skip cleanup if test was skipped (k8sClient will be nil)
-		if k8sClient == nil {
+		// Skip cleanup if test was skipped
+		if testSkipped {
 			return
 		}
 
@@ -278,9 +280,11 @@ retentionPeriod: "4m"`, modelID),
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete VariantAutoscaling: %s", deployName))
 
 		By("deleting InferenceModel")
-		err = crClient.Delete(ctx, inferenceModel)
-		err = client.IgnoreNotFound(err)
-		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete InferenceModel: %s", modelID))
+		if inferenceModel != nil {
+			err = crClient.Delete(ctx, inferenceModel)
+			err = client.IgnoreNotFound(err)
+			Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete InferenceModel: %s", modelID))
+		}
 
 		By("cleaning up ServiceMonitor")
 		serviceMonitor := &unstructured.Unstructured{}
@@ -335,10 +339,12 @@ var _ = Describe("Test traffic-based scale-to-zero with HPA", Ordered, func() {
 		initialReplicas   int32
 		retentionDuration time.Duration
 		inferenceModel    *unstructured.Unstructured
+		testSkipped       bool
 	)
 
 	BeforeAll(func() {
 		Skip("HPA scale-to-zero requires minReplicas: 0 (alpha feature) and Prometheus Adapter - skipping until enabled")
+		testSkipped = true
 
 		initializeK8sClient()
 
@@ -594,8 +600,8 @@ retentionPeriod: "4m"`, modelID),
 	})
 
 	AfterAll(func() {
-		// Skip cleanup if test was skipped (k8sClient will be nil)
-		if k8sClient == nil {
+		// Skip cleanup if test was skipped
+		if testSkipped {
 			return
 		}
 
@@ -616,9 +622,11 @@ retentionPeriod: "4m"`, modelID),
 		Expect(err).NotTo(HaveOccurred())
 
 		By("deleting InferenceModel")
-		err = crClient.Delete(ctx, inferenceModel)
-		err = client.IgnoreNotFound(err)
-		Expect(err).NotTo(HaveOccurred())
+		if inferenceModel != nil {
+			err = crClient.Delete(ctx, inferenceModel)
+			err = client.IgnoreNotFound(err)
+			Expect(err).NotTo(HaveOccurred())
+		}
 
 		By("cleaning up ServiceMonitor")
 		serviceMonitor := &unstructured.Unstructured{}

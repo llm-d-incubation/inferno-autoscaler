@@ -8,12 +8,20 @@ data:
     name: Premium
     priority: 1
     data:
+      # Global default (no namespace specified)
       - model: default/default
         slo-tpot: 24
         slo-ttft: 500
+      # Global model configuration (applies to all namespaces)
       - model: test-scale-to-zero-model
         slo-tpot: 24
         slo-ttft: 500
+      # Namespace-specific configuration example
+      # - namespace: production
+      #   model: meta/llama0-70b
+      #   slo-tpot: 80
+      #   slo-ttft: 500
+      # Global model configuration
       - model: meta/llama0-70b
         slo-tpot: 80
         slo-ttft: 500

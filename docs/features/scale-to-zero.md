@@ -7,6 +7,7 @@ The scale-to-zero feature allows model deployments to automatically scale down t
 ## Key Features
 
 - **Per-Model Configuration**: Scale-to-zero settings are configured per model (e.g., `meta/llama-3.1-8b`), allowing all variants of the same model across different accelerators to share the same behavior.
+- **Namespace-Aware**: Support for namespace-specific configurations, allowing the same model in different namespaces to have different scale-to-zero settings.
 - **Configurable Retention Period**: Control how long to wait after the last request before scaling to zero (default: 10 minutes).
 - **Global Fallback**: Models not explicitly configured in the ConfigMap fall back to a global environment variable setting.
 - **Zero-Downtime Scaling**: When scale-to-zero is disabled, models maintain a minimum of 1 replica to ensure availability.
@@ -15,12 +16,13 @@ The scale-to-zero feature allows model deployments to automatically scale down t
 
 ### Configuration Hierarchy
 
-The scale-to-zero feature uses a four-tier configuration hierarchy:
+The scale-to-zero feature uses a five-tier configuration hierarchy:
 
-1. **Per-Model ConfigMap Entry** (Highest Priority): Model-specific settings in the `model-scale-to-zero-config` ConfigMap
-2. **Global Defaults in ConfigMap**: Default settings for all models using the special `__defaults__` key
-3. **Global Environment Variable**: The `WVA_SCALE_TO_ZERO` environment variable
-4. **System Default** (Fallback): Scale-to-zero disabled with 10-minute retention period
+1. **Namespace-Specific Model Entry** (Highest Priority): Model settings for a specific namespace (namespace + modelID match)
+2. **Global Model Entry**: Model settings that apply to all namespaces (modelID match, no namespace specified)
+3. **Global Defaults in ConfigMap**: Default settings for all models using the special `__defaults__` key
+4. **Global Environment Variable**: The `WVA_SCALE_TO_ZERO` environment variable
+5. **System Default** (Fallback): Scale-to-zero disabled with 10-minute retention period
 
 ### Configuration Location
 
@@ -58,24 +60,36 @@ data:
   # Value: YAML configuration that includes the original modelID
   # This format allows independent editing of each model's configuration
 
-  # Example: Override retention period for this model
-  # Key uses dots, but value contains original modelID with slash
-  model.meta.llama-3.1-8b: |
+  # Example 1: Namespace-specific configuration (production)
+  # Same model in production namespace - scale-to-zero DISABLED
+  model.prod.meta.llama-3.1-8b: |
+    namespace: "production"
     modelID: "meta/llama-3.1-8b"
-    retentionPeriod: "5m"
-
-  # Example: Disable scale-to-zero (overrides global default)
-  model.meta.llama-3.1-70b: |
-    modelID: "meta/llama-3.1-70b"
     enableScaleToZero: false
 
-  # Example: Model ID with colon (vllm prefix)
-  model.vllm.meta.llama-3.1-8b: |
+  # Example 2: Namespace-specific configuration (development)
+  # Same model in development namespace - scale-to-zero ENABLED with 5min retention
+  model.dev.meta.llama-3.1-8b: |
+    namespace: "development"
+    modelID: "meta/llama-3.1-8b"
+    enableScaleToZero: true
+    retentionPeriod: "5m"
+
+  # Example 3: Global model configuration (no namespace)
+  # Applies to all namespaces unless overridden by namespace-specific entry
+  model.meta.llama-3.1-70b: |
+    modelID: "meta/llama-3.1-70b"
+    enableScaleToZero: true
+    retentionPeriod: "15m"
+
+  # Example 4: Model ID with colon (vllm prefix) in specific namespace
+  model.test.vllm.meta.llama-3.1-8b: |
+    namespace: "test"
     modelID: "vllm:meta/llama-3.1-8b"
     enableScaleToZero: true
-    retentionPeriod: "3m"
+    retentionPeriod: "1m"
 
-  # Example: Use global defaults by not specifying this model
+  # Example 5: Use global defaults by not specifying this model
   # "meta/llama-2-7b" - will inherit enableScaleToZero=true, retentionPeriod="15m"
 ```
 
@@ -86,6 +100,12 @@ data:
 - ✅ **Human-readable** - Keys like `model.meta.llama-3.1-8b` are recognizable
 
 ### Configuration Fields
+
+#### `namespace` (string, optional)
+- Kubernetes namespace this configuration applies to
+- If specified, configuration only applies to models in that namespace
+- If omitted (empty), configuration applies globally to all namespaces
+- Namespace-specific configurations take priority over global configurations
 
 #### `modelID` (string, required for per-model entries)
 - Original model identifier with any characters (/, :, @, etc.)

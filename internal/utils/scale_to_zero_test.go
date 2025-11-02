@@ -18,6 +18,7 @@ func TestIsScaleToZeroEnabled(t *testing.T) {
 	tests := []struct {
 		name           string
 		configData     ScaleToZeroConfigData
+		namespace      string
 		modelID        string
 		envVarValue    string
 		expectedResult bool
@@ -27,6 +28,7 @@ func TestIsScaleToZeroEnabled(t *testing.T) {
 			name: "Model with scale-to-zero enabled in ConfigMap",
 			configData: ScaleToZeroConfigData{
 				"meta/llama-3.1-8b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-8b",
 					EnableScaleToZero: boolPtr(true),
 					RetentionPeriod:   "5m",
 				},
@@ -39,6 +41,7 @@ func TestIsScaleToZeroEnabled(t *testing.T) {
 			name: "Model with scale-to-zero disabled in ConfigMap",
 			configData: ScaleToZeroConfigData{
 				"meta/llama-3.1-70b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-70b",
 					EnableScaleToZero: boolPtr(false),
 				},
 			},
@@ -81,6 +84,7 @@ func TestIsScaleToZeroEnabled(t *testing.T) {
 			name: "ConfigMap overrides global env var (enabled in ConfigMap)",
 			configData: ScaleToZeroConfigData{
 				"meta/llama-3.1-8b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-8b",
 					EnableScaleToZero: boolPtr(true),
 					RetentionPeriod:   "5m",
 				},
@@ -94,6 +98,7 @@ func TestIsScaleToZeroEnabled(t *testing.T) {
 			name: "ConfigMap overrides global env var (disabled in ConfigMap)",
 			configData: ScaleToZeroConfigData{
 				"meta/llama-3.1-70b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-70b",
 					EnableScaleToZero: boolPtr(false),
 				},
 			},
@@ -140,6 +145,7 @@ func TestIsScaleToZeroEnabled(t *testing.T) {
 					EnableScaleToZero: boolPtr(false),
 				},
 				"meta/llama-3.1-8b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-8b",
 					EnableScaleToZero: boolPtr(true),
 					RetentionPeriod:   "5m",
 				},
@@ -156,6 +162,7 @@ func TestIsScaleToZeroEnabled(t *testing.T) {
 					RetentionPeriod:   "15m",
 				},
 				"meta/llama-3.1-70b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-70b",
 					EnableScaleToZero: boolPtr(false),
 				},
 			},
@@ -197,6 +204,7 @@ func TestIsScaleToZeroEnabled(t *testing.T) {
 					RetentionPeriod:   "15m",
 				},
 				"meta/llama-3.1-8b": ModelScaleToZeroConfig{
+					ModelID: "meta/llama-3.1-8b",
 					// EnableScaleToZero: nil (not set, should inherit from defaults)
 					RetentionPeriod: "5m", // Override only retention
 				},
@@ -213,6 +221,7 @@ func TestIsScaleToZeroEnabled(t *testing.T) {
 					RetentionPeriod:   "15m",
 				},
 				"meta/llama-3.1-70b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-70b",
 					EnableScaleToZero: boolPtr(false), // Explicitly disable
 					// RetentionPeriod: "" (not set, but shouldn't matter since disabled)
 				},
@@ -229,6 +238,7 @@ func TestIsScaleToZeroEnabled(t *testing.T) {
 					RetentionPeriod:   "30m",
 				},
 				"meta/llama-2-7b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-2-7b",
 					EnableScaleToZero: boolPtr(true), // Override to enabled
 					// RetentionPeriod: "" (will inherit "30m" from defaults in retention function)
 				},
@@ -245,6 +255,7 @@ func TestIsScaleToZeroEnabled(t *testing.T) {
 					RetentionPeriod:   "20m",
 				},
 				"meta/mistral-7b": ModelScaleToZeroConfig{
+					ModelID: "meta/mistral-7b",
 					// Both fields nil - complete inheritance
 				},
 			},
@@ -256,6 +267,7 @@ func TestIsScaleToZeroEnabled(t *testing.T) {
 			name: "No model entry, no defaults, falls back to environment variable",
 			configData: ScaleToZeroConfigData{
 				"meta/other-model": ModelScaleToZeroConfig{
+					ModelID:           "meta/other-model",
 					EnableScaleToZero: boolPtr(true),
 				},
 			},
@@ -276,7 +288,12 @@ func TestIsScaleToZeroEnabled(t *testing.T) {
 				_ = os.Unsetenv("WVA_SCALE_TO_ZERO")
 			}
 
-			result := IsScaleToZeroEnabled(tt.configData, tt.modelID)
+			// Use "default" namespace if not specified in test case
+			namespace := tt.namespace
+			if namespace == "" {
+				namespace = "default"
+			}
+			result := IsScaleToZeroEnabled(tt.configData, namespace, tt.modelID)
 			assert.Equal(t, tt.expectedResult, result, "IsScaleToZeroEnabled should return %v", tt.expectedResult)
 		})
 	}
@@ -287,6 +304,7 @@ func TestGetScaleToZeroRetentionPeriod(t *testing.T) {
 	tests := []struct {
 		name           string
 		configData     ScaleToZeroConfigData
+		namespace      string
 		modelID        string
 		expectedResult time.Duration
 	}{
@@ -294,6 +312,7 @@ func TestGetScaleToZeroRetentionPeriod(t *testing.T) {
 			name: "Model with custom retention period in ConfigMap",
 			configData: ScaleToZeroConfigData{
 				"meta/llama-3.1-8b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-8b",
 					EnableScaleToZero: boolPtr(true),
 					RetentionPeriod:   "5m",
 				},
@@ -305,6 +324,7 @@ func TestGetScaleToZeroRetentionPeriod(t *testing.T) {
 			name: "Model with 15 minute retention period",
 			configData: ScaleToZeroConfigData{
 				"mistralai/Mistral-7B-v0.1": ModelScaleToZeroConfig{
+					ModelID:           "mistralai/Mistral-7B-v0.1",
 					EnableScaleToZero: boolPtr(true),
 					RetentionPeriod:   "15m",
 				},
@@ -316,6 +336,7 @@ func TestGetScaleToZeroRetentionPeriod(t *testing.T) {
 			name: "Model with 1 hour retention period",
 			configData: ScaleToZeroConfigData{
 				"meta/llama-3.1-405b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-405b",
 					EnableScaleToZero: boolPtr(true),
 					RetentionPeriod:   "1h",
 				},
@@ -327,6 +348,7 @@ func TestGetScaleToZeroRetentionPeriod(t *testing.T) {
 			name: "Model with 30 second retention period",
 			configData: ScaleToZeroConfigData{
 				"meta/llama-2-7b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-2-7b",
 					EnableScaleToZero: boolPtr(true),
 					RetentionPeriod:   "30s",
 				},
@@ -338,6 +360,7 @@ func TestGetScaleToZeroRetentionPeriod(t *testing.T) {
 			name: "Model with no retention period specified (default 10m)",
 			configData: ScaleToZeroConfigData{
 				"meta/llama-3.1-70b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-70b",
 					EnableScaleToZero: boolPtr(true),
 					RetentionPeriod:   "",
 				},
@@ -355,6 +378,7 @@ func TestGetScaleToZeroRetentionPeriod(t *testing.T) {
 			name: "Model with invalid retention period (fallback to default)",
 			configData: ScaleToZeroConfigData{
 				"meta/llama-3.1-8b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-8b",
 					EnableScaleToZero: boolPtr(true),
 					RetentionPeriod:   "invalid",
 				},
@@ -387,6 +411,7 @@ func TestGetScaleToZeroRetentionPeriod(t *testing.T) {
 					RetentionPeriod:   "20m",
 				},
 				"meta/llama-3.1-8b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-8b",
 					EnableScaleToZero: boolPtr(true),
 					RetentionPeriod:   "5m",
 				},
@@ -424,6 +449,7 @@ func TestGetScaleToZeroRetentionPeriod(t *testing.T) {
 					RetentionPeriod:   "15m",
 				},
 				"meta/llama-3.1-8b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-8b",
 					EnableScaleToZero: boolPtr(true),
 					RetentionPeriod:   "invalid",
 				},
@@ -435,7 +461,12 @@ func TestGetScaleToZeroRetentionPeriod(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := GetScaleToZeroRetentionPeriod(tt.configData, tt.modelID)
+			// Use "default" namespace if not specified in test case
+			namespace := tt.namespace
+			if namespace == "" {
+				namespace = "default"
+			}
+			result := GetScaleToZeroRetentionPeriod(tt.configData, namespace, tt.modelID)
 			assert.Equal(t, tt.expectedResult, result, "GetScaleToZeroRetentionPeriod should return %v", tt.expectedResult)
 		})
 	}
@@ -446,6 +477,7 @@ func TestGetMinNumReplicas(t *testing.T) {
 	tests := []struct {
 		name           string
 		configData     ScaleToZeroConfigData
+		namespace      string
 		modelID        string
 		envVarValue    string
 		setEnv         bool
@@ -455,6 +487,7 @@ func TestGetMinNumReplicas(t *testing.T) {
 			name: "Model with scale-to-zero enabled (min replicas 0)",
 			configData: ScaleToZeroConfigData{
 				"meta/llama-3.1-8b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-8b",
 					EnableScaleToZero: boolPtr(true),
 					RetentionPeriod:   "5m",
 				},
@@ -466,6 +499,7 @@ func TestGetMinNumReplicas(t *testing.T) {
 			name: "Model with scale-to-zero disabled (min replicas 1)",
 			configData: ScaleToZeroConfigData{
 				"meta/llama-3.1-70b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-70b",
 					EnableScaleToZero: boolPtr(false),
 				},
 			},
@@ -499,6 +533,7 @@ func TestGetMinNumReplicas(t *testing.T) {
 			name: "ConfigMap enabled overrides global env var false",
 			configData: ScaleToZeroConfigData{
 				"meta/llama-3.1-8b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-8b",
 					EnableScaleToZero: boolPtr(true),
 					RetentionPeriod:   "5m",
 				},
@@ -512,6 +547,7 @@ func TestGetMinNumReplicas(t *testing.T) {
 			name: "ConfigMap disabled overrides global env var true",
 			configData: ScaleToZeroConfigData{
 				"meta/llama-3.1-70b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-70b",
 					EnableScaleToZero: boolPtr(false),
 				},
 			},
@@ -550,6 +586,7 @@ func TestGetMinNumReplicas(t *testing.T) {
 					EnableScaleToZero: boolPtr(false),
 				},
 				"meta/llama-3.1-8b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-8b",
 					EnableScaleToZero: boolPtr(true),
 					RetentionPeriod:   "5m",
 				},
@@ -566,6 +603,7 @@ func TestGetMinNumReplicas(t *testing.T) {
 					RetentionPeriod:   "15m",
 				},
 				"meta/llama-3.1-70b": ModelScaleToZeroConfig{
+					ModelID:           "meta/llama-3.1-70b",
 					EnableScaleToZero: boolPtr(false),
 				},
 			},
@@ -585,7 +623,12 @@ func TestGetMinNumReplicas(t *testing.T) {
 				_ = os.Unsetenv("WVA_SCALE_TO_ZERO")
 			}
 
-			result := GetMinNumReplicas(tt.configData, tt.modelID)
+			// Use "default" namespace if not specified in test case
+			namespace := tt.namespace
+			if namespace == "" {
+				namespace = "default"
+			}
+			result := GetMinNumReplicas(tt.configData, namespace, tt.modelID)
 			assert.Equal(t, tt.expectedResult, result, "GetMinNumReplicas should return %v", tt.expectedResult)
 		})
 	}
@@ -620,13 +663,16 @@ func TestScaleToZeroConfigDataType(t *testing.T) {
 	t.Run("Multiple models in ConfigData", func(t *testing.T) {
 		configData := ScaleToZeroConfigData{
 			"meta/llama-3.1-8b": ModelScaleToZeroConfig{
+				ModelID:           "meta/llama-3.1-8b",
 				EnableScaleToZero: boolPtr(true),
 				RetentionPeriod:   "5m",
 			},
 			"meta/llama-3.1-70b": ModelScaleToZeroConfig{
+				ModelID:           "meta/llama-3.1-70b",
 				EnableScaleToZero: boolPtr(false),
 			},
 			"mistralai/Mistral-7B-v0.1": ModelScaleToZeroConfig{
+				ModelID:           "mistralai/Mistral-7B-v0.1",
 				EnableScaleToZero: boolPtr(true),
 				RetentionPeriod:   "15m",
 			},
@@ -843,43 +889,47 @@ func TestScaleToZeroIntegration(t *testing.T) {
 	t.Run("End-to-end workflow for model with scale-to-zero enabled", func(t *testing.T) {
 		configData := ScaleToZeroConfigData{
 			"meta/llama-3.1-8b": ModelScaleToZeroConfig{
+				ModelID:           "meta/llama-3.1-8b",
 				EnableScaleToZero: boolPtr(true),
 				RetentionPeriod:   "5m",
 			},
 		}
 		modelID := "meta/llama-3.1-8b"
+		namespace := "default"
 
 		// Check if scale-to-zero is enabled
-		enabled := IsScaleToZeroEnabled(configData, modelID)
+		enabled := IsScaleToZeroEnabled(configData, namespace, modelID)
 		assert.True(t, enabled)
 
 		// Get retention period
-		retention := GetScaleToZeroRetentionPeriod(configData, modelID)
+		retention := GetScaleToZeroRetentionPeriod(configData, namespace, modelID)
 		assert.Equal(t, 5*time.Minute, retention)
 
 		// Get min replicas
-		minReplicas := GetMinNumReplicas(configData, modelID)
+		minReplicas := GetMinNumReplicas(configData, namespace, modelID)
 		assert.Equal(t, 0, minReplicas)
 	})
 
 	t.Run("End-to-end workflow for model with scale-to-zero disabled", func(t *testing.T) {
 		configData := ScaleToZeroConfigData{
 			"meta/llama-3.1-70b": ModelScaleToZeroConfig{
+				ModelID:           "meta/llama-3.1-70b",
 				EnableScaleToZero: boolPtr(false),
 			},
 		}
 		modelID := "meta/llama-3.1-70b"
+		namespace := "default"
 
 		// Check if scale-to-zero is enabled
-		enabled := IsScaleToZeroEnabled(configData, modelID)
+		enabled := IsScaleToZeroEnabled(configData, namespace, modelID)
 		assert.False(t, enabled)
 
 		// Get retention period (still returns default even if disabled)
-		retention := GetScaleToZeroRetentionPeriod(configData, modelID)
+		retention := GetScaleToZeroRetentionPeriod(configData, namespace, modelID)
 		assert.Equal(t, 10*time.Minute, retention)
 
 		// Get min replicas
-		minReplicas := GetMinNumReplicas(configData, modelID)
+		minReplicas := GetMinNumReplicas(configData, namespace, modelID)
 		assert.Equal(t, 1, minReplicas)
 	})
 
@@ -889,17 +939,18 @@ func TestScaleToZeroIntegration(t *testing.T) {
 
 		configData := ScaleToZeroConfigData{}
 		modelID := "meta/llama-3.1-13b"
+		namespace := "default"
 
 		// Check if scale-to-zero is enabled
-		enabled := IsScaleToZeroEnabled(configData, modelID)
+		enabled := IsScaleToZeroEnabled(configData, namespace, modelID)
 		assert.True(t, enabled)
 
 		// Get retention period (uses default)
-		retention := GetScaleToZeroRetentionPeriod(configData, modelID)
+		retention := GetScaleToZeroRetentionPeriod(configData, namespace, modelID)
 		assert.Equal(t, 10*time.Minute, retention)
 
 		// Get min replicas
-		minReplicas := GetMinNumReplicas(configData, modelID)
+		minReplicas := GetMinNumReplicas(configData, namespace, modelID)
 		assert.Equal(t, 0, minReplicas)
 	})
 }

@@ -16,9 +16,16 @@ data:
     name: Premium
     priority: 1
     data:
+      # Global default (no namespace specified - applies to all namespaces)
       - model: default/default
         slo-tpot: 24
         slo-ttft: 500
+      # Namespace-specific configuration example (uncomment to use):
+      # - namespace: "{{ .Release.Namespace }}"
+      #   model: meta/llama0-70b
+      #   slo-tpot: 80
+      #   slo-ttft: 500
+      # Global model configuration
       - model: meta/llama0-70b
         slo-tpot: 80
         slo-ttft: 500

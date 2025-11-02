@@ -75,6 +75,9 @@ const (
 // This allows partial overrides where a model can inherit enableScaleToZero from global defaults
 // while overriding only the retentionPeriod.
 type ModelScaleToZeroConfig struct {
+	// Namespace is the Kubernetes namespace this configuration applies to.
+	// Empty string means this config applies globally to all namespaces.
+	Namespace string `yaml:"namespace,omitempty" json:"namespace,omitempty"`
 	// ModelID is the unique identifier for the model (original ID with any characters)
 	ModelID string `yaml:"modelID,omitempty" json:"modelID,omitempty"`
 	// EnableScaleToZero enables scaling the model to zero replicas when there is no traffic.
@@ -92,35 +95,48 @@ type ModelScaleToZeroConfig struct {
 // Maps model ID to its configuration.
 type ScaleToZeroConfigData map[string]ModelScaleToZeroConfig
 
-// IsScaleToZeroEnabled determines if scale-to-zero is enabled for a specific model.
+// IsScaleToZeroEnabled determines if scale-to-zero is enabled for a specific model in a namespace.
 // Supports partial overrides: if a model config exists but EnableScaleToZero is nil,
 // it falls through to check global defaults. This allows models to override only
 // retentionPeriod while inheriting the enableScaleToZero setting from defaults.
 //
 // Configuration priority (highest to lowest):
-// 1. Per-model configuration in ConfigMap (if EnableScaleToZero is set)
-// 2. Global defaults in ConfigMap (under "__defaults__" key)
-// 3. WVA_SCALE_TO_ZERO environment variable
-// 4. System default (false)
-func IsScaleToZeroEnabled(configData ScaleToZeroConfigData, modelID string) bool {
-	// Check per-model setting first (highest priority)
-	// With the new YAML format, model IDs are used directly without sanitization
-	if config, exists := configData[modelID]; exists {
-		// If EnableScaleToZero is explicitly set (not nil), use it
-		if config.EnableScaleToZero != nil {
-			return *config.EnableScaleToZero
+// 1. Namespace-specific model configuration (namespace + modelID match)
+// 2. Global model configuration (modelID match, no namespace specified)
+// 3. Global defaults in ConfigMap (under "__defaults__" key)
+// 4. WVA_SCALE_TO_ZERO environment variable
+// 5. System default (false)
+func IsScaleToZeroEnabled(configData ScaleToZeroConfigData, namespace, modelID string) bool {
+	// Priority 1: Check namespace-specific configuration
+	for _, config := range configData {
+		if config.Namespace == namespace && config.ModelID == modelID {
+			if config.EnableScaleToZero != nil {
+				return *config.EnableScaleToZero
+			}
+			// If nil, continue to check other priorities
+			break
 		}
-		// If nil, fall through to check global defaults (allows partial override)
 	}
 
-	// Check global defaults in ConfigMap (second priority)
+	// Priority 2: Check global configuration (no namespace specified)
+	for _, config := range configData {
+		if config.Namespace == "" && config.ModelID == modelID {
+			if config.EnableScaleToZero != nil {
+				return *config.EnableScaleToZero
+			}
+			// If nil, continue to check other priorities
+			break
+		}
+	}
+
+	// Priority 3: Check global defaults in ConfigMap
 	if globalConfig, exists := configData[GlobalDefaultsKey]; exists {
 		if globalConfig.EnableScaleToZero != nil {
 			return *globalConfig.EnableScaleToZero
 		}
 	}
 
-	// Fall back to global environment variable (third priority)
+	// Priority 4: Fall back to global environment variable
 	return strings.EqualFold(os.Getenv("WVA_SCALE_TO_ZERO"), "true")
 }
 
@@ -156,28 +172,47 @@ func ValidateRetentionPeriod(retentionPeriod string) (time.Duration, error) {
 	return duration, nil
 }
 
-// GetScaleToZeroRetentionPeriod returns the pod retention period for scale-to-zero for a specific model.
+// GetScaleToZeroRetentionPeriod returns the pod retention period for scale-to-zero for a specific model in a namespace.
 // Configuration priority (highest to lowest):
-// 1. Per-model retention period in ConfigMap
-// 2. Global defaults retention period in ConfigMap (under "__defaults__" key)
-// 3. System default (10 minutes)
-func GetScaleToZeroRetentionPeriod(configData ScaleToZeroConfigData, modelID string) time.Duration {
-	// Check per-model retention period first (highest priority)
-	// With the new YAML format, model IDs are used directly without sanitization
-	if config, exists := configData[modelID]; exists && config.RetentionPeriod != "" {
-		duration, err := ValidateRetentionPeriod(config.RetentionPeriod)
-		if err != nil {
-			logger.Log.Warn("Invalid retention period for model, checking global defaults",
-				"modelID", modelID,
-				"retentionPeriod", config.RetentionPeriod,
-				"error", err)
-			// Don't return here, fall through to check global defaults
-		} else {
+// 1. Namespace-specific model retention period (namespace + modelID match)
+// 2. Global model retention period (modelID match, no namespace specified)
+// 3. Global defaults retention period in ConfigMap (under "__defaults__" key)
+// 4. System default (10 minutes)
+func GetScaleToZeroRetentionPeriod(configData ScaleToZeroConfigData, namespace, modelID string) time.Duration {
+	// Priority 1: Check namespace-specific configuration
+	for _, config := range configData {
+		if config.Namespace == namespace && config.ModelID == modelID && config.RetentionPeriod != "" {
+			duration, err := ValidateRetentionPeriod(config.RetentionPeriod)
+			if err != nil {
+				logger.Log.Warn("Invalid namespace-specific retention period, checking other priorities",
+					"namespace", namespace,
+					"modelID", modelID,
+					"retentionPeriod", config.RetentionPeriod,
+					"error", err)
+				// Don't return, continue to check other priorities
+				break
+			}
 			return duration
 		}
 	}
 
-	// Check global defaults retention period (second priority)
+	// Priority 2: Check global configuration (no namespace specified)
+	for _, config := range configData {
+		if config.Namespace == "" && config.ModelID == modelID && config.RetentionPeriod != "" {
+			duration, err := ValidateRetentionPeriod(config.RetentionPeriod)
+			if err != nil {
+				logger.Log.Warn("Invalid global model retention period, checking defaults",
+					"modelID", modelID,
+					"retentionPeriod", config.RetentionPeriod,
+					"error", err)
+				// Don't return, continue to check defaults
+				break
+			}
+			return duration
+		}
+	}
+
+	// Priority 3: Check global defaults retention period
 	if globalConfig, exists := configData[GlobalDefaultsKey]; exists && globalConfig.RetentionPeriod != "" {
 		duration, err := ValidateRetentionPeriod(globalConfig.RetentionPeriod)
 		if err != nil {
@@ -189,15 +224,15 @@ func GetScaleToZeroRetentionPeriod(configData ScaleToZeroConfigData, modelID str
 		return duration
 	}
 
-	// Fall back to system default (lowest priority)
+	// Priority 4: Fall back to system default
 	return DefaultScaleToZeroRetentionPeriod
 }
 
 // GetMinNumReplicas returns the minimum number of replicas for a specific model based on
 // scale-to-zero configuration. Returns 0 if scale-to-zero is enabled, otherwise returns 1.
 // DEPRECATED: Use GetVariantMinReplicas for per-variant control.
-func GetMinNumReplicas(configData ScaleToZeroConfigData, modelID string) int {
-	if IsScaleToZeroEnabled(configData, modelID) {
+func GetMinNumReplicas(configData ScaleToZeroConfigData, namespace, modelID string) int {
+	if IsScaleToZeroEnabled(configData, namespace, modelID) {
 		return 0
 	}
 	return 1
@@ -453,8 +488,8 @@ func AddServerInfoToSystemData(
 	minNumReplicas := GetVariantMinReplicas(va)
 
 	// Log retention period if scale-to-zero is enabled (for future use in scale-to-zero logic)
-	if IsScaleToZeroEnabled(scaleToZeroConfigData, va.Spec.ModelID) {
-		retentionPeriod := GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, va.Spec.ModelID)
+	if IsScaleToZeroEnabled(scaleToZeroConfigData, va.Namespace, va.Spec.ModelID) {
+		retentionPeriod := GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, va.Namespace, va.Spec.ModelID)
 		logger.Log.Debug("Scale-to-zero retention period configured",
 			"modelID", va.Spec.ModelID,
 			"variant", va.Name,
@@ -465,7 +500,7 @@ func AddServerInfoToSystemData(
 	serverSpec := &infernoConfig.ServerSpec{
 		Name:            FullName(va.Name, va.Namespace),
 		Class:           className,
-		Model:           va.Spec.ModelID,
+		Model:           va.Spec.ModelID, // Use raw model ID (not namespace-qualified) for cluster-wide optimization
 		KeepAccelerator: true,
 		MinNumReplicas:  int(minNumReplicas),
 		CurrentAlloc:    *AllocationData,
@@ -543,8 +578,8 @@ func MarshalStructToJsonString(t any) string {
 
 // Helper to find SLOs for a model variant
 // If the specified model is not found, falls back to "default/default" SLO
-func FindModelSLO(cmData map[string]string, targetModel string) (*interfaces.ServiceClassEntry, string /* class name */, error) {
-	// First pass: try to find exact match for targetModel
+func FindModelSLO(cmData map[string]string, namespace, targetModel string) (*interfaces.ServiceClassEntry, string /* class name */, error) {
+	// Priority 1: Try to find namespace-specific match (namespace + model)
 	for key, val := range cmData {
 		var sc interfaces.ServiceClass
 		if err := yaml.Unmarshal([]byte(val), &sc); err != nil {
@@ -552,7 +587,25 @@ func FindModelSLO(cmData map[string]string, targetModel string) (*interfaces.Ser
 		}
 
 		for _, entry := range sc.Data {
-			if entry.Model == targetModel {
+			if entry.Namespace == namespace && entry.Model == targetModel {
+				return &entry, sc.Name, nil
+			}
+		}
+	}
+
+	// Priority 2: Try to find global match (no namespace specified, just model)
+	for _, val := range cmData {
+		var sc interfaces.ServiceClass
+		if err := yaml.Unmarshal([]byte(val), &sc); err != nil {
+			continue // Already logged error in first pass
+		}
+
+		for _, entry := range sc.Data {
+			if entry.Namespace == "" && entry.Model == targetModel {
+				logger.Log.Info("Using global model SLO configuration",
+					"namespace", namespace,
+					"model", targetModel,
+					"service-class", sc.Name)
 				return &entry, sc.Name, nil
 			}
 		}
@@ -560,18 +613,34 @@ func FindModelSLO(cmData map[string]string, targetModel string) (*interfaces.Ser
 
 	// Model not found, try fallback to default/default
 	logger.Log.Info("Model SLO not found, attempting fallback to default/default",
+		"namespace", namespace,
 		"model", targetModel)
 
-	// Second pass: try to find default/default
+	// Priority 3: Try to find default/default (global or namespace-specific)
 	for _, val := range cmData {
 		var sc interfaces.ServiceClass
 		if err := yaml.Unmarshal([]byte(val), &sc); err != nil {
 			continue // Skip unparseable entries
 		}
 
+		// Try namespace-specific default first
 		for _, entry := range sc.Data {
-			if entry.Model == "default/default" {
-				logger.Log.Info("Using fallback SLO from default/default",
+			if entry.Namespace == namespace && entry.Model == "default/default" {
+				logger.Log.Info("Using namespace-specific fallback SLO from default/default",
+					"namespace", namespace,
+					"original-model", targetModel,
+					"service-class", sc.Name,
+					"slo-tpot", entry.SLOTPOT,
+					"slo-ttft", entry.SLOTTFT)
+				return &entry, sc.Name, nil
+			}
+		}
+
+		// Try global default
+		for _, entry := range sc.Data {
+			if entry.Namespace == "" && entry.Model == "default/default" {
+				logger.Log.Info("Using global fallback SLO from default/default",
+					"namespace", namespace,
 					"original-model", targetModel,
 					"service-class", sc.Name,
 					"slo-tpot", entry.SLOTPOT,
@@ -582,7 +651,7 @@ func FindModelSLO(cmData map[string]string, targetModel string) (*interfaces.Ser
 	}
 
 	// Neither targetModel nor default/default found
-	return nil, "", fmt.Errorf("model %q not found in any service class and default/default fallback not found", targetModel)
+	return nil, "", fmt.Errorf("model %q in namespace %q not found in any service class and default/default fallback not found", targetModel, namespace)
 }
 
 func Ptr[T any](v T) *T {

@@ -272,8 +272,8 @@ var _ = Describe("Optimizer", Ordered, func() {
 				modelName := va.Spec.ModelID
 				Expect(modelName).NotTo(BeEmpty(), "variantAutoscaling missing modelName label, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
 
-				_, className, err := utils.FindModelSLO(serviceClassCm, modelName)
-				Expect(err).NotTo(HaveOccurred(), "failed to find model SLO for model - ", modelName, ", variantAutoscaling - ", va.Name)
+				_, className, err := utils.FindModelSLO(serviceClassCm, va.Namespace, modelName)
+				Expect(err).NotTo(HaveOccurred(), "failed to find model SLO for model - ", modelName, ", namespace - ", va.Namespace, ", variantAutoscaling - ", va.Name)
 
 				// Single-variant architecture: add the variant profile to system data
 				err = utils.AddVariantProfileToSystemData(systemData, modelName, va.Spec.Accelerator, va.Spec.AcceleratorCount, &va.Spec.VariantProfile)
@@ -323,8 +323,12 @@ var _ = Describe("Optimizer", Ordered, func() {
 			// Analyze
 			By("Analyzing step")
 			for _, s := range system.Servers() {
-				modelAnalyzeResponse := modelAnalyzer.AnalyzeModel(ctx, *vaMap[s.Name()])
-				Expect(len(modelAnalyzeResponse.Allocations)).To(BeNumerically(">", 0), "Expected at least one allocation from model analyzer for server - ", s.Name())
+				va, exists := vaMap[s.Name()]
+				Expect(exists).To(BeTrue(), "VA not found in map for server", "serverName", s.Name(), "modelID", s.ModelName())
+				Expect(va).NotTo(BeNil(), "VA is nil for server", "serverName", s.Name())
+
+				modelAnalyzeResponse := modelAnalyzer.AnalyzeModel(ctx, *va)
+				Expect(len(modelAnalyzeResponse.Allocations)).To(BeNumerically(">", 0), "Expected at least one allocation from model analyzer for server - ", s.Name(), " model - ", s.ModelName())
 				allAnalyzerResponses[s.Name()] = modelAnalyzeResponse
 			}
 
@@ -374,8 +378,8 @@ var _ = Describe("Optimizer", Ordered, func() {
 				modelName := va.Spec.ModelID
 				Expect(modelName).NotTo(BeEmpty(), "variantAutoscaling missing modelName label, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
 
-				_, className, err := utils.FindModelSLO(serviceClassCm, modelName)
-				Expect(err).NotTo(HaveOccurred(), "failed to find model SLO for model - ", modelName, ", variantAutoscaling - ", va.Name)
+				_, className, err := utils.FindModelSLO(serviceClassCm, va.Namespace, modelName)
+				Expect(err).NotTo(HaveOccurred(), "failed to find model SLO for model - ", modelName, ", namespace - ", va.Namespace, ", variantAutoscaling - ", va.Name)
 
 				// Single-variant architecture: add the variant profile to system data
 				err = utils.AddVariantProfileToSystemData(systemData, modelName, va.Spec.Accelerator, va.Spec.AcceleratorCount, &va.Spec.VariantProfile)
@@ -449,8 +453,12 @@ var _ = Describe("Optimizer", Ordered, func() {
 			// Analyze
 			By("Analyzing step")
 			for _, s := range system.Servers() {
-				modelAnalyzeResponse := modelAnalyzer.AnalyzeModel(ctx, *vaMap[s.Name()])
-				Expect(len(modelAnalyzeResponse.Allocations)).To(BeNumerically(">", 0), "Expected at least one allocation from model analyzer for server - ", s.Name())
+				va, exists := vaMap[s.Name()]
+				Expect(exists).To(BeTrue(), "VA not found in map for server", "serverName", s.Name(), "modelID", s.ModelName())
+				Expect(va).NotTo(BeNil(), "VA is nil for server", "serverName", s.Name())
+
+				modelAnalyzeResponse := modelAnalyzer.AnalyzeModel(ctx, *va)
+				Expect(len(modelAnalyzeResponse.Allocations)).To(BeNumerically(">", 0), "Expected at least one allocation from model analyzer for server - ", s.Name(), " model - ", s.ModelName())
 				allAnalyzerResponses[s.Name()] = modelAnalyzeResponse
 			}
 
