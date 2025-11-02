@@ -139,24 +139,13 @@ type OptimizedAlloc struct {
 	// LastRunTime is the timestamp of the last optimization run.
 	LastRunTime metav1.Time `json:"lastRunTime,omitempty"`
 
+	// Accelerator is the type of accelerator for the optimized allocation.
+	// +kubebuilder:validation:MinLength=2
+	Accelerator string `json:"accelerator"`
+
 	// NumReplicas is the number of replicas for the optimized allocation.
 	// +kubebuilder:validation:Minimum=0
-	NumReplicas int32 `json:"numReplicas"`
-
-	// Reason provides a human-readable explanation for the allocation decision.
-	// This field indicates whether the allocation came from the optimizer,
-	// fallback logic, scale-to-zero enforcement, or bounds clamping.
-	// Examples: "Optimizer solution: cost-optimal allocation",
-	// "Fallback: metrics unavailable, using max(minReplicas=2, current=3)",
-	// "Scale-to-zero: no load detected"
-	// +optional
-	Reason string `json:"reason,omitempty"`
-
-	// LastUpdate is the timestamp when NumReplicas or Reason changed from the previous state.
-	// This field tracks when the allocation decision actually changed, which may be
-	// different from LastRunTime (which is updated on every reconciliation).
-	// +optional
-	LastUpdate metav1.Time `json:"lastUpdate,omitempty"`
+	NumReplicas int `json:"numReplicas"`
 }
 
 // ActuationStatus provides details about the actuation process and its current status.

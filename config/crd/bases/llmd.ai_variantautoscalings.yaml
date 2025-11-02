@@ -293,34 +293,23 @@ spec:
                 description: DesiredOptimizedAlloc indicates the target optimized
                   allocation based on autoscaling logic.
                 properties:
+                  accelerator:
+                    description: Accelerator is the type of accelerator for the optimized
+                      allocation.
+                    minLength: 2
+                    type: string
                   lastRunTime:
                     description: LastRunTime is the timestamp of the last optimization
                       run.
                     format: date-time
                     type: string
-                  lastUpdate:
-                    description: |-
-                      LastUpdate is the timestamp when NumReplicas or Reason changed from the previous state.
-                      This field tracks when the allocation decision actually changed, which may be
-                      different from LastRunTime (which is updated on every reconciliation).
-                    format: date-time
-                    type: string
                   numReplicas:
                     description: NumReplicas is the number of replicas for the optimized
                       allocation.
-                    format: int32
                     minimum: 0
                     type: integer
-                  reason:
-                    description: |-
-                      Reason provides a human-readable explanation for the allocation decision.
-                      This field indicates whether the allocation came from the optimizer,
-                      fallback logic, scale-to-zero enforcement, or bounds clamping.
-                      Examples: "Optimizer solution: cost-optimal allocation",
-                      "Fallback: metrics unavailable, using max(minReplicas=2, current=3)",
-                      "Scale-to-zero: no load detected"
-                    type: string
                 required:
+                - accelerator
                 - numReplicas
                 type: object
             type: object
