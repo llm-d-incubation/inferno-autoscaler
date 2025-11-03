@@ -261,7 +261,11 @@ func zeroLoadAllocation(server *Server, model *Model, acc *Accelerator, perf *co
 	numReplicas := int32(server.minNumReplicas)
 	gName := acc.Name()
 	if numReplicas == 0 {
-		alloc := &Allocation{accelerator: "", numReplicas: 0, batchSize: 0,
+		// IMPORTANT: Even with 0 replicas, we must set the accelerator name
+		// so the greedy solver can properly process this allocation.
+		// The solver uses GetAccelerator(gName) which returns nil for empty string,
+		// causing the allocation to be skipped entirely.
+		alloc := &Allocation{accelerator: gName, numReplicas: 0, batchSize: 0,
 			cost: 0, itl: 0, ttft: 0, rho: 0, maxArrvRatePerReplica: 0}
 		alloc.SetValue(0)
 		return alloc

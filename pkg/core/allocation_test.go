@@ -1007,7 +1007,7 @@ func TestZeroLoadAllocation(t *testing.T) {
 					Delta: 1.5,
 				},
 			},
-			wantAccel:     "",
+			wantAccel:     "test-gpu", // Fixed: accelerator name must be set even with 0 replicas for solver compatibility
 			wantReplicas:  0,
 			wantBatchSize: 0,
 			wantCost:      0.0,
