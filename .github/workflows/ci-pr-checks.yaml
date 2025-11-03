@@ -67,20 +67,29 @@ jobs:
             exit 1
           fi
 
-          # Extract desiredOptimizedAlloc section
-          DESIRED_ALLOC_SCHEMA=$(grep -A 30 "desiredOptimizedAlloc:" "$CRD_FILE")
+          # Extract desiredOptimizedAlloc section and lastUpdate subsection
+          DESIRED_ALLOC_SCHEMA=$(grep -A 50 "desiredOptimizedAlloc:" "$CRD_FILE")
+          LASTUPDATE_SCHEMA=$(grep -A 30 "lastUpdate:" "$CRD_FILE" | head -40)
 
-          # Check for required fields
-          HAS_REASON=$(echo "$DESIRED_ALLOC_SCHEMA" | grep -c "reason:" || true)
-          HAS_LASTUPDATE=$(echo "$DESIRED_ALLOC_SCHEMA" | grep -c "lastUpdate:" || true)
+          # Check for required fields in OptimizedAlloc
           HAS_NUMREPLICAS=$(echo "$DESIRED_ALLOC_SCHEMA" | grep -c "numReplicas:" || true)
           HAS_LASTRUNTIME=$(echo "$DESIRED_ALLOC_SCHEMA" | grep -c "lastRunTime:" || true)
+          HAS_LASTUPDATE=$(echo "$DESIRED_ALLOC_SCHEMA" | grep -c "lastUpdate:" || true)
+
+          # Check for required fields inside LastUpdateInfo struct
+          HAS_UPDATETIME=$(echo "$LASTUPDATE_SCHEMA" | grep -c "updateTime:" || true)
+          HAS_NUMREPLICASCHANGED=$(echo "$LASTUPDATE_SCHEMA" | grep -c "numReplicasChanged:" || true)
+          HAS_REASON=$(echo "$LASTUPDATE_SCHEMA" | grep -c "reason:" || true)
 
           echo "Field verification results:"
+          echo "OptimizedAlloc fields:"
           echo "  numReplicas: $([ $HAS_NUMREPLICAS -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING')"
           echo "  lastRunTime: $([ $HAS_LASTRUNTIME -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING')"
-          echo "  reason: $([ $HAS_REASON -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING')"
           echo "  lastUpdate: $([ $HAS_LASTUPDATE -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING')"
+          echo "LastUpdateInfo fields (inside lastUpdate):"
+          echo "  updateTime: $([ $HAS_UPDATETIME -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING')"
+          echo "  numReplicasChanged: $([ $HAS_NUMREPLICASCHANGED -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING')"
+          echo "  reason: $([ $HAS_REASON -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING')"
           echo ""
 
           # Report to GitHub Actions Summary
@@ -88,16 +97,23 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Verified CRD file **before** E2E tests:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### OptimizedAlloc Fields" >> $GITHUB_STEP_SUMMARY
           echo "| Field | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| \`numReplicas\` | $([ $HAS_NUMREPLICAS -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING') |" >> $GITHUB_STEP_SUMMARY
           echo "| \`lastRunTime\` | $([ $HAS_LASTRUNTIME -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING') |" >> $GITHUB_STEP_SUMMARY
-          echo "| \`reason\` | $([ $HAS_REASON -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING') |" >> $GITHUB_STEP_SUMMARY
           echo "| \`lastUpdate\` | $([ $HAS_LASTUPDATE -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING') |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### LastUpdateInfo Fields (nested in lastUpdate)" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| \`updateTime\` | $([ $HAS_UPDATETIME -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING') |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`numReplicasChanged\` | $([ $HAS_NUMREPLICASCHANGED -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING') |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`reason\` | $([ $HAS_REASON -gt 0 ] && echo '✅ FOUND' || echo '❌ MISSING') |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Fail fast if critical fields are missing
-          if [ $HAS_REASON -eq 0 ] || [ $HAS_LASTUPDATE -eq 0 ]; then
+          if [ $HAS_LASTUPDATE -eq 0 ] || [ $HAS_UPDATETIME -eq 0 ] || [ $HAS_NUMREPLICASCHANGED -eq 0 ] || [ $HAS_REASON -eq 0 ]; then
             echo "❌ CRITICAL: CRD YAML is missing required fields!"
             echo "   E2E tests will fail because these fields will be dropped by the API server."
             echo "" >> $GITHUB_STEP_SUMMARY
@@ -126,18 +142,23 @@ jobs:
             exit 0
           fi
 
-          DESIRED_ALLOC_SCHEMA=$(kubectl get crd variantautoscalings.llmd.ai -o yaml | grep -A 30 "desiredOptimizedAlloc:")
+          DESIRED_ALLOC_SCHEMA=$(kubectl get crd variantautoscalings.llmd.ai -o yaml | grep -A 50 "desiredOptimizedAlloc:")
+          LASTUPDATE_SCHEMA=$(kubectl get crd variantautoscalings.llmd.ai -o yaml | grep -A 30 "lastUpdate:" | head -40)
 
-          HAS_REASON=$(echo "$DESIRED_ALLOC_SCHEMA" | grep -c "reason:" || true)
           HAS_LASTUPDATE=$(echo "$DESIRED_ALLOC_SCHEMA" | grep -c "lastUpdate:" || true)
+          HAS_UPDATETIME=$(echo "$LASTUPDATE_SCHEMA" | grep -c "updateTime:" || true)
+          HAS_NUMREPLICASCHANGED=$(echo "$LASTUPDATE_SCHEMA" | grep -c "numReplicasChanged:" || true)
+          HAS_REASON=$(echo "$LASTUPDATE_SCHEMA" | grep -c "reason:" || true)
 
           echo "## 🔍 CRD Schema Check" >> $GITHUB_STEP_SUMMARY
           echo "| Field | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| \`reason\` | $([ $HAS_REASON -gt 0 ] && echo '✅' || echo '❌') |" >> $GITHUB_STEP_SUMMARY
           echo "| \`lastUpdate\` | $([ $HAS_LASTUPDATE -gt 0 ] && echo '✅' || echo '❌') |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`lastUpdate.updateTime\` | $([ $HAS_UPDATETIME -gt 0 ] && echo '✅' || echo '❌') |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`lastUpdate.numReplicasChanged\` | $([ $HAS_NUMREPLICASCHANGED -gt 0 ] && echo '✅' || echo '❌') |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`lastUpdate.reason\` | $([ $HAS_REASON -gt 0 ] && echo '✅' || echo '❌') |" >> $GITHUB_STEP_SUMMARY
 
-          if [ $HAS_REASON -eq 0 ] || [ $HAS_LASTUPDATE -eq 0 ]; then
+          if [ $HAS_LASTUPDATE -eq 0 ] || [ $HAS_UPDATETIME -eq 0 ] || [ $HAS_NUMREPLICASCHANGED -eq 0 ] || [ $HAS_REASON -eq 0 ]; then
             echo "⚠️ **CRD missing required fields!** See manual trigger workflow for details." >> $GITHUB_STEP_SUMMARY
           fi
           
