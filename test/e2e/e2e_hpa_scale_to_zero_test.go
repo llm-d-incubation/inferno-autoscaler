@@ -227,8 +227,8 @@ retentionPeriod: "4m"`, modelID),
 			g.Expect(err).NotTo(HaveOccurred())
 
 			_, _ = fmt.Fprintf(GinkgoWriter, "VA Status: DesiredOptimized=%d, Current=%d, Reason=%q, LastUpdate=%v\n",
-				va.Status.DesiredOptimizedAlloc.NumReplicas, va.Status.CurrentAlloc.NumReplicas,
-				va.Status.DesiredOptimizedAlloc.Reason, va.Status.DesiredOptimizedAlloc.LastUpdate.Time)
+				va.Status.DesiredOptimizedAlloc.NumReplicas, va.Status.DesiredOptimizedAlloc.NumReplicas,
+				va.Status.DesiredOptimizedAlloc.LastUpdate.Reason, va.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.Time)
 
 			g.Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(Equal(int32(0)),
 				"Controller should set desired replicas to 0 after retention period")
@@ -546,7 +546,7 @@ retentionPeriod: "4m"`, modelID),
 
 			_, _ = fmt.Fprintf(GinkgoWriter, "Waiting for controller: DesiredOptimized=%d, Current=%d, Reason=%q\n",
 				va.Status.DesiredOptimizedAlloc.NumReplicas, va.Status.CurrentAlloc.NumReplicas,
-				va.Status.DesiredOptimizedAlloc.Reason)
+				va.Status.DesiredOptimizedAlloc.LastUpdate.Reason)
 
 			g.Expect(va.Status.CurrentAlloc.NumReplicas).To(Equal(int32(1)))
 			g.Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(Equal(int32(1)))
@@ -572,7 +572,7 @@ retentionPeriod: "4m"`, modelID),
 
 			_, _ = fmt.Fprintf(GinkgoWriter, "VA Status: DesiredOptimized=%d, Current=%d, Reason=%q\n",
 				va.Status.DesiredOptimizedAlloc.NumReplicas, va.Status.CurrentAlloc.NumReplicas,
-				va.Status.DesiredOptimizedAlloc.Reason)
+				va.Status.DesiredOptimizedAlloc.LastUpdate.Reason)
 
 			g.Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(Equal(int32(0)))
 		}, 2*time.Minute, 10*time.Second).Should(Succeed())

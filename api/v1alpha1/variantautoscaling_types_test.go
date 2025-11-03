@@ -777,7 +777,7 @@ func TestOptimizedAllocReasonField(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			va := makeValidVA()
-			va.Status.DesiredOptimizedAlloc.Reason = tt.reason
+			va.Status.DesiredOptimizedAlloc.LastUpdate.Reason = tt.reason
 
 			data, err := json.Marshal(va)
 			if err != nil {
@@ -790,8 +790,8 @@ func TestOptimizedAllocReasonField(t *testing.T) {
 			}
 
 			if tt.expectInJSON {
-				if decoded.Status.DesiredOptimizedAlloc.Reason != tt.reason {
-					t.Errorf("Reason mismatch: expected=%q, got=%q", tt.reason, decoded.Status.DesiredOptimizedAlloc.Reason)
+				if decoded.Status.DesiredOptimizedAlloc.LastUpdate.Reason != tt.reason {
+					t.Errorf("Reason mismatch: expected=%q, got=%q", tt.reason, decoded.Status.DesiredOptimizedAlloc.LastUpdate.Reason)
 				}
 			} else {
 				// Check if field is omitted in JSON
@@ -832,9 +832,11 @@ func TestOptimizedAllocLastUpdateField(t *testing.T) {
 			va := makeValidVA()
 
 			if tt.setLastUpdate {
-				va.Status.DesiredOptimizedAlloc.LastUpdate = metav1.NewTime(tt.lastUpdateTime)
+				va.Status.DesiredOptimizedAlloc.LastUpdate = LastUpdateInfo{
+					UpdateTime: metav1.NewTime(tt.lastUpdateTime),
+				}
 			} else {
-				va.Status.DesiredOptimizedAlloc.LastUpdate = metav1.Time{}
+				va.Status.DesiredOptimizedAlloc.LastUpdate = LastUpdateInfo{}
 			}
 
 			data, err := json.Marshal(va)
@@ -848,13 +850,13 @@ func TestOptimizedAllocLastUpdateField(t *testing.T) {
 			}
 
 			if tt.setLastUpdate {
-				if !decoded.Status.DesiredOptimizedAlloc.LastUpdate.Time.Equal(tt.lastUpdateTime) {
+				if !decoded.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.Time.Equal(tt.lastUpdateTime) {
 					t.Errorf("LastUpdate mismatch: expected=%v, got=%v",
-						tt.lastUpdateTime, decoded.Status.DesiredOptimizedAlloc.LastUpdate.Time)
+						tt.lastUpdateTime, decoded.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.Time)
 				}
 			} else {
 				// Verify zero time
-				if !decoded.Status.DesiredOptimizedAlloc.LastUpdate.IsZero() {
+				if !decoded.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero() {
 					t.Errorf("Expected LastUpdate to be zero, but got %v",
 						decoded.Status.DesiredOptimizedAlloc.LastUpdate)
 				}
@@ -866,22 +868,22 @@ func TestOptimizedAllocLastUpdateField(t *testing.T) {
 // TestOptimizedAllocDeepCopyWithReasonAndLastUpdate tests DeepCopy for new fields
 func TestOptimizedAllocDeepCopyWithReasonAndLastUpdate(t *testing.T) {
 	orig := makeValidVA()
-	orig.Status.DesiredOptimizedAlloc.Reason = "Optimizer solution: cost-optimal allocation"
-	orig.Status.DesiredOptimizedAlloc.LastUpdate = metav1.NewTime(time.Unix(1730100000, 0).UTC())
+	orig.Status.DesiredOptimizedAlloc.LastUpdate.Reason = "Optimizer solution: cost-optimal allocation"
+	orig.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime = metav1.NewTime(time.Unix(1730100000, 0).UTC())
 	orig.Status.DesiredOptimizedAlloc.NumReplicas = 5
 
 	cp := orig.DeepCopy()
 
 	// Mutate the copy
-	cp.Status.DesiredOptimizedAlloc.Reason = "Fallback: metrics unavailable"
-	cp.Status.DesiredOptimizedAlloc.LastUpdate = metav1.NewTime(time.Unix(1730200000, 0).UTC())
+	cp.Status.DesiredOptimizedAlloc.LastUpdate.Reason = "Fallback: metrics unavailable"
+	cp.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime = metav1.NewTime(time.Unix(1730200000, 0).UTC())
 	cp.Status.DesiredOptimizedAlloc.NumReplicas = 3
 
 	// Verify original is unchanged
-	if orig.Status.DesiredOptimizedAlloc.Reason == cp.Status.DesiredOptimizedAlloc.Reason {
+	if orig.Status.DesiredOptimizedAlloc.LastUpdate.Reason == cp.Status.DesiredOptimizedAlloc.LastUpdate.Reason {
 		t.Errorf("DeepCopy did not create independent copy for Reason")
 	}
-	if orig.Status.DesiredOptimizedAlloc.LastUpdate.Equal(&cp.Status.DesiredOptimizedAlloc.LastUpdate) {
+	if orig.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.Equal(&cp.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime) {
 		t.Errorf("DeepCopy did not create independent copy for LastUpdate")
 	}
 	if orig.Status.DesiredOptimizedAlloc.NumReplicas == cp.Status.DesiredOptimizedAlloc.NumReplicas {
@@ -889,8 +891,8 @@ func TestOptimizedAllocDeepCopyWithReasonAndLastUpdate(t *testing.T) {
 	}
 
 	// Verify copy has expected values
-	if cp.Status.DesiredOptimizedAlloc.Reason != "Fallback: metrics unavailable" {
-		t.Errorf("Copy has unexpected Reason: %q", cp.Status.DesiredOptimizedAlloc.Reason)
+	if cp.Status.DesiredOptimizedAlloc.LastUpdate.Reason != "Fallback: metrics unavailable" {
+		t.Errorf("Copy has unexpected Reason: %q", cp.Status.DesiredOptimizedAlloc.LastUpdate.Reason)
 	}
 	if cp.Status.DesiredOptimizedAlloc.NumReplicas != 3 {
 		t.Errorf("Copy has unexpected NumReplicas: %d", cp.Status.DesiredOptimizedAlloc.NumReplicas)
@@ -902,8 +904,8 @@ func TestOptimizedAllocJSONRoundTripWithAllFields(t *testing.T) {
 	orig := makeValidVA()
 	orig.Status.DesiredOptimizedAlloc.LastRunTime = metav1.NewTime(time.Unix(1730000000, 0).UTC())
 	orig.Status.DesiredOptimizedAlloc.NumReplicas = 4
-	orig.Status.DesiredOptimizedAlloc.Reason = "Optimizer solution: cost and latency optimized allocation"
-	orig.Status.DesiredOptimizedAlloc.LastUpdate = metav1.NewTime(time.Unix(1730010000, 0).UTC())
+	orig.Status.DesiredOptimizedAlloc.LastUpdate.Reason = "Optimizer solution: cost and latency optimized allocation"
+	orig.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime = metav1.NewTime(time.Unix(1730010000, 0).UTC())
 
 	data, err := json.Marshal(orig)
 	if err != nil {
@@ -925,10 +927,10 @@ func TestOptimizedAllocJSONRoundTripWithAllFields(t *testing.T) {
 	if origAlloc.NumReplicas != decodedAlloc.NumReplicas {
 		t.Errorf("NumReplicas mismatch: expected=%d, got=%d", origAlloc.NumReplicas, decodedAlloc.NumReplicas)
 	}
-	if origAlloc.Reason != decodedAlloc.Reason {
-		t.Errorf("Reason mismatch: expected=%q, got=%q", origAlloc.Reason, decodedAlloc.Reason)
+	if origAlloc.LastUpdate.Reason != decodedAlloc.LastUpdate.Reason {
+		t.Errorf("Reason mismatch: expected=%q, got=%q", origAlloc.LastUpdate.Reason, decodedAlloc.LastUpdate.Reason)
 	}
-	if !origAlloc.LastUpdate.Equal(&decodedAlloc.LastUpdate) {
+	if !origAlloc.LastUpdate.UpdateTime.Equal(&decodedAlloc.LastUpdate.UpdateTime) {
 		t.Errorf("LastUpdate mismatch: expected=%v, got=%v", origAlloc.LastUpdate, decodedAlloc.LastUpdate)
 	}
 }

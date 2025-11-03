@@ -66,28 +66,6 @@ spec:
             description: Spec defines the desired state for autoscaling the model
               variant.
             properties:
-              scaleTargetRef:
-                description: |-
-                  ScaleTargetRef references the target resource (Deployment) to scale.
-                  This allows the VariantAutoscaling resource name to be independent of the Deployment name,
-                  enabling multiple variants (e.g., different accelerators) to target the same deployment.
-                properties:
-                  apiVersion:
-                    description: APIVersion is the API version of the target resource.
-                    minLength: 1
-                    type: string
-                  kind:
-                    description: Kind is the kind of the target resource (e.g., "Deployment").
-                    minLength: 1
-                    type: string
-                  name:
-                    description: Name is the name of the target resource.
-                    minLength: 1
-                    type: string
-                required:
-                - kind
-                - name
-                type: object
               accelerator:
                 description: Accelerator specifies the accelerator type for this variant
                   (e.g., "A100", "L40S").
@@ -122,6 +100,28 @@ spec:
                   to be autoscaled.
                 minLength: 1
                 type: string
+              scaleTargetRef:
+                description: |-
+                  ScaleTargetRef references the target resource (Deployment) to scale.
+                  This allows the VariantAutoscaling resource name to be independent of the Deployment name,
+                  enabling multiple variants (e.g., different accelerators) to target the same deployment.
+                properties:
+                  apiVersion:
+                    description: APIVersion is the API version of the target resource.
+                    minLength: 1
+                    type: string
+                  kind:
+                    description: Kind is the kind of the target resource (e.g., "Deployment").
+                    minLength: 1
+                    type: string
+                  name:
+                    description: Name is the name of the target resource.
+                    minLength: 1
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
               sloClassRef:
                 description: SLOClassRef references the ConfigMap key containing Service
                   Level Objective (SLO) configuration.
@@ -314,26 +314,42 @@ spec:
                     type: string
                   lastUpdate:
                     description: |-
-                      LastUpdate is the timestamp when NumReplicas or Reason changed from the previous state.
-                      This field tracks when the allocation decision actually changed, which may be
-                      different from LastRunTime (which is updated on every reconciliation).
-                    format: date-time
-                    type: string
+                      LastUpdate captures information about the last change to the allocation decision.
+                      This includes the time of the change, the delta in replicas, and the reason for the change.
+                    properties:
+                      numReplicasChanged:
+                        description: |-
+                          NumReplicasChanged is the delta (change) in replicas at the time of this update.
+                          This is calculated as: (new desiredOptimized.NumReplicas) - (previous desiredOptimized.NumReplicas)
+                          Positive values indicate scale-up, negative values indicate scale-down, zero means no change in replicas.
+                          The field is always present (even when zero) to distinguish "no change" from "unset".
+                        format: int32
+                        maximum: 10000
+                        minimum: -10000
+                        type: integer
+                      reason:
+                        description: |-
+                          Reason provides a human-readable explanation for the allocation decision.
+                          This field indicates whether the allocation came from the optimizer,
+                          fallback logic, scale-to-zero enforcement, or bounds clamping.
+                          Examples: "Optimizer solution: cost-optimal allocation",
+                          "Fallback: metrics unavailable, using max(minReplicas=2, current=3)",
+                          "Scale-to-zero: no load detected"
+                        type: string
+                      updateTime:
+                        description: |-
+                          UpdateTime is the timestamp when NumReplicas or Reason changed from the previous state.
+                          This field tracks when the allocation decision actually changed, which may be
+                          different from LastRunTime (which is updated on every reconciliation).
+                        format: date-time
+                        type: string
+                    type: object
                   numReplicas:
                     description: NumReplicas is the number of replicas for the optimized
                       allocation.
                     format: int32
                     minimum: 0
                     type: integer
-                  reason:
-                    description: |-
-                      Reason provides a human-readable explanation for the allocation decision.
-                      This field indicates whether the allocation came from the optimizer,
-                      fallback logic, scale-to-zero enforcement, or bounds clamping.
-                      Examples: "Optimizer solution: cost-optimal allocation",
-                      "Fallback: metrics unavailable, using max(minReplicas=2, current=3)",
-                      "Scale-to-zero: no load detected"
-                    type: string
                 required:
                 - numReplicas
                 type: object

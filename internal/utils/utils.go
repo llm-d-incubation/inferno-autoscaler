@@ -536,7 +536,11 @@ func CreateOptimizedAlloc(name string,
 	optimizedAlloc := &llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 		LastRunTime: metav1.NewTime(time.Now()),
 		NumReplicas: allocationData.NumReplicas,
-		Reason:      "Optimizer solution: cost and latency optimized allocation",
+		LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+			UpdateTime:         metav1.NewTime(time.Now()),
+			NumReplicasChanged: allocationData.NumReplicas, // First allocation, delta = total
+			Reason:             "Optimizer solution: cost and latency optimized allocation",
+		},
 	}
 	return optimizedAlloc, nil
 }

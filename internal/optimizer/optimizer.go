@@ -13,6 +13,7 @@ import (
 	infernoConfig "github.com/llm-d-incubation/workload-variant-autoscaler/pkg/config"
 	inferno "github.com/llm-d-incubation/workload-variant-autoscaler/pkg/core"
 	infernoManager "github.com/llm-d-incubation/workload-variant-autoscaler/pkg/manager"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // Engine holding all necessary data to perform global optimization across all variants
@@ -128,7 +129,11 @@ func (engine *VariantAutoscalingsEngine) Optimize(ctx context.Context,
 				"error", err)
 			optimizedAllocation = &llmdOptv1alpha1.OptimizedAlloc{
 				NumReplicas: va.Status.CurrentAlloc.NumReplicas,
-				Reason:      "Optimizer fallback: no solution found, using current replicas",
+				LastUpdate: llmdOptv1alpha1.LastUpdateInfo{
+					UpdateTime:         metav1.Now(),
+					NumReplicasChanged: 0, // Fallback preserves current, so delta is 0
+					Reason:             "Optimizer fallback: no solution found, using current replicas",
+				},
 			}
 		}
 

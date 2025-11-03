@@ -51,8 +51,7 @@ func TestStatusUpdatePreservesReasonAndLastUpdate(t *testing.T) {
 			},
 			DesiredOptimizedAlloc: llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 				NumReplicas: 0,
-				Reason:      "",
-				LastUpdate:  metav1.Time{},
+				LastUpdate:  llmdVariantAutoscalingV1alpha1.LastUpdateInfo{},
 			},
 		},
 	}
@@ -76,9 +75,9 @@ func TestStatusUpdatePreservesReasonAndLastUpdate(t *testing.T) {
 		t.Fatalf("Failed to get VA: %v", err)
 	}
 
-	fmt.Printf("Initial Reason: %q\n", updateVa.Status.DesiredOptimizedAlloc.Reason)
+	fmt.Printf("Initial Reason: %q\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason)
 	fmt.Printf("Initial LastUpdate: %v\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate)
-	fmt.Printf("Initial LastUpdate.IsZero(): %v\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate.IsZero())
+	fmt.Printf("Initial LastUpdate.IsZero(): %v\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero())
 
 	// Keep a copy of the original VA for updateConditionsForAllocation
 	va := updateVa.DeepCopy()
@@ -91,18 +90,18 @@ func TestStatusUpdatePreservesReasonAndLastUpdate(t *testing.T) {
 
 	fmt.Printf("After applyFallbackAllocation:\n")
 	fmt.Printf("  NumReplicas: %d\n", updateVa.Status.DesiredOptimizedAlloc.NumReplicas)
-	fmt.Printf("  Reason: %q\n", updateVa.Status.DesiredOptimizedAlloc.Reason)
+	fmt.Printf("  Reason: %q\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason)
 	fmt.Printf("  LastUpdate: %v\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate)
-	fmt.Printf("  LastUpdate.IsZero(): %v\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate.IsZero())
+	fmt.Printf("  LastUpdate.IsZero(): %v\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero())
 
-	if updateVa.Status.DesiredOptimizedAlloc.Reason == "" {
+	if updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason == "" {
 		t.Errorf("BUG: Reason is empty after applyFallbackAllocation!")
 	}
-	if updateVa.Status.DesiredOptimizedAlloc.LastUpdate.IsZero() {
+	if updateVa.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero() {
 		t.Errorf("BUG: LastUpdate is zero after applyFallbackAllocation!")
 	}
 
-	reasonAfterAllocation := updateVa.Status.DesiredOptimizedAlloc.Reason
+	reasonAfterAllocation := updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason
 	lastUpdateAfterAllocation := updateVa.Status.DesiredOptimizedAlloc.LastUpdate
 
 	// STEP 3: Set LastRunTime (line 1311 in controller)
@@ -110,27 +109,27 @@ func TestStatusUpdatePreservesReasonAndLastUpdate(t *testing.T) {
 	updateVa.Status.DesiredOptimizedAlloc.LastRunTime = metav1.Now()
 
 	fmt.Printf("After setting LastRunTime:\n")
-	fmt.Printf("  Reason: %q\n", updateVa.Status.DesiredOptimizedAlloc.Reason)
+	fmt.Printf("  Reason: %q\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason)
 	fmt.Printf("  LastUpdate: %v\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate)
 
-	if updateVa.Status.DesiredOptimizedAlloc.Reason != reasonAfterAllocation {
-		t.Errorf("BUG: Reason changed after setting LastRunTime! Was %q, now %q", reasonAfterAllocation, updateVa.Status.DesiredOptimizedAlloc.Reason)
+	if updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason != reasonAfterAllocation {
+		t.Errorf("BUG: Reason changed after setting LastRunTime! Was %q, now %q", reasonAfterAllocation, updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason)
 	}
 
 	// STEP 4: Apply safety net (lines 1315-1331 in controller)
 	fmt.Println("\n=== STEP 4: Applying safety net ===")
-	if updateVa.Status.DesiredOptimizedAlloc.Reason == "" {
-		updateVa.Status.DesiredOptimizedAlloc.Reason = "Fallback: allocation set but reason missing (controller bug)"
-		updateVa.Status.DesiredOptimizedAlloc.LastUpdate = metav1.Now()
+	if updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason == "" {
+		updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason = "Fallback: allocation set but reason missing (controller bug)"
+		updateVa.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime = metav1.Now()
 		fmt.Println("  Safety net triggered: Set default Reason")
 	}
-	if updateVa.Status.DesiredOptimizedAlloc.LastUpdate.IsZero() && updateVa.Status.DesiredOptimizedAlloc.NumReplicas >= 0 {
-		updateVa.Status.DesiredOptimizedAlloc.LastUpdate = metav1.Now()
+	if updateVa.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero() && updateVa.Status.DesiredOptimizedAlloc.NumReplicas >= 0 {
+		updateVa.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime = metav1.Now()
 		fmt.Println("  Safety net triggered: Set LastUpdate")
 	}
 
 	fmt.Printf("After safety net:\n")
-	fmt.Printf("  Reason: %q\n", updateVa.Status.DesiredOptimizedAlloc.Reason)
+	fmt.Printf("  Reason: %q\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason)
 	fmt.Printf("  LastUpdate: %v\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate)
 
 	// STEP 5: Update conditions (line 1335 in controller)
@@ -138,14 +137,14 @@ func TestStatusUpdatePreservesReasonAndLastUpdate(t *testing.T) {
 	updateConditionsForAllocation(&updateVa, va, hasOptimizedAlloc)
 
 	fmt.Printf("After updateConditionsForAllocation:\n")
-	fmt.Printf("  Reason: %q\n", updateVa.Status.DesiredOptimizedAlloc.Reason)
+	fmt.Printf("  Reason: %q\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason)
 	fmt.Printf("  LastUpdate: %v\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate)
-	fmt.Printf("  LastUpdate.IsZero(): %v\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate.IsZero())
+	fmt.Printf("  LastUpdate.IsZero(): %v\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero())
 
 	// CRITICAL CHECK: Did updateConditionsForAllocation corrupt the fields?
-	if updateVa.Status.DesiredOptimizedAlloc.Reason != reasonAfterAllocation {
+	if updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason != reasonAfterAllocation {
 		t.Errorf("BUG FOUND: Reason changed after updateConditionsForAllocation!\n  Before: %q\n  After: %q",
-			reasonAfterAllocation, updateVa.Status.DesiredOptimizedAlloc.Reason)
+			reasonAfterAllocation, updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason)
 	}
 	if updateVa.Status.DesiredOptimizedAlloc.LastUpdate != lastUpdateAfterAllocation {
 		t.Errorf("BUG FOUND: LastUpdate changed after updateConditionsForAllocation!\n  Before: %v\n  After: %v",
@@ -159,14 +158,14 @@ func TestStatusUpdatePreservesReasonAndLastUpdate(t *testing.T) {
 	}
 	fmt.Printf("\nCondition Message: %q\n", optCondition.Message)
 
-	if updateVa.Status.DesiredOptimizedAlloc.Reason == "" {
+	if updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason == "" {
 		t.Errorf("BUG: Reason is EMPTY but condition message is: %q", optCondition.Message)
 	}
 
 	// STEP 6: Save to API using Status().Update()
 	fmt.Println("\n=== STEP 6: Updating status via API ===")
 	fmt.Printf("Before Status().Update():\n")
-	fmt.Printf("  Reason: %q\n", updateVa.Status.DesiredOptimizedAlloc.Reason)
+	fmt.Printf("  Reason: %q\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason)
 	fmt.Printf("  LastUpdate: %v\n", updateVa.Status.DesiredOptimizedAlloc.LastUpdate)
 	fmt.Printf("  ResourceVersion: %s\n", updateVa.ResourceVersion)
 
@@ -187,22 +186,22 @@ func TestStatusUpdatePreservesReasonAndLastUpdate(t *testing.T) {
 
 	fmt.Printf("Saved in API:\n")
 	fmt.Printf("  NumReplicas: %d\n", savedVa.Status.DesiredOptimizedAlloc.NumReplicas)
-	fmt.Printf("  Reason: %q\n", savedVa.Status.DesiredOptimizedAlloc.Reason)
+	fmt.Printf("  Reason: %q\n", savedVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason)
 	fmt.Printf("  LastUpdate: %v\n", savedVa.Status.DesiredOptimizedAlloc.LastUpdate)
-	fmt.Printf("  LastUpdate.IsZero(): %v\n", savedVa.Status.DesiredOptimizedAlloc.LastUpdate.IsZero())
+	fmt.Printf("  LastUpdate.IsZero(): %v\n", savedVa.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero())
 
 	// FINAL VERIFICATION
 	fmt.Println("\n=== FINAL VERIFICATION ===")
 
-	if savedVa.Status.DesiredOptimizedAlloc.Reason == "" {
+	if savedVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason == "" {
 		t.Errorf("🐛 BUG CONFIRMED: Reason is EMPTY in saved VA!")
 		t.Errorf("   Expected: %q", reasonAfterAllocation)
-		t.Errorf("   Got: %q", savedVa.Status.DesiredOptimizedAlloc.Reason)
+		t.Errorf("   Got: %q", savedVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason)
 	} else {
-		fmt.Printf("✅ Reason preserved: %q\n", savedVa.Status.DesiredOptimizedAlloc.Reason)
+		fmt.Printf("✅ Reason preserved: %q\n", savedVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason)
 	}
 
-	if savedVa.Status.DesiredOptimizedAlloc.LastUpdate.IsZero() {
+	if savedVa.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero() {
 		t.Errorf("🐛 BUG CONFIRMED: LastUpdate is ZERO in saved VA!")
 		t.Errorf("   Expected: %v", lastUpdateAfterAllocation)
 		t.Errorf("   Got: %v", savedVa.Status.DesiredOptimizedAlloc.LastUpdate)

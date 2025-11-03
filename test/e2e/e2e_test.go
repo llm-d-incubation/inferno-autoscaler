@@ -908,11 +908,11 @@ retentionPeriod: "4m"`, modelID),
 
 			_, _ = fmt.Fprintf(GinkgoWriter, "VariantAutoscaling Status: CurrentReplicas=%d, DesiredReplicas=%d, Actuation.Applied=%t, LastUpdate=%v\n",
 				va.Status.CurrentAlloc.NumReplicas, va.Status.DesiredOptimizedAlloc.NumReplicas, va.Status.Actuation.Applied,
-				va.Status.DesiredOptimizedAlloc.LastUpdate.Time)
+				va.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.Time)
 			_, _ = fmt.Fprintf(GinkgoWriter, "VariantAutoscaling Spec: Accelerator=%q, VariantID=%q, ModelID=%q\n",
 				va.Spec.Accelerator, va.Spec.VariantID, va.Spec.ModelID)
 			_, _ = fmt.Fprintf(GinkgoWriter, "DesiredOptimizedAlloc Reason: %q\n",
-				va.Status.DesiredOptimizedAlloc.Reason)
+				va.Status.DesiredOptimizedAlloc.LastUpdate.Reason)
 
 			// Check if metric emission condition would be satisfied
 			if va.Status.DesiredOptimizedAlloc.NumReplicas < 0 {
@@ -1074,8 +1074,8 @@ retentionPeriod: "4m"`, modelID),
 			_, _ = fmt.Fprintf(GinkgoWriter, "VA Status: DesiredOptimized=%d, Current=%d, Reason=%q, LastUpdate=%v\n",
 				va.Status.DesiredOptimizedAlloc.NumReplicas,
 				va.Status.CurrentAlloc.NumReplicas,
-				va.Status.DesiredOptimizedAlloc.Reason,
-				va.Status.DesiredOptimizedAlloc.LastUpdate.Time)
+				va.Status.DesiredOptimizedAlloc.LastUpdate.Reason,
+				va.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.Time)
 
 			// Check status conditions to see if optimizer is running or fallback is used
 			_, _ = fmt.Fprintf(GinkgoWriter, "  Total Conditions: %d\n", len(va.Status.Conditions))
@@ -1505,7 +1505,7 @@ retentionPeriod: "4m"`, modelID),
 
 			_, _ = fmt.Fprintf(GinkgoWriter, "VariantAutoscaling Status: CurrentReplicas=%d, DesiredReplicas=%d, Actuation.Applied=%t, Reason=%q, LastUpdate=%v\n",
 				va.Status.CurrentAlloc.NumReplicas, va.Status.DesiredOptimizedAlloc.NumReplicas, va.Status.Actuation.Applied,
-				va.Status.DesiredOptimizedAlloc.Reason, va.Status.DesiredOptimizedAlloc.LastUpdate.Time)
+				va.Status.DesiredOptimizedAlloc.LastUpdate.Reason, va.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.Time)
 
 			// CRITICAL: Wait for controller to see the current replica count
 			g.Expect(va.Status.CurrentAlloc.NumReplicas).To(BeNumerically(">=", 1),
@@ -1669,7 +1669,7 @@ retentionPeriod: "4m"`, modelID),
 
 			_, _ = fmt.Fprintf(GinkgoWriter, "Waiting for controller: DesiredOptimized=%d, Current=%d, Reason=%q, LastUpdate=%v\n",
 				va.Status.DesiredOptimizedAlloc.NumReplicas, va.Status.CurrentAlloc.NumReplicas,
-				va.Status.DesiredOptimizedAlloc.Reason, va.Status.DesiredOptimizedAlloc.LastUpdate.Time)
+				va.Status.DesiredOptimizedAlloc.LastUpdate.Reason, va.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.Time)
 
 			// Check status conditions
 			_, _ = fmt.Fprintf(GinkgoWriter, "  Total Conditions: %d\n", len(va.Status.Conditions))
@@ -1717,8 +1717,8 @@ retentionPeriod: "4m"`, modelID),
 			_, _ = fmt.Fprintf(GinkgoWriter, "VA Status: DesiredOptimized=%d, Current=%d, Reason=%q, LastUpdate=%v\n",
 				va.Status.DesiredOptimizedAlloc.NumReplicas,
 				va.Status.CurrentAlloc.NumReplicas,
-				va.Status.DesiredOptimizedAlloc.Reason,
-				va.Status.DesiredOptimizedAlloc.LastUpdate.Time)
+				va.Status.DesiredOptimizedAlloc.LastUpdate.Reason,
+				va.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.Time)
 
 			// Check status conditions
 			_, _ = fmt.Fprintf(GinkgoWriter, "  Total Conditions: %d\n", len(va.Status.Conditions))

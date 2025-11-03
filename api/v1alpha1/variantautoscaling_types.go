@@ -171,6 +171,34 @@ type Allocation struct {
 	NumReplicas int32 `json:"numReplicas"`
 }
 
+// LastUpdateInfo tracks the last change to the allocation decision.
+// This struct captures when the allocation decision changed, by how much, and why.
+type LastUpdateInfo struct {
+	// UpdateTime is the timestamp when NumReplicas or Reason changed from the previous state.
+	// This field tracks when the allocation decision actually changed, which may be
+	// different from LastRunTime (which is updated on every reconciliation).
+	// +optional
+	UpdateTime metav1.Time `json:"updateTime,omitempty"`
+
+	// NumReplicasChanged is the delta (change) in replicas at the time of this update.
+	// This is calculated as: (new desiredOptimized.NumReplicas) - (previous desiredOptimized.NumReplicas)
+	// Positive values indicate scale-up, negative values indicate scale-down, zero means no change in replicas.
+	// The field is always present (even when zero) to distinguish "no change" from "unset".
+	// +kubebuilder:validation:Minimum=-10000
+	// +kubebuilder:validation:Maximum=10000
+	// +optional
+	NumReplicasChanged int32 `json:"numReplicasChanged"`
+
+	// Reason provides a human-readable explanation for the allocation decision.
+	// This field indicates whether the allocation came from the optimizer,
+	// fallback logic, scale-to-zero enforcement, or bounds clamping.
+	// Examples: "Optimizer solution: cost-optimal allocation",
+	// "Fallback: metrics unavailable, using max(minReplicas=2, current=3)",
+	// "Scale-to-zero: no load detected"
+	// +optional
+	Reason string `json:"reason,omitempty"`
+}
+
 // OptimizedAlloc describes the target optimized allocation for a model variant.
 // Note: In single-variant architecture, variantID and accelerator are not needed here
 // as they are already defined in the parent VariantAutoscaling spec.
@@ -182,20 +210,10 @@ type OptimizedAlloc struct {
 	// +kubebuilder:validation:Minimum=0
 	NumReplicas int32 `json:"numReplicas"`
 
-	// Reason provides a human-readable explanation for the allocation decision.
-	// This field indicates whether the allocation came from the optimizer,
-	// fallback logic, scale-to-zero enforcement, or bounds clamping.
-	// Examples: "Optimizer solution: cost-optimal allocation",
-	// "Fallback: metrics unavailable, using max(minReplicas=2, current=3)",
-	// "Scale-to-zero: no load detected"
+	// LastUpdate captures information about the last change to the allocation decision.
+	// This includes the time of the change, the delta in replicas, and the reason for the change.
 	// +optional
-	Reason string `json:"reason,omitempty"`
-
-	// LastUpdate is the timestamp when NumReplicas or Reason changed from the previous state.
-	// This field tracks when the allocation decision actually changed, which may be
-	// different from LastRunTime (which is updated on every reconciliation).
-	// +optional
-	LastUpdate metav1.Time `json:"lastUpdate,omitempty"`
+	LastUpdate LastUpdateInfo `json:"lastUpdate,omitempty"`
 }
 
 // ActuationStatus provides details about the actuation process and its current status.

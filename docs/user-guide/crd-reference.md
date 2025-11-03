@@ -84,6 +84,25 @@ _Appears in:_
 | `name` _string_ | Name is the name of the target resource. |  | MinLength: 1 <br />Required: \{\} <br /> |
 
 
+#### LastUpdateInfo
+
+
+
+LastUpdateInfo tracks the last change to the allocation decision.
+This struct captures when the allocation decision changed, by how much, and why.
+
+
+
+_Appears in:_
+- [OptimizedAlloc](#optimizedalloc)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `updateTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.32/#time-v1-meta)_ | UpdateTime is the timestamp when NumReplicas or Reason changed from the previous state. |  |  |
+| `numReplicasChanged` _integer_ | NumReplicasChanged is the delta (change) in replicas at the time of this update.<br />This is calculated as: (new desiredOptimized.NumReplicas) - (previous desiredOptimized.NumReplicas)<br />Positive values indicate scale-up, negative values indicate scale-down, zero means no change in replicas. |  |  |
+| `reason` _string_ | Reason provides a human-readable explanation for the allocation decision.<br />This field indicates whether the allocation came from the optimizer,<br />fallback logic, scale-to-zero enforcement, or bounds clamping.<br />Examples: "Optimizer solution: cost-optimal allocation",<br />"Fallback: metrics unavailable, using max(minReplicas=2, current=3)",<br />"Scale-to-zero: no load detected" |  |  |
+
+
 #### OptimizedAlloc
 
 
@@ -101,8 +120,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `lastRunTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.32/#time-v1-meta)_ | LastRunTime is the timestamp of the last optimization run. |  |  |
 | `numReplicas` _integer_ | NumReplicas is the number of replicas for the optimized allocation. |  | Minimum: 0 <br /> |
-| `reason` _string_ | Reason provides a human-readable explanation for the allocation decision.<br />This field indicates whether the allocation came from the optimizer,<br />fallback logic, scale-to-zero enforcement, or bounds clamping.<br />Examples: "Optimizer solution: cost-optimal allocation",<br />"Fallback: metrics unavailable, using max(minReplicas=2, current=3)",<br />"Scale-to-zero: no load detected" |  |  |
-| `lastUpdate` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.32/#time-v1-meta)_ | LastUpdate is the timestamp when NumReplicas or Reason changed from the previous state.<br />This field tracks when the allocation decision actually changed, which may be<br />different from LastRunTime (which is updated on every reconciliation). |  |  |
+| `lastUpdate` _[LastUpdateInfo](#lastupdateinfo)_ | LastUpdate tracks the last change to the allocation decision, including when it changed, by how much, and why. |  |  |
 
 
 #### PerfParms

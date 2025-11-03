@@ -1617,8 +1617,8 @@ retentionPeriod: "not-a-duration"`,
 			Expect(updateList.Items).To(HaveLen(1))
 			Expect(updateList.Items[0].Status.CurrentAlloc.NumReplicas).To(Equal(int32(3)))
 			Expect(updateList.Items[0].Status.DesiredOptimizedAlloc.NumReplicas).To(Equal(int32(3)))
-			Expect(updateList.Items[0].Status.DesiredOptimizedAlloc.Reason).NotTo(BeEmpty())
-			Expect(updateList.Items[0].Status.DesiredOptimizedAlloc.LastUpdate.IsZero()).To(BeFalse())
+			Expect(updateList.Items[0].Status.DesiredOptimizedAlloc.LastUpdate.Reason).NotTo(BeEmpty())
+			Expect(updateList.Items[0].Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero()).To(BeFalse())
 		})
 
 		It("should apply fallback allocation with scale-to-zero enabled and no load", func() {
@@ -1665,8 +1665,8 @@ retentionPeriod: "not-a-duration"`,
 			Expect(updateList.Items).To(HaveLen(1))
 			Expect(updateList.Items[0].Status.CurrentAlloc.NumReplicas).To(Equal(int32(2)))
 			Expect(updateList.Items[0].Status.DesiredOptimizedAlloc.NumReplicas).To(Equal(int32(0)))
-			Expect(updateList.Items[0].Status.DesiredOptimizedAlloc.Reason).NotTo(BeEmpty())
-			Expect(updateList.Items[0].Status.DesiredOptimizedAlloc.LastUpdate.IsZero()).To(BeFalse())
+			Expect(updateList.Items[0].Status.DesiredOptimizedAlloc.LastUpdate.Reason).NotTo(BeEmpty())
+			Expect(updateList.Items[0].Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero()).To(BeFalse())
 		})
 
 		It("should apply fallback allocation with scale-to-zero enabled and active load", func() {
@@ -1713,8 +1713,8 @@ retentionPeriod: "not-a-duration"`,
 			Expect(updateList.Items).To(HaveLen(1))
 			Expect(updateList.Items[0].Status.CurrentAlloc.NumReplicas).To(Equal(int32(2)))
 			Expect(updateList.Items[0].Status.DesiredOptimizedAlloc.NumReplicas).To(Equal(int32(2)))
-			Expect(updateList.Items[0].Status.DesiredOptimizedAlloc.Reason).NotTo(BeEmpty())
-			Expect(updateList.Items[0].Status.DesiredOptimizedAlloc.LastUpdate.IsZero()).To(BeFalse())
+			Expect(updateList.Items[0].Status.DesiredOptimizedAlloc.LastUpdate.Reason).NotTo(BeEmpty())
+			Expect(updateList.Items[0].Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero()).To(BeFalse())
 		})
 
 		It("should respect minReplicas when applying fallback", func() {
@@ -2270,58 +2270,66 @@ retentionPeriod: "not-a-duration"`,
 			It("should update LastUpdate when NumReplicas changes", func() {
 				previousAlloc := llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 					NumReplicas: 5,
-					Reason:      "Previous reason",
-					LastUpdate:  metav1.NewTime(time.Now().Add(-1 * time.Hour)),
+					LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+						UpdateTime: metav1.NewTime(time.Now().Add(-1 * time.Hour)),
+						Reason:     "Previous reason",
+					},
 				}
 
 				newAlloc := createOptimizedAllocWithUpdate(8, "New reason", previousAlloc)
 
 				Expect(newAlloc.NumReplicas).To(Equal(int32(8)))
-				Expect(newAlloc.Reason).To(Equal("New reason"))
-				Expect(newAlloc.LastUpdate.Time).To(BeTemporally(">", previousAlloc.LastUpdate.Time))
+				Expect(newAlloc.LastUpdate.Reason).To(Equal("New reason"))
+				Expect(newAlloc.LastUpdate.UpdateTime.Time).To(BeTemporally(">", previousAlloc.LastUpdate.UpdateTime.Time))
 			})
 
 			It("should update LastUpdate when Reason changes", func() {
 				previousAlloc := llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 					NumReplicas: 5,
-					Reason:      "Previous reason",
-					LastUpdate:  metav1.NewTime(time.Now().Add(-1 * time.Hour)),
+					LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+						UpdateTime: metav1.NewTime(time.Now().Add(-1 * time.Hour)),
+						Reason:     "Previous reason",
+					},
 				}
 
 				newAlloc := createOptimizedAllocWithUpdate(5, "New reason", previousAlloc)
 
 				Expect(newAlloc.NumReplicas).To(Equal(int32(5)))
-				Expect(newAlloc.Reason).To(Equal("New reason"))
-				Expect(newAlloc.LastUpdate.Time).To(BeTemporally(">", previousAlloc.LastUpdate.Time))
+				Expect(newAlloc.LastUpdate.Reason).To(Equal("New reason"))
+				Expect(newAlloc.LastUpdate.UpdateTime.Time).To(BeTemporally(">", previousAlloc.LastUpdate.UpdateTime.Time))
 			})
 
 			It("should preserve LastUpdate when nothing changes", func() {
 				previousTime := metav1.NewTime(time.Now().Add(-1 * time.Hour))
 				previousAlloc := llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 					NumReplicas: 5,
-					Reason:      "Same reason",
-					LastUpdate:  previousTime,
+					LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+						UpdateTime: previousTime,
+						Reason:     "Same reason",
+					},
 				}
 
 				newAlloc := createOptimizedAllocWithUpdate(5, "Same reason", previousAlloc)
 
 				Expect(newAlloc.NumReplicas).To(Equal(int32(5)))
-				Expect(newAlloc.Reason).To(Equal("Same reason"))
-				Expect(newAlloc.LastUpdate).To(Equal(previousTime))
+				Expect(newAlloc.LastUpdate.Reason).To(Equal("Same reason"))
+				Expect(newAlloc.LastUpdate.UpdateTime).To(Equal(previousTime))
 			})
 
 			It("should handle zero NumReplicas", func() {
 				previousAlloc := llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 					NumReplicas: 5,
-					Reason:      "Previous reason",
-					LastUpdate:  metav1.NewTime(time.Now().Add(-1 * time.Hour)),
+					LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+						UpdateTime: metav1.NewTime(time.Now().Add(-1 * time.Hour)),
+						Reason:     "Previous reason",
+					},
 				}
 
 				newAlloc := createOptimizedAllocWithUpdate(0, "Scaled to zero", previousAlloc)
 
 				Expect(newAlloc.NumReplicas).To(Equal(int32(0)))
-				Expect(newAlloc.Reason).To(Equal("Scaled to zero"))
-				Expect(newAlloc.LastUpdate.Time).To(BeTemporally(">", previousAlloc.LastUpdate.Time))
+				Expect(newAlloc.LastUpdate.Reason).To(Equal("Scaled to zero"))
+				Expect(newAlloc.LastUpdate.UpdateTime.Time).To(BeTemporally(">", previousAlloc.LastUpdate.UpdateTime.Time))
 			})
 		})
 	})
@@ -2352,31 +2360,33 @@ retentionPeriod: "not-a-duration"`,
 				// Previous allocation with recent LastUpdate (within retention period)
 				previousAlloc := llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 					NumReplicas: 3,
-					Reason:      "Optimizer solution: cost and latency optimized allocation",
-					LastUpdate:  metav1.NewTime(time.Now().Add(-2 * time.Minute)), // 2m ago < 5m retention
+					LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+						UpdateTime: metav1.NewTime(time.Now().Add(-2 * time.Minute)),
+						Reason:     "Optimizer solution: cost and latency optimized allocation",
+					}, // 2m ago < 5m retention
 				}
 
 				// Simulate the Path 1 retention check logic
 				newAlloc := optimizedAlloc
-				newAlloc.Reason = "Optimizer solution: cost and latency optimized allocation"
+				newAlloc.LastUpdate.Reason = "Optimizer solution: cost and latency optimized allocation"
 
 				modelName := "test-model"
 				namespace := "default"
 				retentionPeriod := utils.GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, namespace, modelName)
 
 				if optimizedAlloc.NumReplicas == 0 {
-					if !previousAlloc.LastUpdate.IsZero() {
-						timeSinceLastUpdate := time.Since(previousAlloc.LastUpdate.Time)
+					if !previousAlloc.LastUpdate.UpdateTime.IsZero() {
+						timeSinceLastUpdate := time.Since(previousAlloc.LastUpdate.UpdateTime.Time)
 						if timeSinceLastUpdate <= retentionPeriod {
 							// Preserve previous allocation
 							newAlloc.NumReplicas = previousAlloc.NumReplicas
-							newAlloc.Reason = "Optimizer returned 0 but retention period not exceeded, preserving allocation"
+							newAlloc.LastUpdate.Reason = "Optimizer returned 0 but retention period not exceeded, preserving allocation"
 						}
 					}
 				}
 
 				Expect(newAlloc.NumReplicas).To(Equal(int32(3)), "Should preserve previous allocation")
-				Expect(newAlloc.Reason).To(ContainSubstring("retention period not exceeded"))
+				Expect(newAlloc.LastUpdate.Reason).To(ContainSubstring("retention period not exceeded"))
 			})
 
 			It("should allow scale to zero when retention period exceeded", func() {
@@ -2388,31 +2398,33 @@ retentionPeriod: "not-a-duration"`,
 				// Previous allocation with old LastUpdate (beyond retention period)
 				previousAlloc := llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 					NumReplicas: 3,
-					Reason:      "Optimizer solution: cost and latency optimized allocation",
-					LastUpdate:  metav1.NewTime(time.Now().Add(-10 * time.Minute)), // 10m ago > 5m retention
+					LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+						UpdateTime: metav1.NewTime(time.Now().Add(-10 * time.Minute)),
+						Reason:     "Optimizer solution: cost and latency optimized allocation",
+					}, // 10m ago > 5m retention
 				}
 
 				// Simulate the Path 1 retention check logic
 				newAlloc := optimizedAlloc
-				newAlloc.Reason = "Optimizer solution: cost and latency optimized allocation"
+				newAlloc.LastUpdate.Reason = "Optimizer solution: cost and latency optimized allocation"
 
 				modelName := "test-model"
 				namespace := "default"
 				retentionPeriod := utils.GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, namespace, modelName)
 
 				if optimizedAlloc.NumReplicas == 0 {
-					if !previousAlloc.LastUpdate.IsZero() {
-						timeSinceLastUpdate := time.Since(previousAlloc.LastUpdate.Time)
+					if !previousAlloc.LastUpdate.UpdateTime.IsZero() {
+						timeSinceLastUpdate := time.Since(previousAlloc.LastUpdate.UpdateTime.Time)
 						if timeSinceLastUpdate <= retentionPeriod {
 							// Preserve previous allocation
 							newAlloc.NumReplicas = previousAlloc.NumReplicas
-							newAlloc.Reason = "Optimizer returned 0 but retention period not exceeded, preserving allocation"
+							newAlloc.LastUpdate.Reason = "Optimizer returned 0 but retention period not exceeded, preserving allocation"
 						}
 					}
 				}
 
 				Expect(newAlloc.NumReplicas).To(Equal(int32(0)), "Should allow scale to zero")
-				Expect(newAlloc.Reason).To(Equal("Optimizer solution: cost and latency optimized allocation"))
+				Expect(newAlloc.LastUpdate.Reason).To(Equal("Optimizer solution: cost and latency optimized allocation"))
 			})
 
 			It("should preserve currentReplicas on first run (LastUpdate is zero)", func() {
@@ -2424,8 +2436,10 @@ retentionPeriod: "not-a-duration"`,
 				// Previous allocation with zero LastUpdate (first run)
 				previousAlloc := llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 					NumReplicas: 0,
-					Reason:      "",
-					LastUpdate:  metav1.Time{}, // Zero time = first run
+					LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+						UpdateTime: metav1.Time{},
+						Reason:     "",
+					}, // Zero time = first run
 				}
 
 				// Current deployment has 2 replicas
@@ -2433,29 +2447,29 @@ retentionPeriod: "not-a-duration"`,
 
 				// Simulate the Path 1 retention check logic
 				newAlloc := optimizedAlloc
-				newAlloc.Reason = "Optimizer solution: cost and latency optimized allocation"
+				newAlloc.LastUpdate.Reason = "Optimizer solution: cost and latency optimized allocation"
 
 				modelName := "test-model"
 				namespace := "default"
 				retentionPeriod := utils.GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, namespace, modelName)
 
 				if optimizedAlloc.NumReplicas == 0 {
-					if previousAlloc.LastUpdate.IsZero() {
+					if previousAlloc.LastUpdate.UpdateTime.IsZero() {
 						// First run: preserve currentReplicas
 						newAlloc.NumReplicas = currentReplicas
-						newAlloc.Reason = "First run: preserving current replicas for Prometheus discovery grace period"
+						newAlloc.LastUpdate.Reason = "First run: preserving current replicas for Prometheus discovery grace period"
 					} else {
-						timeSinceLastUpdate := time.Since(previousAlloc.LastUpdate.Time)
+						timeSinceLastUpdate := time.Since(previousAlloc.LastUpdate.UpdateTime.Time)
 						if timeSinceLastUpdate <= retentionPeriod {
 							// Preserve previous allocation
 							newAlloc.NumReplicas = previousAlloc.NumReplicas
-							newAlloc.Reason = "Optimizer returned 0 but retention period not exceeded, preserving allocation"
+							newAlloc.LastUpdate.Reason = "Optimizer returned 0 but retention period not exceeded, preserving allocation"
 						}
 					}
 				}
 
 				Expect(newAlloc.NumReplicas).To(Equal(int32(2)), "Should preserve currentReplicas on first run")
-				Expect(newAlloc.Reason).To(Equal("First run: preserving current replicas for Prometheus discovery grace period"))
+				Expect(newAlloc.LastUpdate.Reason).To(Equal("First run: preserving current replicas for Prometheus discovery grace period"))
 			})
 
 			It("should not affect optimizer solutions with non-zero replicas", func() {
@@ -2467,31 +2481,33 @@ retentionPeriod: "not-a-duration"`,
 				// Previous allocation
 				previousAlloc := llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 					NumReplicas: 3,
-					Reason:      "Optimizer solution: cost and latency optimized allocation",
-					LastUpdate:  metav1.NewTime(time.Now().Add(-2 * time.Minute)),
+					LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+						UpdateTime: metav1.NewTime(time.Now().Add(-2 * time.Minute)),
+						Reason:     "Optimizer solution: cost and latency optimized allocation",
+					},
 				}
 
 				// Simulate the Path 1 retention check logic
 				newAlloc := optimizedAlloc
-				newAlloc.Reason = "Optimizer solution: cost and latency optimized allocation"
+				newAlloc.LastUpdate.Reason = "Optimizer solution: cost and latency optimized allocation"
 
 				modelName := "test-model"
 				namespace := "default"
 				retentionPeriod := utils.GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, namespace, modelName)
 
 				if optimizedAlloc.NumReplicas == 0 {
-					if !previousAlloc.LastUpdate.IsZero() {
-						timeSinceLastUpdate := time.Since(previousAlloc.LastUpdate.Time)
+					if !previousAlloc.LastUpdate.UpdateTime.IsZero() {
+						timeSinceLastUpdate := time.Since(previousAlloc.LastUpdate.UpdateTime.Time)
 						if timeSinceLastUpdate <= retentionPeriod {
 							// Preserve previous allocation
 							newAlloc.NumReplicas = previousAlloc.NumReplicas
-							newAlloc.Reason = "Optimizer returned 0 but retention period not exceeded, preserving allocation"
+							newAlloc.LastUpdate.Reason = "Optimizer returned 0 but retention period not exceeded, preserving allocation"
 						}
 					}
 				}
 
 				Expect(newAlloc.NumReplicas).To(Equal(int32(5)), "Should apply optimizer's non-zero allocation")
-				Expect(newAlloc.Reason).To(Equal("Optimizer solution: cost and latency optimized allocation"))
+				Expect(newAlloc.LastUpdate.Reason).To(Equal("Optimizer solution: cost and latency optimized allocation"))
 			})
 		})
 	})
@@ -2501,7 +2517,9 @@ retentionPeriod: "not-a-duration"`,
 		Describe("isRetentionPeriodExceeded", func() {
 			It("should return false when lastUpdate is zero", func() {
 				retentionPeriod := 5 * time.Minute
-				lastUpdate := metav1.Time{}
+				lastUpdate := llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+					UpdateTime: metav1.Time{},
+				}
 
 				result := isRetentionPeriodExceeded(lastUpdate, retentionPeriod)
 
@@ -2510,7 +2528,9 @@ retentionPeriod: "not-a-duration"`,
 
 			It("should return false when time since lastUpdate is within retention period", func() {
 				retentionPeriod := 5 * time.Minute
-				lastUpdate := metav1.NewTime(time.Now().Add(-2 * time.Minute))
+				lastUpdate := llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+					UpdateTime: metav1.NewTime(time.Now().Add(-2 * time.Minute)),
+				}
 
 				result := isRetentionPeriodExceeded(lastUpdate, retentionPeriod)
 
@@ -2519,7 +2539,9 @@ retentionPeriod: "not-a-duration"`,
 
 			It("should return true when time since lastUpdate exceeds retention period", func() {
 				retentionPeriod := 5 * time.Minute
-				lastUpdate := metav1.NewTime(time.Now().Add(-10 * time.Minute))
+				lastUpdate := llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+					UpdateTime: metav1.NewTime(time.Now().Add(-10 * time.Minute)),
+				}
 
 				result := isRetentionPeriodExceeded(lastUpdate, retentionPeriod)
 
@@ -2529,7 +2551,9 @@ retentionPeriod: "not-a-duration"`,
 			It("should return false at exactly retention period boundary", func() {
 				retentionPeriod := 5 * time.Minute
 				// Set to just under retention period to avoid timing issues
-				lastUpdate := metav1.NewTime(time.Now().Add(-5*time.Minute + 100*time.Millisecond))
+				lastUpdate := llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+					UpdateTime: metav1.NewTime(time.Now().Add(-5*time.Minute + 100*time.Millisecond)),
+				}
 
 				result := isRetentionPeriodExceeded(lastUpdate, retentionPeriod)
 
@@ -2541,47 +2565,53 @@ retentionPeriod: "not-a-duration"`,
 			It("should set LastUpdate when NumReplicas changes", func() {
 				previousAlloc := llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 					NumReplicas: 3,
-					Reason:      "Previous reason",
-					LastUpdate:  metav1.NewTime(time.Now().Add(-10 * time.Minute)),
+					LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+						UpdateTime: metav1.NewTime(time.Now().Add(-10 * time.Minute)),
+						Reason:     "Previous reason",
+					},
 				}
 
 				newAlloc := createOptimizedAllocWithUpdate(5, "New reason", previousAlloc)
 
 				Expect(newAlloc.NumReplicas).To(Equal(int32(5)))
-				Expect(newAlloc.Reason).To(Equal("New reason"))
-				Expect(newAlloc.LastUpdate.IsZero()).To(BeFalse(), "LastUpdate should be set")
-				Expect(newAlloc.LastUpdate.Time).To(BeTemporally("~", time.Now(), 2*time.Second))
+				Expect(newAlloc.LastUpdate.Reason).To(Equal("New reason"))
+				Expect(newAlloc.LastUpdate.UpdateTime.IsZero()).To(BeFalse(), "LastUpdate should be set")
+				Expect(newAlloc.LastUpdate.UpdateTime.Time).To(BeTemporally("~", time.Now(), 2*time.Second))
 			})
 
 			It("should set LastUpdate when Reason changes", func() {
 				oldTime := metav1.NewTime(time.Now().Add(-10 * time.Minute))
 				previousAlloc := llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 					NumReplicas: 5,
-					Reason:      "Previous reason",
-					LastUpdate:  oldTime,
+					LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+						UpdateTime: oldTime,
+						Reason:     "Previous reason",
+					},
 				}
 
 				newAlloc := createOptimizedAllocWithUpdate(5, "New reason", previousAlloc)
 
 				Expect(newAlloc.NumReplicas).To(Equal(int32(5)))
-				Expect(newAlloc.Reason).To(Equal("New reason"))
-				Expect(newAlloc.LastUpdate.Time).To(BeTemporally("~", time.Now(), 2*time.Second))
-				Expect(newAlloc.LastUpdate.Time).NotTo(Equal(oldTime.Time))
+				Expect(newAlloc.LastUpdate.Reason).To(Equal("New reason"))
+				Expect(newAlloc.LastUpdate.UpdateTime.Time).To(BeTemporally("~", time.Now(), 2*time.Second))
+				Expect(newAlloc.LastUpdate.UpdateTime.Time).NotTo(Equal(oldTime.Time))
 			})
 
 			It("should preserve LastUpdate when nothing changes", func() {
 				oldTime := metav1.NewTime(time.Now().Add(-10 * time.Minute))
 				previousAlloc := llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 					NumReplicas: 5,
-					Reason:      "Same reason",
-					LastUpdate:  oldTime,
+					LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+						UpdateTime: oldTime,
+						Reason:     "Same reason",
+					},
 				}
 
 				newAlloc := createOptimizedAllocWithUpdate(5, "Same reason", previousAlloc)
 
 				Expect(newAlloc.NumReplicas).To(Equal(int32(5)))
-				Expect(newAlloc.Reason).To(Equal("Same reason"))
-				Expect(newAlloc.LastUpdate).To(Equal(oldTime), "LastUpdate should be preserved when nothing changes")
+				Expect(newAlloc.LastUpdate.Reason).To(Equal("Same reason"))
+				Expect(newAlloc.LastUpdate.UpdateTime).To(Equal(oldTime), "LastUpdate should be preserved when nothing changes")
 			})
 		})
 
@@ -2600,7 +2630,9 @@ retentionPeriod: "not-a-duration"`,
 					Status: llmdVariantAutoscalingV1alpha1.VariantAutoscalingStatus{
 						DesiredOptimizedAlloc: llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 							NumReplicas: 5,
-							Reason:      "Test reason",
+							LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+								Reason: "Test reason",
+							},
 						},
 					},
 				}
@@ -2646,7 +2678,7 @@ retentionPeriod: "not-a-duration"`,
 			})
 
 			It("should copy OptimizationReady from preparation when Reason is empty", func() {
-				updateVa.Status.DesiredOptimizedAlloc.Reason = ""
+				updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason = ""
 
 				preparedVa.Status.Conditions = append(preparedVa.Status.Conditions, metav1.Condition{
 					Type:    llmdVariantAutoscalingV1alpha1.TypeOptimizationReady,
@@ -2715,12 +2747,12 @@ retentionPeriod: "not-a-duration"`,
 				applyFallbackAllocation(updateVa, allVariants, scaleToZeroConfigData, false, "Last resort")
 
 				// Verify Reason is set
-				Expect(updateVa.Status.DesiredOptimizedAlloc.Reason).NotTo(BeEmpty(),
+				Expect(updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason).NotTo(BeEmpty(),
 					"Reason should be set on first run")
-				Expect(updateVa.Status.DesiredOptimizedAlloc.Reason).To(ContainSubstring("Last resort: first run"))
+				Expect(updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason).To(ContainSubstring("Last resort: first run"))
 
 				// Verify LastUpdate is set
-				Expect(updateVa.Status.DesiredOptimizedAlloc.LastUpdate.IsZero()).To(BeFalse(),
+				Expect(updateVa.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero()).To(BeFalse(),
 					"LastUpdate should be set on first run")
 
 				// Verify NumReplicas is set
@@ -2735,9 +2767,9 @@ retentionPeriod: "not-a-duration"`,
 
 				applyFallbackAllocation(updateVa, allVariants, scaleToZeroConfigData, false, "Last resort")
 
-				Expect(updateVa.Status.DesiredOptimizedAlloc.Reason).To(ContainSubstring("max(minReplicas=2, current=1)"))
+				Expect(updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason).To(ContainSubstring("max(minReplicas=2, current=1)"))
 				Expect(updateVa.Status.DesiredOptimizedAlloc.NumReplicas).To(Equal(int32(2)))
-				Expect(updateVa.Status.DesiredOptimizedAlloc.LastUpdate.IsZero()).To(BeFalse())
+				Expect(updateVa.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero()).To(BeFalse())
 			})
 		})
 
@@ -2747,15 +2779,17 @@ retentionPeriod: "not-a-duration"`,
 				previousTime := metav1.NewTime(time.Now().Add(-5 * time.Minute))
 				updateVa.Status.DesiredOptimizedAlloc = llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 					NumReplicas: 3,
-					Reason:      "Previous allocation: optimizer result",
-					LastUpdate:  previousTime,
+					LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+						UpdateTime: previousTime,
+						Reason:     "Previous allocation: optimizer result",
+					},
 				}
 
 				// Apply fallback allocation (PATH 2)
 				applyFallbackAllocation(updateVa, allVariants, scaleToZeroConfigData, true, "Fallback")
 
 				// Verify Reason and LastUpdate are preserved
-				Expect(updateVa.Status.DesiredOptimizedAlloc.Reason).To(ContainSubstring("Previous allocation"))
+				Expect(updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason).To(ContainSubstring("Previous allocation"))
 				Expect(updateVa.Status.DesiredOptimizedAlloc.NumReplicas).To(Equal(int32(3)))
 				// LastUpdate might be updated due to bounds check, but Reason should be preserved or updated
 			})
@@ -2764,15 +2798,17 @@ retentionPeriod: "not-a-duration"`,
 				// Simulate scenario where Reason is empty (shouldn't happen, but safety net)
 				updateVa.Status.DesiredOptimizedAlloc = llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 					NumReplicas: 2,
-					Reason:      "", // Empty reason
-					LastUpdate:  metav1.NewTime(time.Now()),
+					LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+						UpdateTime: metav1.NewTime(time.Now()),
+						Reason:     "", // Empty reason
+					},
 				}
 
 				applyFallbackAllocation(updateVa, allVariants, scaleToZeroConfigData, true, "Fallback")
 
 				// Verify default Reason is set
-				Expect(updateVa.Status.DesiredOptimizedAlloc.Reason).To(Equal("Fallback: preserving previous allocation (no optimizer solution)"))
-				Expect(updateVa.Status.DesiredOptimizedAlloc.LastUpdate.IsZero()).To(BeFalse())
+				Expect(updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason).To(Equal("Fallback: preserving previous allocation (no optimizer solution)"))
+				Expect(updateVa.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero()).To(BeFalse())
 			})
 		})
 
@@ -2782,8 +2818,10 @@ retentionPeriod: "not-a-duration"`,
 				previousTime := metav1.NewTime(time.Now().Add(-5 * time.Minute))
 				updateVa.Status.DesiredOptimizedAlloc = llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 					NumReplicas: 1,
-					Reason:      "Previous: test",
-					LastUpdate:  previousTime,
+					LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+						UpdateTime: previousTime,
+						Reason:     "Previous: test",
+					},
 				}
 
 				// Apply same allocation again
@@ -2791,7 +2829,7 @@ retentionPeriod: "not-a-duration"`,
 
 				// Since allocation didn't change, LastUpdate might be preserved or set
 				// The key is that Reason should not be empty
-				Expect(updateVa.Status.DesiredOptimizedAlloc.Reason).NotTo(BeEmpty())
+				Expect(updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason).NotTo(BeEmpty())
 			})
 		})
 	})
@@ -2883,8 +2921,8 @@ retentionPeriod: "not-a-duration"`,
 				}
 
 				// Safety net sets Reason when metrics collected but optimizer hasn't run
-				firstRunVA.Status.DesiredOptimizedAlloc.Reason = "Metrics collected, awaiting optimizer decision"
-				firstRunVA.Status.DesiredOptimizedAlloc.LastUpdate = metav1.Now()
+				firstRunVA.Status.DesiredOptimizedAlloc.LastUpdate.Reason = "Metrics collected, awaiting optimizer decision"
+				firstRunVA.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime = metav1.Now()
 				// Note: LastRunTime remains zero (optimizer hasn't run)
 
 				// Check hasPrecomputedFallback logic (line 1359)
@@ -2945,8 +2983,10 @@ retentionPeriod: "not-a-duration"`,
 						DesiredOptimizedAlloc: llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 							NumReplicas: 2,
 							LastRunTime: metav1.Now(), // Set by addVariantWithFallbackAllocation
-							Reason:      "Metrics unavailable, maintaining controller intent",
-							LastUpdate:  metav1.Now(),
+							LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+								UpdateTime: metav1.Now(),
+								Reason:     "Metrics unavailable, maintaining controller intent",
+							},
 						},
 					},
 				}
@@ -2968,8 +3008,10 @@ retentionPeriod: "not-a-duration"`,
 						DesiredOptimizedAlloc: llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 							NumReplicas: 5,
 							LastRunTime: metav1.Now(), // Set by optimizer
-							Reason:      "Optimizer solution: cost and latency optimized allocation",
-							LastUpdate:  metav1.Now(),
+							LastUpdate: llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+								UpdateTime: metav1.Now(),
+								Reason:     "Optimizer solution: cost and latency optimized allocation",
+							},
 						},
 					},
 				}
