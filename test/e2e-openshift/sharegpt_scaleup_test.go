@@ -40,6 +40,7 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 	var (
 		ctx                  context.Context
 		jobName              string
+		vaName               string
 		initialReplicas      int32
 		initialOptimized     int32
 		scaledReplicas       int32
@@ -57,13 +58,21 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 		initialReplicas = deploy.Status.ReadyReplicas
 		_, _ = fmt.Fprintf(GinkgoWriter, "Initial ready replicas: %d\n", initialReplicas)
 
-		By("recording initial VariantAutoscaling state")
-		va := &v1alpha1.VariantAutoscaling{}
-		err = crClient.Get(ctx, client.ObjectKey{
-			Namespace: llmDNamespace,
-			Name:      deployment,
-		}, va)
-		Expect(err).NotTo(HaveOccurred(), "Should be able to get VariantAutoscaling")
+		By("finding VariantAutoscaling by scaleTargetRef")
+		vaList := &v1alpha1.VariantAutoscalingList{}
+		err = crClient.List(ctx, vaList, client.InNamespace(llmDNamespace))
+		Expect(err).NotTo(HaveOccurred(), "Should be able to list VariantAutoscalings")
+
+		var va *v1alpha1.VariantAutoscaling
+		for i := range vaList.Items {
+			if vaList.Items[i].Spec.ScaleTargetRef.Name == deployment {
+				va = &vaList.Items[i]
+				break
+			}
+		}
+		Expect(va).NotTo(BeNil(), fmt.Sprintf("Should find VariantAutoscaling with scaleTargetRef pointing to %s", deployment))
+		vaName = va.Name
+		_, _ = fmt.Fprintf(GinkgoWriter, "Found VariantAutoscaling: %s\n", vaName)
 		// In single-variant architecture, check that optimization has run by verifying NumReplicas > 0
 		Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(BeNumerically(">", 0), "DesiredOptimizedAlloc should have replicas set")
 		initialOptimized = int32(va.Status.DesiredOptimizedAlloc.NumReplicas)
@@ -131,7 +140,7 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 			va := &v1alpha1.VariantAutoscaling{}
 			err := crClient.Get(ctx, client.ObjectKey{
 				Namespace: llmDNamespace,
-				Name:      deployment,
+				Name:      vaName,
 			}, va)
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to get VariantAutoscaling")
 
