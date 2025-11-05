@@ -167,6 +167,7 @@ jobs:
           export DEPLOY_PROMETHEUS=false
           export DEPLOY_PROMETHEUS_ADAPTER=false
           export PROMETHEUS_BASE_URL=http://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local
+          export WVA_IMAGE_PULL_POLICY=IfNotPresent
           export NUM_NODES=3
           export MAX_GPUS=4
           export GPU_TYPES=mix
@@ -176,7 +177,33 @@ jobs:
           # CI/CD already created the cluster with kube-prometheus-stack and Prometheus Adapter
           KIND=kind KUBECTL=kubectl bash deploy/kind-emulator/deploy-llm-d.sh -i $IMG
 
-          echo "✓ Controller deployed successfully"
+          echo "✓ Controller deployment initiated"
+          kubectl get pods -n workload-variant-autoscaler-system
+
+      - name: Wait for controller pod to be ready
+        run: |
+          echo "Waiting for controller pod to be running..."
+          kubectl wait --for=condition=Ready pod \
+            -l app.kubernetes.io/name=workload-variant-autoscaler \
+            -n workload-variant-autoscaler-system \
+            --timeout=5m || {
+              echo "ERROR: Controller pod failed to become ready"
+              echo ""
+              echo "===== Pod Status ====="
+              kubectl get pods -n workload-variant-autoscaler-system -o wide
+              echo ""
+              echo "===== Pod Describe ====="
+              kubectl describe pods -n workload-variant-autoscaler-system
+              echo ""
+              echo "===== Pod Events ====="
+              kubectl get events -n workload-variant-autoscaler-system --sort-by='.lastTimestamp'
+              echo ""
+              echo "===== Pod Logs (if available) ====="
+              kubectl logs -l app.kubernetes.io/name=workload-variant-autoscaler -n workload-variant-autoscaler-system --tail=100 || true
+              exit 1
+            }
+
+          echo "✓ Controller pod is ready"
           kubectl get pods -n workload-variant-autoscaler-system
 
       - name: Verify prerequisites
