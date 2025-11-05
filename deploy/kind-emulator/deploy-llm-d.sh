@@ -300,8 +300,18 @@ get_llm_d_latest() {
 
 create_namespaces() {
     log_info "Creating namespaces..."
-    
-    for ns in $WVA_NS $MONITORING_NAMESPACE $LLMD_NS; do
+
+    # Build list of namespaces to create
+    local namespaces="$WVA_NS $LLMD_NS"
+
+    # Only create monitoring namespace if we're deploying Prometheus
+    if [ "$DEPLOY_PROMETHEUS" = "true" ]; then
+        namespaces="$namespaces $MONITORING_NAMESPACE"
+    else
+        log_info "Skipping monitoring namespace creation (DEPLOY_PROMETHEUS=false, assuming it already exists)"
+    fi
+
+    for ns in $namespaces; do
         if kubectl get namespace $ns &> /dev/null; then
             log_warning "Namespace $ns already exists"
         else
