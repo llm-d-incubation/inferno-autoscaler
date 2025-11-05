@@ -19,6 +19,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -32,8 +33,63 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// Local clients for HPA scale-to-zero tests (independent of other e2e tests)
+var (
+	hpaK8sClient *kubernetes.Clientset
+	hpaCrClient  client.Client
+)
+
+// getEnvOrDefault returns environment variable value or default
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+// initializeHPAClients initializes Kubernetes clients for HPA scale-to-zero tests
+func initializeHPAClients() {
+	// Try to reuse global clients from other e2e tests if available
+	if k8sClient != nil && crClient != nil {
+		hpaK8sClient = k8sClient
+		hpaCrClient = crClient
+		return
+	}
+
+	// If local clients already initialized, reuse them
+	if hpaK8sClient != nil && hpaCrClient != nil {
+		return
+	}
+
+	// Otherwise initialize new clients
+	cfg, err := func() (*rest.Config, error) {
+		if kubeconfig := os.Getenv("KUBECONFIG"); kubeconfig != "" {
+			return clientcmd.BuildConfigFromFlags("", kubeconfig)
+		}
+		return rest.InClusterConfig()
+	}()
+	if err != nil {
+		Skip("failed to load kubeconfig: " + err.Error())
+	}
+
+	cfg.WarningHandler = rest.NoWarnings{}
+
+	hpaK8sClient, err = kubernetes.NewForConfig(cfg)
+	if err != nil {
+		Skip("failed to create kubernetes client: " + err.Error())
+	}
+
+	hpaCrClient, err = client.New(cfg, client.Options{Scheme: scheme})
+	if err != nil {
+		Skip("failed to create controller-runtime client: " + err.Error())
+	}
+}
 
 var _ = Describe("Test idle scale-to-zero with HPA", Ordered, func() {
 	var (
@@ -52,30 +108,40 @@ var _ = Describe("Test idle scale-to-zero with HPA", Ordered, func() {
 	)
 
 	BeforeAll(func() {
-		initializeK8sClient()
+		initializeHPAClients()
 
 		ctx = context.Background()
-		namespace = llmDNamespace
+		namespace = getEnvOrDefault("LLMD_NAMESPACE", "llm-d-sim")
 		deployName = "hpa-idle-sto-zero-deployment"
 		serviceName = "hpa-idle-sto-zero-service"
 		serviceMonName = "hpa-idle-sto-zero-servicemonitor"
 		configMapName = "model-scale-to-zero-config"
 		appLabel = "hpa-idle-sto-zero-test"
 		modelID = "test-hpa-idle-sto-zero-model"
-		accelerator = a100Acc
+		accelerator = getEnvOrDefault("ACCELERATOR_TYPE", "A100")
 		initialReplicas = 1
 		retentionDuration = 4 * time.Minute
 
+		By("checking if Prometheus Adapter is installed")
+		monitoringNs := getEnvOrDefault("MONITORING_NAMESPACE", "workload-variant-autoscaler-monitoring")
+		podList, err := hpaK8sClient.CoreV1().Pods(monitoringNs).List(ctx, metav1.ListOptions{
+			LabelSelector: "app.kubernetes.io/name=prometheus-adapter",
+		})
+		if err != nil || len(podList.Items) == 0 {
+			Skip(fmt.Sprintf("Prometheus Adapter not found in namespace %s. HPA scale-to-zero tests require Prometheus Adapter with external metrics API. Please install kube-prometheus-stack or set up Prometheus Adapter before running these tests.", monitoringNs))
+		}
+		_, _ = fmt.Fprintf(GinkgoWriter, "✓ Prometheus Adapter found in namespace %s (%d pods)\n", monitoringNs, len(podList.Items))
+
 		By("ensuring unique app label and model")
-		utils.ValidateAppLabelUniqueness(namespace, appLabel, k8sClient, crClient)
-		utils.ValidateVariantAutoscalingUniqueness(namespace, modelID, accelerator, crClient)
+		utils.ValidateAppLabelUniqueness(namespace, appLabel, hpaK8sClient, hpaCrClient)
+		utils.ValidateVariantAutoscalingUniqueness(namespace, modelID, accelerator, hpaCrClient)
 
 		By("creating scale-to-zero ConfigMap")
 		configMapKey := strings.ReplaceAll(modelID, "/", "-")
 		configMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      configMapName,
-				Namespace: controllerNamespace,
+				Namespace: getEnvOrDefault("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system"),
 			},
 			Data: map[string]string{
 				fmt.Sprintf("model.%s", configMapKey): fmt.Sprintf(`modelID: "%s"
@@ -83,39 +149,39 @@ enableScaleToZero: true
 retentionPeriod: "4m"`, modelID),
 			},
 		}
-		_, err := k8sClient.CoreV1().ConfigMaps(controllerNamespace).Create(ctx, configMap, metav1.CreateOptions{})
+		_, err := hpaK8sClient.CoreV1().ConfigMaps(getEnvOrDefault("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")).Create(ctx, configMap, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create ConfigMap: %s", configMapName))
 
 		By("creating vllme deployment")
 		deployment := utils.CreateVllmeDeployment(namespace, deployName, modelID, appLabel)
 		deployment.Spec.Replicas = &initialReplicas
-		_, err = k8sClient.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{})
+		_, err = hpaK8sClient.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create Deployment: %s", deployName))
 
 		By("creating vllme service")
 		service := utils.CreateVllmeService(namespace, serviceName, appLabel, 30001)
-		_, err = k8sClient.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{})
+		_, err = hpaK8sClient.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create Service: %s", serviceName))
 
 		By("creating ServiceMonitor for vllme metrics")
-		serviceMonitor := utils.CreateVllmeServiceMonitor(serviceMonName, controllerMonitoringNamespace, appLabel)
-		err = crClient.Create(ctx, serviceMonitor)
+		serviceMonitor := utils.CreateVllmeServiceMonitor(serviceMonName, getEnvOrDefault("MONITORING_NAMESPACE", "workload-variant-autoscaler-monitoring"), appLabel)
+		err = hpaCrClient.Create(ctx, serviceMonitor)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create ServiceMonitor: %s", serviceMonName))
 
 		By("creating VariantAutoscaling resource")
 		variantAutoscaling := utils.CreateVariantAutoscalingResource(namespace, deployName, modelID, accelerator)
-		err = crClient.Create(ctx, variantAutoscaling)
+		err = hpaCrClient.Create(ctx, variantAutoscaling)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create VariantAutoscaling: %s", deployName))
 
 		By("creating InferenceModel for the deployment")
 		inferenceModel = utils.CreateInferenceModel(deployName, namespace, modelID)
-		err = crClient.Create(ctx, inferenceModel)
+		err = hpaCrClient.Create(ctx, inferenceModel)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create InferenceModel: %s", modelID))
 	})
 
 	It("deployment should be running initially", func() {
 		Eventually(func(g Gomega) {
-			deployment, err := k8sClient.AppsV1().Deployments(namespace).Get(ctx, deployName, metav1.GetOptions{})
+			deployment, err := hpaK8sClient.AppsV1().Deployments(namespace).Get(ctx, deployName, metav1.GetOptions{})
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to get Deployment")
 			g.Expect(deployment.Status.ReadyReplicas).To(Equal(int32(1)), "Deployment should have 1 ready replica")
 		}, 3*time.Minute, 5*time.Second).Should(Succeed())
@@ -125,7 +191,7 @@ retentionPeriod: "4m"`, modelID),
 		By("waiting for initial controller reconciliation")
 		Eventually(func(g Gomega) {
 			va := &v1alpha1.VariantAutoscaling{}
-			err := crClient.Get(ctx, client.ObjectKey{Name: deployName, Namespace: namespace}, va)
+			err := hpaCrClient.Get(ctx, client.ObjectKey{Name: deployName, Namespace: namespace}, va)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(va.Status.CurrentAlloc.NumReplicas).To(Equal(int32(1)))
 			g.Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(BeNumerically(">=", 1))
@@ -133,7 +199,7 @@ retentionPeriod: "4m"`, modelID),
 
 		By("verifying Prometheus Adapter is ready")
 		Eventually(func(g Gomega) {
-			podList, err := k8sClient.CoreV1().Pods(controllerMonitoringNamespace).List(ctx, metav1.ListOptions{
+			podList, err := hpaK8sClient.CoreV1().Pods(getEnvOrDefault("MONITORING_NAMESPACE", "workload-variant-autoscaler-monitoring")).List(ctx, metav1.ListOptions{
 				LabelSelector: "app.kubernetes.io/name=prometheus-adapter",
 			})
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to list Prometheus Adapter pods")
@@ -215,13 +281,13 @@ retentionPeriod: "4m"`, modelID),
 				},
 			},
 		}
-		_, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Create(ctx, hpa, metav1.CreateOptions{})
+		_, err := hpaK8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Create(ctx, hpa, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create HPA: %s", hpa.Name))
 		_, _ = fmt.Fprintf(GinkgoWriter, "✓ HPA created: %s\n", hpa.Name)
 
 		By("waiting for HPA to be ready")
 		Eventually(func(g Gomega) {
-			hpa, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Get(ctx, deployName+"-hpa", metav1.GetOptions{})
+			hpa, err := hpaK8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Get(ctx, deployName+"-hpa", metav1.GetOptions{})
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to get HPA")
 
 			// Print HPA status for debugging
@@ -252,7 +318,7 @@ retentionPeriod: "4m"`, modelID),
 		By("verifying controller sets DesiredOptimizedAlloc to 0")
 		Eventually(func(g Gomega) {
 			va := &v1alpha1.VariantAutoscaling{}
-			err := crClient.Get(ctx, client.ObjectKey{Name: deployName, Namespace: namespace}, va)
+			err := hpaCrClient.Get(ctx, client.ObjectKey{Name: deployName, Namespace: namespace}, va)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			_, _ = fmt.Fprintf(GinkgoWriter, "VA Status: DesiredOptimized=%d, Current=%d, Reason=%q, LastUpdate=%v\n",
@@ -265,7 +331,7 @@ retentionPeriod: "4m"`, modelID),
 
 		By("verifying HPA scales deployment to 0 replicas")
 		Eventually(func(g Gomega) {
-			deployment, err := k8sClient.AppsV1().Deployments(namespace).Get(ctx, deployName, metav1.GetOptions{})
+			deployment, err := hpaK8sClient.AppsV1().Deployments(namespace).Get(ctx, deployName, metav1.GetOptions{})
 			g.Expect(err).NotTo(HaveOccurred())
 
 			if deployment.Status.Replicas == 0 {
@@ -278,7 +344,7 @@ retentionPeriod: "4m"`, modelID),
 		By("verifying CurrentAlloc reflects the scaled-down state")
 		Eventually(func(g Gomega) {
 			va := &v1alpha1.VariantAutoscaling{}
-			err := crClient.Get(ctx, client.ObjectKey{Name: deployName, Namespace: namespace}, va)
+			err := hpaCrClient.Get(ctx, client.ObjectKey{Name: deployName, Namespace: namespace}, va)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(va.Status.CurrentAlloc.NumReplicas).To(Equal(int32(0)))
 		}, 2*time.Minute, 10*time.Second).Should(Succeed())
@@ -288,7 +354,7 @@ retentionPeriod: "4m"`, modelID),
 
 	AfterAll(func() {
 		By("cleaning up HPA")
-		err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Delete(ctx, deployName+"-hpa", metav1.DeleteOptions{})
+		err := hpaK8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Delete(ctx, deployName+"-hpa", metav1.DeleteOptions{})
 		err = client.IgnoreNotFound(err)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete HPA: %s", deployName+"-hpa"))
 
@@ -299,13 +365,13 @@ retentionPeriod: "4m"`, modelID),
 				Namespace: namespace,
 			},
 		}
-		err = crClient.Delete(ctx, variantAutoscaling)
+		err = hpaCrClient.Delete(ctx, variantAutoscaling)
 		err = client.IgnoreNotFound(err)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete VariantAutoscaling: %s", deployName))
 
 		By("deleting InferenceModel")
 		if inferenceModel != nil {
-			err = crClient.Delete(ctx, inferenceModel)
+			err = hpaCrClient.Delete(ctx, inferenceModel)
 			err = client.IgnoreNotFound(err)
 			Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete InferenceModel: %s", modelID))
 		}
@@ -318,24 +384,24 @@ retentionPeriod: "4m"`, modelID),
 			Kind:    "ServiceMonitor",
 		})
 		serviceMonitor.SetName(serviceMonName)
-		serviceMonitor.SetNamespace(controllerMonitoringNamespace)
-		err = crClient.Delete(ctx, serviceMonitor)
+		serviceMonitor.SetNamespace(getEnvOrDefault("MONITORING_NAMESPACE", "workload-variant-autoscaler-monitoring"))
+		err = hpaCrClient.Delete(ctx, serviceMonitor)
 		err = client.IgnoreNotFound(err)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete ServiceMonitor: %s", serviceMonName))
 
 		By("cleaning up Service")
-		err = k8sClient.CoreV1().Services(namespace).Delete(ctx, serviceName, metav1.DeleteOptions{})
+		err = hpaK8sClient.CoreV1().Services(namespace).Delete(ctx, serviceName, metav1.DeleteOptions{})
 		err = client.IgnoreNotFound(err)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete Service: %s", serviceName))
 
 		By("cleaning up Deployment")
-		err = k8sClient.AppsV1().Deployments(namespace).Delete(ctx, deployName, metav1.DeleteOptions{})
+		err = hpaK8sClient.AppsV1().Deployments(namespace).Delete(ctx, deployName, metav1.DeleteOptions{})
 		err = client.IgnoreNotFound(err)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete Deployment: %s", deployName))
 
 		By("waiting for all pods to be deleted")
 		Eventually(func(g Gomega) {
-			podList, err := k8sClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			podList, err := hpaK8sClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 				LabelSelector: fmt.Sprintf("app=%s", appLabel),
 			})
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to list Pods")
@@ -343,7 +409,7 @@ retentionPeriod: "4m"`, modelID),
 		}, 2*time.Minute, 10*time.Second).Should(Succeed())
 
 		By("cleaning up ConfigMap")
-		err = k8sClient.CoreV1().ConfigMaps(controllerNamespace).Delete(ctx, configMapName, metav1.DeleteOptions{})
+		err = hpaK8sClient.CoreV1().ConfigMaps(getEnvOrDefault("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")).Delete(ctx, configMapName, metav1.DeleteOptions{})
 		err = client.IgnoreNotFound(err)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to delete ConfigMap: %s", configMapName))
 	})
@@ -366,31 +432,41 @@ var _ = Describe("Test traffic-based scale-to-zero with HPA", Ordered, func() {
 	)
 
 	BeforeAll(func() {
-		initializeK8sClient()
+		initializeHPAClients()
 
 		ctx = context.Background()
-		namespace = llmDNamespace
+		namespace = getEnvOrDefault("LLMD_NAMESPACE", "llm-d-sim")
 		deployName = "hpa-traffic-sto-zero-deployment"
 		serviceName = "hpa-traffic-sto-zero-service"
 		serviceMonName = "hpa-traffic-sto-zero-servicemonitor"
 		configMapName = "model-scale-to-zero-config"
 		appLabel = "hpa-traffic-sto-zero-test"
 		// Use "default/default" to leverage existing infrastructure (same as KEDA test)
-		modelID = defaultModelId
-		accelerator = a100Acc
+		modelID = getEnvOrDefault("DEFAULT_MODEL_ID", "default/default")
+		accelerator = getEnvOrDefault("ACCELERATOR_TYPE", "A100")
 		initialReplicas = 1
 		retentionDuration = 4 * time.Minute
 
+		By("checking if Prometheus Adapter is installed")
+		monitoringNs := getEnvOrDefault("MONITORING_NAMESPACE", "workload-variant-autoscaler-monitoring")
+		podList, err := hpaK8sClient.CoreV1().Pods(monitoringNs).List(ctx, metav1.ListOptions{
+			LabelSelector: "app.kubernetes.io/name=prometheus-adapter",
+		})
+		if err != nil || len(podList.Items) == 0 {
+			Skip(fmt.Sprintf("Prometheus Adapter not found in namespace %s. HPA scale-to-zero tests require Prometheus Adapter with external metrics API. Please install kube-prometheus-stack or set up Prometheus Adapter before running these tests.", monitoringNs))
+		}
+		_, _ = fmt.Fprintf(GinkgoWriter, "✓ Prometheus Adapter found in namespace %s (%d pods)\n", monitoringNs, len(podList.Items))
+
 		By("ensuring unique app label and model")
-		utils.ValidateAppLabelUniqueness(namespace, appLabel, k8sClient, crClient)
-		utils.ValidateVariantAutoscalingUniqueness(namespace, modelID, accelerator, crClient)
+		utils.ValidateAppLabelUniqueness(namespace, appLabel, hpaK8sClient, hpaCrClient)
+		utils.ValidateVariantAutoscalingUniqueness(namespace, modelID, accelerator, hpaCrClient)
 
 		By("creating scale-to-zero ConfigMap")
 		configMapKey := strings.ReplaceAll(modelID, "/", "-")
 		configMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      configMapName,
-				Namespace: controllerNamespace,
+				Namespace: getEnvOrDefault("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system"),
 			},
 			Data: map[string]string{
 				fmt.Sprintf("model.%s", configMapKey): fmt.Sprintf(`modelID: "%s"
@@ -398,42 +474,42 @@ enableScaleToZero: true
 retentionPeriod: "4m"`, modelID),
 			},
 		}
-		_, err := k8sClient.CoreV1().ConfigMaps(controllerNamespace).Create(ctx, configMap, metav1.CreateOptions{})
+		_, err := hpaK8sClient.CoreV1().ConfigMaps(getEnvOrDefault("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")).Create(ctx, configMap, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create ConfigMap: %s", configMapName))
 
 		By("creating vllme deployment")
 		deployment := utils.CreateVllmeDeployment(namespace, deployName, modelID, appLabel)
 		deployment.Spec.Replicas = &initialReplicas
-		_, err = k8sClient.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{})
+		_, err = hpaK8sClient.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create Deployment: %s", deployName))
 
 		By("creating vllme service")
 		service := utils.CreateVllmeService(namespace, serviceName, appLabel, 30002)
-		_, err = k8sClient.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{})
+		_, err = hpaK8sClient.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create Service: %s", serviceName))
 
 		By("creating ServiceMonitor for vllme metrics")
-		serviceMonitor := utils.CreateVllmeServiceMonitor(serviceMonName, controllerMonitoringNamespace, appLabel)
-		err = crClient.Create(ctx, serviceMonitor)
+		serviceMonitor := utils.CreateVllmeServiceMonitor(serviceMonName, getEnvOrDefault("MONITORING_NAMESPACE", "workload-variant-autoscaler-monitoring"), appLabel)
+		err = hpaCrClient.Create(ctx, serviceMonitor)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create ServiceMonitor: %s", serviceMonName))
 
 		By("creating VariantAutoscaling resource")
 		variantAutoscaling := utils.CreateVariantAutoscalingResource(namespace, deployName, modelID, accelerator)
-		err = crClient.Create(ctx, variantAutoscaling)
+		err = hpaCrClient.Create(ctx, variantAutoscaling)
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create VariantAutoscaling: %s", deployName))
 
 		By("creating InferenceModel for the deployment")
 		// Use "default/default" to match traffic and leverage existing infrastructure
-		inferenceModel = utils.CreateInferenceModel(deployName, namespace, defaultModelId)
-		err = crClient.Create(ctx, inferenceModel)
-		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create InferenceModel with model: %s", defaultModelId))
-		_, _ = fmt.Fprintf(GinkgoWriter, "✓ InferenceModel created with modelName=%s\n", defaultModelId)
+		inferenceModel = utils.CreateInferenceModel(deployName, namespace, getEnvOrDefault("DEFAULT_MODEL_ID", "default/default"))
+		err = hpaCrClient.Create(ctx, inferenceModel)
+		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create InferenceModel with model: %s", getEnvOrDefault("DEFAULT_MODEL_ID", "default/default")))
+		_, _ = fmt.Fprintf(GinkgoWriter, "✓ InferenceModel created with modelName=%s\n", getEnvOrDefault("DEFAULT_MODEL_ID", "default/default"))
 	})
 
 	It("should scale to zero after traffic stops and retention period expires", func() {
 		By("waiting for deployment to have ready replicas")
 		Eventually(func(g Gomega) {
-			deployment, err := k8sClient.AppsV1().Deployments(namespace).Get(ctx, deployName, metav1.GetOptions{})
+			deployment, err := hpaK8sClient.AppsV1().Deployments(namespace).Get(ctx, deployName, metav1.GetOptions{})
 			g.Expect(err).NotTo(HaveOccurred())
 			_, _ = fmt.Fprintf(GinkgoWriter, "Deployment replicas: Ready=%d, Available=%d, Target=%d\n",
 				deployment.Status.ReadyReplicas, deployment.Status.AvailableReplicas, *deployment.Spec.Replicas)
@@ -444,7 +520,7 @@ retentionPeriod: "4m"`, modelID),
 		// Wait for initial reconciliation before creating HPA
 		Eventually(func(g Gomega) {
 			va := &v1alpha1.VariantAutoscaling{}
-			err := crClient.Get(ctx, client.ObjectKey{Name: deployName, Namespace: namespace}, va)
+			err := hpaCrClient.Get(ctx, client.ObjectKey{Name: deployName, Namespace: namespace}, va)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(va.Status.CurrentAlloc.NumReplicas).To(Equal(int32(1)))
 			g.Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(BeNumerically(">=", 1))
@@ -452,7 +528,7 @@ retentionPeriod: "4m"`, modelID),
 
 		By("verifying Prometheus Adapter is ready")
 		Eventually(func(g Gomega) {
-			podList, err := k8sClient.CoreV1().Pods(controllerMonitoringNamespace).List(ctx, metav1.ListOptions{
+			podList, err := hpaK8sClient.CoreV1().Pods(getEnvOrDefault("MONITORING_NAMESPACE", "workload-variant-autoscaler-monitoring")).List(ctx, metav1.ListOptions{
 				LabelSelector: "app.kubernetes.io/name=prometheus-adapter",
 			})
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to list Prometheus Adapter pods")
@@ -533,13 +609,13 @@ retentionPeriod: "4m"`, modelID),
 				},
 			},
 		}
-		_, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Create(ctx, hpa, metav1.CreateOptions{})
+		_, err := hpaK8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Create(ctx, hpa, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		_, _ = fmt.Fprintf(GinkgoWriter, "✓ HPA created: %s\n", hpa.Name)
 
 		By("waiting for HPA to be ready")
 		Eventually(func(g Gomega) {
-			hpa, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Get(ctx, deployName+"-hpa", metav1.GetOptions{})
+			hpa, err := hpaK8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Get(ctx, deployName+"-hpa", metav1.GetOptions{})
 			g.Expect(err).NotTo(HaveOccurred())
 
 			// Print HPA status for debugging
@@ -564,10 +640,10 @@ retentionPeriod: "4m"`, modelID),
 
 		By("setting up port-forward to gateway for traffic generation")
 		port := 8002
-		portForwardCmd := utils.SetUpPortForward(k8sClient, ctx, gatewayName, namespace, port, 80)
+		portForwardCmd := utils.SetUpPortForward(hpaK8sClient, ctx, getEnvOrDefault("GATEWAY_NAME", "infra-sim-inference-gateway"), namespace, port, 80)
 		defer func() {
 			err := utils.StopCmd(portForwardCmd)
-			Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to stop port-forwarding for gateway: %s", gatewayName))
+			Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to stop port-forwarding for gateway: %s", getEnvOrDefault("GATEWAY_NAME", "infra-sim-inference-gateway")))
 		}()
 
 		By("waiting for port-forward to be ready")
@@ -577,7 +653,7 @@ retentionPeriod: "4m"`, modelID),
 		By("starting traffic generation")
 		loadRate := 10
 		// Use "default/default" for traffic to match InferenceModel and leverage existing infrastructure
-		loadGenCmd := utils.StartLoadGenerator(loadRate, 100, port, defaultModelId)
+		loadGenCmd := utils.StartLoadGenerator(loadRate, 100, port, getEnvOrDefault("DEFAULT_MODEL_ID", "default/default"))
 		defer func() {
 			err := utils.StopCmd(loadGenCmd)
 			if err != nil {
@@ -594,7 +670,7 @@ retentionPeriod: "4m"`, modelID),
 		By("waiting for controller to process traffic and emit metrics")
 		Eventually(func(g Gomega) {
 			va := &v1alpha1.VariantAutoscaling{}
-			err := crClient.Get(ctx, client.ObjectKey{Name: deployName, Namespace: namespace}, va)
+			err := hpaCrClient.Get(ctx, client.ObjectKey{Name: deployName, Namespace: namespace}, va)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			_, _ = fmt.Fprintf(GinkgoWriter, "Waiting for controller: DesiredOptimized=%d, Current=%d, Reason=%q\n",
@@ -620,7 +696,7 @@ retentionPeriod: "4m"`, modelID),
 		By("verifying controller sets DesiredOptimizedAlloc to 0")
 		Eventually(func(g Gomega) {
 			va := &v1alpha1.VariantAutoscaling{}
-			err := crClient.Get(ctx, client.ObjectKey{Name: deployName, Namespace: namespace}, va)
+			err := hpaCrClient.Get(ctx, client.ObjectKey{Name: deployName, Namespace: namespace}, va)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			_, _ = fmt.Fprintf(GinkgoWriter, "VA Status: DesiredOptimized=%d, Current=%d, Reason=%q\n",
@@ -632,7 +708,7 @@ retentionPeriod: "4m"`, modelID),
 
 		By("verifying HPA scales deployment to 0 replicas")
 		Eventually(func(g Gomega) {
-			deployment, err := k8sClient.AppsV1().Deployments(namespace).Get(ctx, deployName, metav1.GetOptions{})
+			deployment, err := hpaK8sClient.AppsV1().Deployments(namespace).Get(ctx, deployName, metav1.GetOptions{})
 			g.Expect(err).NotTo(HaveOccurred())
 
 			if deployment.Status.Replicas == 0 {
@@ -644,7 +720,7 @@ retentionPeriod: "4m"`, modelID),
 		By("verifying CurrentAlloc reflects the scaled-down state")
 		Eventually(func(g Gomega) {
 			va := &v1alpha1.VariantAutoscaling{}
-			err := crClient.Get(ctx, client.ObjectKey{Name: deployName, Namespace: namespace}, va)
+			err := hpaCrClient.Get(ctx, client.ObjectKey{Name: deployName, Namespace: namespace}, va)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(va.Status.CurrentAlloc.NumReplicas).To(Equal(int32(0)))
 		}, 2*time.Minute, 10*time.Second).Should(Succeed())
@@ -654,7 +730,7 @@ retentionPeriod: "4m"`, modelID),
 
 	AfterAll(func() {
 		By("cleaning up HPA")
-		err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Delete(ctx, deployName+"-hpa", metav1.DeleteOptions{})
+		err := hpaK8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Delete(ctx, deployName+"-hpa", metav1.DeleteOptions{})
 		err = client.IgnoreNotFound(err)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -665,13 +741,13 @@ retentionPeriod: "4m"`, modelID),
 				Namespace: namespace,
 			},
 		}
-		err = crClient.Delete(ctx, variantAutoscaling)
+		err = hpaCrClient.Delete(ctx, variantAutoscaling)
 		err = client.IgnoreNotFound(err)
 		Expect(err).NotTo(HaveOccurred())
 
 		By("deleting InferenceModel")
 		if inferenceModel != nil {
-			err = crClient.Delete(ctx, inferenceModel)
+			err = hpaCrClient.Delete(ctx, inferenceModel)
 			err = client.IgnoreNotFound(err)
 			Expect(err).NotTo(HaveOccurred())
 		}
@@ -684,24 +760,24 @@ retentionPeriod: "4m"`, modelID),
 			Kind:    "ServiceMonitor",
 		})
 		serviceMonitor.SetName(serviceMonName)
-		serviceMonitor.SetNamespace(controllerMonitoringNamespace)
-		err = crClient.Delete(ctx, serviceMonitor)
+		serviceMonitor.SetNamespace(getEnvOrDefault("MONITORING_NAMESPACE", "workload-variant-autoscaler-monitoring"))
+		err = hpaCrClient.Delete(ctx, serviceMonitor)
 		err = client.IgnoreNotFound(err)
 		Expect(err).NotTo(HaveOccurred())
 
 		By("cleaning up Service")
-		err = k8sClient.CoreV1().Services(namespace).Delete(ctx, serviceName, metav1.DeleteOptions{})
+		err = hpaK8sClient.CoreV1().Services(namespace).Delete(ctx, serviceName, metav1.DeleteOptions{})
 		err = client.IgnoreNotFound(err)
 		Expect(err).NotTo(HaveOccurred())
 
 		By("cleaning up Deployment")
-		err = k8sClient.AppsV1().Deployments(namespace).Delete(ctx, deployName, metav1.DeleteOptions{})
+		err = hpaK8sClient.AppsV1().Deployments(namespace).Delete(ctx, deployName, metav1.DeleteOptions{})
 		err = client.IgnoreNotFound(err)
 		Expect(err).NotTo(HaveOccurred())
 
 		By("waiting for all pods to be deleted")
 		Eventually(func(g Gomega) {
-			podList, err := k8sClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			podList, err := hpaK8sClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 				LabelSelector: fmt.Sprintf("app=%s", appLabel),
 			})
 			g.Expect(err).NotTo(HaveOccurred())
@@ -709,7 +785,7 @@ retentionPeriod: "4m"`, modelID),
 		}, 2*time.Minute, 10*time.Second).Should(Succeed())
 
 		By("cleaning up ConfigMap")
-		err = k8sClient.CoreV1().ConfigMaps(controllerNamespace).Delete(ctx, configMapName, metav1.DeleteOptions{})
+		err = hpaK8sClient.CoreV1().ConfigMaps(getEnvOrDefault("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")).Delete(ctx, configMapName, metav1.DeleteOptions{})
 		err = client.IgnoreNotFound(err)
 		Expect(err).NotTo(HaveOccurred())
 	})
