@@ -8,7 +8,7 @@ spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ printf "%s-decode" .Values.llmd.modelName }}
+    name: {{ printf "%s-decode" .Values.wva.modelName }}
   # minReplicas: 0  # scale to zero - alpha feature
   maxReplicas: {{ .Values.hpa.maxReplicas }}
   behavior:
@@ -31,7 +31,7 @@ spec:
         name: inferno_desired_replicas
         selector:
           matchLabels:
-            variant_name: {{ printf "%s-decode" .Values.llmd.modelName }}
+            variant_name: {{ printf "%s-decode" .Values.wva.modelName }}
       target:
         type: AverageValue
         averageValue: {{ .Values.hpa.targetAverageValue | quote }}
