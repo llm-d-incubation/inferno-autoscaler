@@ -161,13 +161,15 @@ jobs:
           echo "Setting up test environment..."
           export CLUSTER_NAME=kind-hpa-cluster
           export CREATE_CLUSTER=false
+          export DEPLOY_PROMETHEUS=false
+          export DEPLOY_PROMETHEUS_ADAPTER=false
           export NUM_NODES=3
           export MAX_GPUS=4
           export GPU_TYPES=mix
 
           echo "Deploying llm-d and workload-variant-autoscaler..."
-          # Use the deployment script but skip cluster creation (cluster already exists)
-          # The script will use the existing cluster with Prometheus Adapter
+          # Use the deployment script but skip cluster creation and Prometheus installation
+          # CI/CD already created the cluster with kube-prometheus-stack and Prometheus Adapter
           KIND=kind KUBECTL=kubectl bash deploy/kind-emulator/deploy-llm-d.sh -i $IMG
 
           echo "✓ Controller deployed successfully"
