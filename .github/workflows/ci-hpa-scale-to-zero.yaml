@@ -166,6 +166,7 @@ jobs:
           export CREATE_CLUSTER=false
           export DEPLOY_PROMETHEUS=false
           export DEPLOY_PROMETHEUS_ADAPTER=false
+          export PROMETHEUS_BASE_URL=http://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local
           export NUM_NODES=3
           export MAX_GPUS=4
           export GPU_TYPES=mix

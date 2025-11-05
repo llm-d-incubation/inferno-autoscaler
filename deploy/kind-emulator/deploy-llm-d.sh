@@ -371,18 +371,24 @@ deploy_prometheus_stack() {
 deploy_wva_controller() {
     log_info "Deploying Workload-Variant-Autoscaler..."
     log_info "Using image: $WVA_IMAGE_REPO:$WVA_IMAGE_TAG"
-    
-    # Extract Prometheus CA certificate
-    log_info "Extracting Prometheus TLS certificate"
-    kubectl get secret $PROMETHEUS_SECRET_NAME -n $MONITORING_NAMESPACE -o jsonpath='{.data.tls\.crt}' | base64 -d > $PROM_CA_CERT_PATH
-    
+
+    # Extract Prometheus CA certificate only if we deployed Prometheus with TLS
+    local helm_ca_cert_arg=""
+    if [ "$DEPLOY_PROMETHEUS" = "true" ]; then
+        log_info "Extracting Prometheus TLS certificate"
+        kubectl get secret $PROMETHEUS_SECRET_NAME -n $MONITORING_NAMESPACE -o jsonpath='{.data.tls\.crt}' | base64 -d > $PROM_CA_CERT_PATH
+        helm_ca_cert_arg="--set-file wva.prometheus.caCert=$PROM_CA_CERT_PATH"
+    else
+        log_info "Skipping Prometheus TLS certificate extraction (DEPLOY_PROMETHEUS=false, assuming HTTP connection)"
+    fi
+
     # Deploy WVA using Helm chart
     log_info "Installing Workload-Variant-Autoscaler via Helm chart"
     cd "$WVA_PROJECT/charts"
-    
+
     helm upgrade -i workload-variant-autoscaler ./workload-variant-autoscaler \
         -n $WVA_NS \
-        --set-file wva.prometheus.caCert=$PROM_CA_CERT_PATH \
+        $helm_ca_cert_arg \
         --set wva.image.repository=$WVA_IMAGE_REPO \
         --set wva.image.tag=$WVA_IMAGE_TAG \
         --set wva.imagePullPolicy=$WVA_IMAGE_PULL_POLICY \
