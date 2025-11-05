@@ -229,6 +229,7 @@ jobs:
       - name: Run HPA scale-to-zero E2E tests
         timeout-minutes: 40
         env:
+          KEDA_INSTALL_SKIP: "true"
           LLMD_NAMESPACE: llm-d-sim
           MONITORING_NAMESPACE: workload-variant-autoscaler-monitoring
           CONTROLLER_NAMESPACE: workload-variant-autoscaler-system
