@@ -758,7 +758,7 @@ func CreateVllmeDeployment(namespace, deployName, modelName, appLabel string) *a
 						{
 							Name:            "vllme",
 							Image:           "quay.io/infernoautoscaler/vllme:0.2.3-multi-arch",
-							ImagePullPolicy: corev1.PullAlways,
+							ImagePullPolicy: corev1.PullIfNotPresent,
 							Ports: []corev1.ContainerPort{
 								{ContainerPort: 80},
 							},
