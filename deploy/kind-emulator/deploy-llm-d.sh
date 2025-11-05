@@ -1183,11 +1183,46 @@ main() {
         log_info "Skipping llm-d deployment (DEPLOY_LLM_D=false)"
     fi
     
-    # Deploy Prometheus Adapter
+    # Deploy or configure Prometheus Adapter
     if [ "$DEPLOY_PROMETHEUS_ADAPTER" = "true" ]; then
         deploy_prometheus_adapter
     else
         log_info "Skipping Prometheus Adapter deployment (DEPLOY_PROMETHEUS_ADAPTER=false)"
+
+        # But still configure CA cert if Prometheus was deployed with TLS
+        if [ "$DEPLOY_PROMETHEUS" = "true" ]; then
+            log_info "Configuring existing Prometheus Adapter with CA certificate for HTTPS connection"
+
+            # Extract Prometheus CA certificate and create ConfigMap
+            kubectl get secret $PROMETHEUS_SECRET_NAME -n $MONITORING_NAMESPACE -o jsonpath='{.data.tls\.crt}' | base64 -d > $PROM_CA_CERT_PATH
+            kubectl create configmap prometheus-ca --from-file=ca.crt=$PROM_CA_CERT_PATH -n $MONITORING_NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+            log_success "prometheus-ca ConfigMap created"
+
+            # Upgrade existing Prometheus Adapter to add CA cert configuration
+            cat > /tmp/prometheus-adapter-ca-patch.yaml <<YAML
+extraVolumes:
+  - name: prometheus-ca
+    configMap:
+      name: prometheus-ca
+
+extraVolumeMounts:
+  - name: prometheus-ca
+    mountPath: /etc/prometheus-ca
+    readOnly: true
+
+extraArguments:
+  - --prometheus-ca-file=/etc/prometheus-ca/ca.crt
+YAML
+
+            log_info "Upgrading Prometheus Adapter with CA cert configuration"
+            helm upgrade prometheus-adapter prometheus-community/prometheus-adapter \
+                -n $MONITORING_NAMESPACE \
+                -f /tmp/prometheus-adapter-ca-patch.yaml \
+                --reuse-values \
+                --wait --timeout=3m || log_warning "Failed to upgrade Prometheus Adapter with CA cert"
+
+            log_success "Prometheus Adapter configured with CA certificate"
+        fi
     fi
     
     # Verify deployment
