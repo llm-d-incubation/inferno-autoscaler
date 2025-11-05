@@ -74,30 +74,16 @@ jobs:
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
           helm version
 
-      - name: Create KIND cluster with HPAScaleToZero feature gate
+      - name: Install jq
         run: |
-          echo "Creating KIND cluster with HPAScaleToZero feature gate enabled..."
-          cat <<EOF > kind-config.yaml
-          kind: Cluster
-          apiVersion: kind.x-k8s.io/v1alpha4
-          nodes:
-          - role: control-plane
-            image: kindest/node:v1.32.0
-            kubeadmConfigPatches:
-            - |
-              kind: ClusterConfiguration
-              apiServer:
-                extraArgs:
-                  feature-gates: "HPAScaleToZero=true"
-              controllerManager:
-                extraArgs:
-                  feature-gates: "HPAScaleToZero=true"
-          - role: worker
-            image: kindest/node:v1.32.0
-          - role: worker
-            image: kindest/node:v1.32.0
-          EOF
-          kind create cluster --name kind-hpa-cluster --config kind-config.yaml
+          echo "Installing jq..."
+          sudo apt-get update && sudo apt-get install -y jq
+          jq --version
+
+      - name: Create KIND cluster with HPAScaleToZero feature gate and GPU emulation
+        run: |
+          echo "Creating KIND cluster with HPAScaleToZero feature gate and emulated GPUs..."
+          bash deploy/kind-emulator/setup.sh -c kind-hpa-cluster -n 3 -g 4 -t mix
           kubectl cluster-info
           kubectl get nodes
 
