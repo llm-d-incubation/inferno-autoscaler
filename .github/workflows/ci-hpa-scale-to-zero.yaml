@@ -140,8 +140,12 @@ jobs:
           echo "Building controller image..."
           make docker-build IMG=$IMG
 
-          echo "Loading image into KIND cluster..."
+          echo "Loading controller image into KIND cluster..."
           kind load docker-image $IMG --name kind-hpa-cluster
+
+          echo "Pre-loading vLLM emulator image into KIND cluster..."
+          docker pull quay.io/infernoautoscaler/vllme:0.2.3-multi-arch
+          kind load docker-image quay.io/infernoautoscaler/vllme:0.2.3-multi-arch --name kind-hpa-cluster
 
           echo "Setting up test environment..."
           export CLUSTER_NAME=kind-hpa-cluster

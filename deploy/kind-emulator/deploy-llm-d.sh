@@ -574,7 +574,7 @@ spec:
       containers:
       - name: $VLLM_EMULATOR_NAME
         image: quay.io/infernoautoscaler/vllme:0.2.3-multi-arch
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         env: 
         - name: MODEL_NAME
           value: "$MODEL_ID"
