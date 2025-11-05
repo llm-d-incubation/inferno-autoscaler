@@ -49,13 +49,9 @@ var _ = Describe("Test idle scale-to-zero with HPA", Ordered, func() {
 		initialReplicas   int32
 		retentionDuration time.Duration
 		inferenceModel    *unstructured.Unstructured
-		testSkipped       bool
 	)
 
 	BeforeAll(func() {
-		Skip("HPA scale-to-zero requires minReplicas: 0 (alpha feature) and Prometheus Adapter - skipping until enabled")
-		testSkipped = true
-
 		initializeK8sClient()
 
 		ctx = context.Background()
@@ -135,6 +131,29 @@ retentionPeriod: "4m"`, modelID),
 			g.Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(BeNumerically(">=", 1))
 		}, 3*time.Minute, 5*time.Second).Should(Succeed())
 
+		By("verifying Prometheus Adapter is ready")
+		Eventually(func(g Gomega) {
+			podList, err := k8sClient.CoreV1().Pods(controllerMonitoringNamespace).List(ctx, metav1.ListOptions{
+				LabelSelector: "app.kubernetes.io/name=prometheus-adapter",
+			})
+			g.Expect(err).NotTo(HaveOccurred(), "Should be able to list Prometheus Adapter pods")
+			g.Expect(podList.Items).NotTo(BeEmpty(), "Prometheus Adapter pods should exist")
+
+			readyCount := 0
+			for _, pod := range podList.Items {
+				if pod.Status.Phase == corev1.PodRunning {
+					for _, cond := range pod.Status.Conditions {
+						if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
+							readyCount++
+							break
+						}
+					}
+				}
+			}
+			g.Expect(readyCount).To(BeNumerically(">", 0), "At least one Prometheus Adapter pod should be ready")
+			_, _ = fmt.Fprintf(GinkgoWriter, "✓ Prometheus Adapter is ready (%d pods)\n", readyCount)
+		}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
 		By("creating HPA for deployment")
 		minReplicas := int32(0) // Scale-to-zero: HPA alpha feature
 		hpa := &autoscalingv2.HorizontalPodAutoscaler{
@@ -204,6 +223,16 @@ retentionPeriod: "4m"`, modelID),
 		Eventually(func(g Gomega) {
 			hpa, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Get(ctx, deployName+"-hpa", metav1.GetOptions{})
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to get HPA")
+
+			// Print HPA status for debugging
+			_, _ = fmt.Fprintf(GinkgoWriter, "HPA Status - Current: %d, Desired: %d, Conditions: %d\n",
+				hpa.Status.CurrentReplicas, hpa.Status.DesiredReplicas, len(hpa.Status.Conditions))
+
+			for _, condition := range hpa.Status.Conditions {
+				_, _ = fmt.Fprintf(GinkgoWriter, "  Condition: %s = %s (Reason: %s, Message: %s)\n",
+					condition.Type, condition.Status, condition.Reason, condition.Message)
+			}
+
 			g.Expect(hpa.Status.Conditions).NotTo(BeEmpty(), "HPA should have conditions")
 
 			for _, condition := range hpa.Status.Conditions {
@@ -213,7 +242,7 @@ retentionPeriod: "4m"`, modelID),
 				}
 			}
 			g.Expect(true).To(BeFalse(), "HPA should be active")
-		}, 3*time.Minute, 5*time.Second).Should(Succeed())
+		}, 5*time.Minute, 10*time.Second).Should(Succeed())
 
 		By("waiting for retention period to pass with no traffic")
 		waitDuration := retentionDuration + (90 * time.Second) // retention + buffer
@@ -258,11 +287,6 @@ retentionPeriod: "4m"`, modelID),
 	})
 
 	AfterAll(func() {
-		// Skip cleanup if test was skipped
-		if testSkipped {
-			return
-		}
-
 		By("cleaning up HPA")
 		err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Delete(ctx, deployName+"-hpa", metav1.DeleteOptions{})
 		err = client.IgnoreNotFound(err)
@@ -339,13 +363,9 @@ var _ = Describe("Test traffic-based scale-to-zero with HPA", Ordered, func() {
 		initialReplicas   int32
 		retentionDuration time.Duration
 		inferenceModel    *unstructured.Unstructured
-		testSkipped       bool
 	)
 
 	BeforeAll(func() {
-		Skip("HPA scale-to-zero requires minReplicas: 0 (alpha feature) and Prometheus Adapter - skipping until enabled")
-		testSkipped = true
-
 		initializeK8sClient()
 
 		ctx = context.Background()
@@ -430,6 +450,29 @@ retentionPeriod: "4m"`, modelID),
 			g.Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(BeNumerically(">=", 1))
 		}, 3*time.Minute, 5*time.Second).Should(Succeed())
 
+		By("verifying Prometheus Adapter is ready")
+		Eventually(func(g Gomega) {
+			podList, err := k8sClient.CoreV1().Pods(controllerMonitoringNamespace).List(ctx, metav1.ListOptions{
+				LabelSelector: "app.kubernetes.io/name=prometheus-adapter",
+			})
+			g.Expect(err).NotTo(HaveOccurred(), "Should be able to list Prometheus Adapter pods")
+			g.Expect(podList.Items).NotTo(BeEmpty(), "Prometheus Adapter pods should exist")
+
+			readyCount := 0
+			for _, pod := range podList.Items {
+				if pod.Status.Phase == corev1.PodRunning {
+					for _, cond := range pod.Status.Conditions {
+						if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
+							readyCount++
+							break
+						}
+					}
+				}
+			}
+			g.Expect(readyCount).To(BeNumerically(">", 0), "At least one Prometheus Adapter pod should be ready")
+			_, _ = fmt.Fprintf(GinkgoWriter, "✓ Prometheus Adapter is ready (%d pods)\n", readyCount)
+		}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
 		minReplicas := int32(0)
 		hpa := &autoscalingv2.HorizontalPodAutoscaler{
 			ObjectMeta: metav1.ObjectMeta{
@@ -498,6 +541,16 @@ retentionPeriod: "4m"`, modelID),
 		Eventually(func(g Gomega) {
 			hpa, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Get(ctx, deployName+"-hpa", metav1.GetOptions{})
 			g.Expect(err).NotTo(HaveOccurred())
+
+			// Print HPA status for debugging
+			_, _ = fmt.Fprintf(GinkgoWriter, "HPA Status - Current: %d, Desired: %d, Conditions: %d\n",
+				hpa.Status.CurrentReplicas, hpa.Status.DesiredReplicas, len(hpa.Status.Conditions))
+
+			for _, condition := range hpa.Status.Conditions {
+				_, _ = fmt.Fprintf(GinkgoWriter, "  Condition: %s = %s (Reason: %s, Message: %s)\n",
+					condition.Type, condition.Status, condition.Reason, condition.Message)
+			}
+
 			g.Expect(hpa.Status.Conditions).NotTo(BeEmpty())
 
 			for _, condition := range hpa.Status.Conditions {
@@ -507,7 +560,7 @@ retentionPeriod: "4m"`, modelID),
 				}
 			}
 			g.Expect(true).To(BeFalse(), "HPA should be active")
-		}, 3*time.Minute, 5*time.Second).Should(Succeed())
+		}, 5*time.Minute, 10*time.Second).Should(Succeed())
 
 		By("setting up port-forward to gateway for traffic generation")
 		port := 8002
@@ -600,11 +653,6 @@ retentionPeriod: "4m"`, modelID),
 	})
 
 	AfterAll(func() {
-		// Skip cleanup if test was skipped
-		if testSkipped {
-			return
-		}
-
 		By("cleaning up HPA")
 		err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).Delete(ctx, deployName+"-hpa", metav1.DeleteOptions{})
 		err = client.IgnoreNotFound(err)

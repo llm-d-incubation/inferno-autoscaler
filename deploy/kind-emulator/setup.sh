@@ -94,6 +94,15 @@ apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
   image: kindest/node:${k8s_version}
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        feature-gates: "HPAScaleToZero=true"
+    controllerManager:
+      extraArgs:
+        feature-gates: "HPAScaleToZero=true"
 EOF
 
 for ((i=1; i<nodes; i++)); do
