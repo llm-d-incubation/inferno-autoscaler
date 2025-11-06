@@ -19,7 +19,7 @@ The tests assume the following infrastructure is already deployed on the OpenShi
    - vLLM deployment (ms-inference-scheduling-llm-d-modelservice-decode)
 3. **Prometheus** and **Thanos** for metrics collection
 4. **Prometheus Adapter** for exposing external metrics to HPA
-5. **HPA** configured to read `inferno_desired_replicas` metric
+5. **HPA** configured to read `wva_desired_replicas` metric
 6. **VariantAutoscaling** resource created for the vLLM deployment
 
 ### Environment Setup
@@ -83,7 +83,7 @@ The `sharegpt_scaleup_test.go` test performs the following steps:
 
 4. **HPA Scale-Up Trigger**
    - Monitors HPA for metric processing
-   - Verifies HPA reads the updated `inferno_desired_replicas` metric
+   - Verifies HPA reads the updated `wva_desired_replicas` metric
    - Confirms HPA desires more replicas
 
 5. **Deployment Scaling**
@@ -220,7 +220,7 @@ oc get hpa -n llm-d-inference-scheduling
 oc logs -n openshift-user-workload-monitoring deployment/prometheus-adapter
 
 # Query external metrics API directly
-kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-inference-scheduling/inferno_desired_replicas" | jq
+kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-inference-scheduling/wva_desired_replicas" | jq
 ```
 
 ### Test Fails: No Scale-Up Detected

@@ -6,13 +6,13 @@ This guide shows how to integrate Kubernetes HorizontalPodAutoscaler (HPA) with 
 
 After deploying the workload-variant-autoscaler following the provided guides, this guide allows the integration of the following components:
 
-1. **WVA controller**: processes VariantAutoscaling objects and emits the `inferno_current_replicas`, the `inferno_desired_replicas` and the `inferno_desired_ratio` metrics
+1. **WVA controller**: processes VariantAutoscaling objects and emits the `wva_current_replicas`, the `wva_desired_replicas` and the `wva_desired_ratio` metrics
 
 2. **Prometheus**: scrapes these metrics from the workload-variant-autoscaler `/metrics` endpoint using TLS
 
 3. **Prometheus Adapter**: exposes the metrics to Kubernetes external metrics API
 
-4. **HPA** example configuration: reads the value for the `inferno_desired_replicas` metrics and adjusts Deployment replicas accordingly, using an `AverageValue` target
+4. **HPA** example configuration: reads the value for the `wva_desired_replicas` metrics and adjusts Deployment replicas accordingly, using an `AverageValue` target
 
 ## Prerequisites
 
@@ -101,7 +101,7 @@ kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1" | jq
   "groupVersion": "external.metrics.k8s.io/v1beta1",
   "resources": [
     {
-      "name": "inferno_desired_replicas",
+      "name": "wva_desired_replicas",
       "singularName": "",
       "namespaced": true,
       "kind": "ExternalMetricValueList",
@@ -113,19 +113,19 @@ kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1" | jq
 }
 ```
 
-- Get the latest value for the `inferno_desired_replicas` metric:
+- Get the latest value for the `wva_desired_replicas` metric:
 
 ```sh
-kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-sim/inferno_desired_replicas?labelSelector=variant_name%3Dvllme-deployment" | jq
+kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-sim/wva_desired_replicas?labelSelector=target_name%3Dvllme-deployment" | jq
 {
   "kind": "ExternalMetricValueList",
   "apiVersion": "external.metrics.k8s.io/v1beta1",
   "metadata": {},
   "items": [
     {
-      "metricName": "inferno_desired_replicas",
+      "metricName": "wva_desired_replicas",
       "metricLabels": {
-        "__name__": "inferno_desired_replicas",
+        "__name__": "wva_desired_replicas",
         "accelerator_type": "A100",
         "endpoint": "https",
         "exported_namespace": "llm-d-sim",
@@ -134,7 +134,8 @@ kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-sim/in
         "namespace": "workload-variant-autoscaler-system",
         "pod": "workload-variant-autoscaler-controller-manager-99c9d77cb-ppjm8",
         "service": "workload-variant-autoscaler-controller-manager-metrics-service",
-        "variant_name": "vllme-deployment"
+        "target_name": "vllme-deployment",
+        "target_kind": "Deployment"
       },
       "timestamp": "2025-08-22T19:08:26Z",
       "value": "1"
@@ -280,15 +281,15 @@ prometheus:
 
 rules:
   external:
-  - seriesQuery: 'inferno_desired_replicas{variant_name!="",exported_namespace!=""}'
+  - seriesQuery: 'wva_desired_replicas{target_name!="",exported_namespace!=""}'
     resources:
       overrides:
         exported_namespace: {resource: "namespace"}
-        variant_name: {resource: "deployment"}  
+        target_name: {resource: "deployment"}
     name:
-      matches: "^inferno_desired_replicas"
-      as: "inferno_desired_replicas"
-    metricsQuery: 'inferno_desired_replicas{<<.LabelMatchers>>}'
+      matches: "^wva_desired_replicas"
+      as: "wva_desired_replicas"
+    metricsQuery: 'wva_desired_replicas{<<.LabelMatchers>>}'
 
 replicas: 2
 logLevel: 4
@@ -342,10 +343,11 @@ spec:
   - type: External
     external:
       metric:
-        name: inferno_desired_replicas
+        name: wva_desired_replicas
         selector:
           matchLabels:
-            variant_name: vllme-deployment
+            target_name: vllme-deployment
+            target_kind: Deployment
       target:
         type: AverageValue
         averageValue: "1"

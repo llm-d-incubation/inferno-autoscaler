@@ -507,7 +507,7 @@ var _ = Describe("Actuator", func() {
 			// In single-variant architecture, just use NumReplicas directly
 			replicas := va.Status.DesiredOptimizedAlloc.NumReplicas
 			fmt.Printf("Emitting scaling metrics for variantAutoscaling - name: %s\n numReplicas: %d\n", va.Name, replicas)
-			err := actuator.MetricsEmitter.EmitReplicaScalingMetrics(ctx, va, "up", "optimization")
+			err := actuator.MetricsEmitter.EmitReplicaScalingMetrics(ctx, va, "up", "optimization", "A100")
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -515,7 +515,7 @@ var _ = Describe("Actuator", func() {
 			// In single-variant architecture, just use NumReplicas directly
 			replicas := va.Status.DesiredOptimizedAlloc.NumReplicas
 			fmt.Printf("Emitting replica metrics for variantAutoscaling - name: %s\n numReplicas: %d\n", va.Name, replicas)
-			err := actuator.MetricsEmitter.EmitReplicaMetrics(ctx, va, 1, 3, "A100", "test-model-A100-1")
+			err := actuator.MetricsEmitter.EmitReplicaMetrics(ctx, va, 1, 3, "A100")
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -528,7 +528,7 @@ var _ = Describe("Actuator", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Additional scaling metrics
-			err = actuator.MetricsEmitter.EmitReplicaScalingMetrics(ctx, va, "up", "load_increase")
+			err = actuator.MetricsEmitter.EmitReplicaScalingMetrics(ctx, va, "up", "load_increase", "A100")
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
@@ -688,19 +688,19 @@ var _ = Describe("Actuator", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Test normal case: current = 2, desired = 5, ratio = 2.5
-			err = actuator.MetricsEmitter.EmitReplicaMetrics(ctx, va, 2, 5, "A100", "test-model-A100-1")
+			err = actuator.MetricsEmitter.EmitReplicaMetrics(ctx, va, 2, 5, "A100")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Test scale-to-zero case: current = 0, desired = 3, ratio = 3
-			err = actuator.MetricsEmitter.EmitReplicaMetrics(ctx, va, 0, 3, "A100", "test-model-A100-1")
+			err = actuator.MetricsEmitter.EmitReplicaMetrics(ctx, va, 0, 3, "A100")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Test no-change case: current = 4, desired = 4, ratio = 1
-			err = actuator.MetricsEmitter.EmitReplicaMetrics(ctx, va, 4, 4, "A100", "test-model-A100-1")
+			err = actuator.MetricsEmitter.EmitReplicaMetrics(ctx, va, 4, 4, "A100")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Test scale-down case: current = 6, desired = 2, ratio = 0.33
-			err = actuator.MetricsEmitter.EmitReplicaMetrics(ctx, va, 6, 2, "A100", "test-model-A100-1")
+			err = actuator.MetricsEmitter.EmitReplicaMetrics(ctx, va, 6, 2, "A100")
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})

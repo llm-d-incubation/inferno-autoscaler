@@ -419,13 +419,13 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - singl
 
 			// Verify Prometheus replica metrics
 			// In single-variant architecture, accelerator is in spec
-			currentReplicasProm, desiredReplicasProm, _, err = utils.GetInfernoReplicaMetrics(va.Name, namespace, va.Spec.Accelerator, va.Spec.VariantID)
+			currentReplicasProm, desiredReplicasProm, _, err = utils.GetWVAReplicaMetrics(va.Spec.ScaleTargetRef.Name, va.Spec.ScaleTargetRef.Kind, namespace, va.Spec.Accelerator)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va.Name, err))
 
 			g.Expect(desiredReplicasProm).To(BeNumerically(">", 1),
-				fmt.Sprintf("Prometheus `inferno_desired_replicas` query should show scale-up for VA: %s - actual: %.2f", va.Name, desiredReplicasProm))
+				fmt.Sprintf("Prometheus `wva_desired_replicas` query should show scale-up for VA: %s - actual: %.2f", va.Name, desiredReplicasProm))
 			g.Expect(currentReplicasProm).To(BeNumerically(">=", 1),
-				fmt.Sprintf("Prometheus `inferno_current_replicas` query should show at least 1 replica for VA: %s - actual: %.2f", va.Name, currentReplicasProm))
+				fmt.Sprintf("Prometheus `wva_current_replicas` query should show at least 1 replica for VA: %s - actual: %.2f", va.Name, currentReplicasProm))
 
 			// Verify that the current and desired number of replicas have the same value as Prometheus results
 			g.Expect(va.Status.CurrentAlloc.NumReplicas).To(BeNumerically("==", currentReplicasProm),
@@ -501,7 +501,7 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - singl
 
 			// Verify Prometheus replica metrics
 			// In single-variant architecture, accelerator is in spec
-			_, desiredReplicasProm, _, err = utils.GetInfernoReplicaMetrics(va.Name, namespace, va.Spec.Accelerator, va.Spec.VariantID)
+			_, desiredReplicasProm, _, err = utils.GetWVAReplicaMetrics(va.Spec.ScaleTargetRef.Name, va.Spec.ScaleTargetRef.Kind, namespace, va.Spec.Accelerator)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va.Name, err))
 
 			// Verify that the desired number of replicas has same value as Prometheus result
@@ -548,7 +548,7 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - singl
 
 			// Verify Prometheus replica metrics
 			// In single-variant architecture, accelerator is in spec
-			_, desiredReplicasProm, _, err = utils.GetInfernoReplicaMetrics(va.Name, namespace, va.Spec.Accelerator, va.Spec.VariantID)
+			_, desiredReplicasProm, _, err = utils.GetWVAReplicaMetrics(va.Spec.ScaleTargetRef.Name, va.Spec.ScaleTargetRef.Kind, namespace, va.Spec.Accelerator)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va.Name, err))
 
 			// Verify that the desired number of replicas has same value as Prometheus result
@@ -909,8 +909,8 @@ retentionPeriod: "4m"`, modelID),
 			_, _ = fmt.Fprintf(GinkgoWriter, "VariantAutoscaling Status: CurrentReplicas=%d, DesiredReplicas=%d, Actuation.Applied=%t, LastUpdate=%v\n",
 				va.Status.CurrentAlloc.NumReplicas, va.Status.DesiredOptimizedAlloc.NumReplicas, va.Status.Actuation.Applied,
 				va.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.Time)
-			_, _ = fmt.Fprintf(GinkgoWriter, "VariantAutoscaling Spec: Accelerator=%q, VariantID=%q, ModelID=%q\n",
-				va.Spec.Accelerator, va.Spec.VariantID, va.Spec.ModelID)
+			_, _ = fmt.Fprintf(GinkgoWriter, "VariantAutoscaling Spec: Accelerator=%q, ScaleTargetRef=%s/%s, ModelID=%q\n",
+				va.Spec.Accelerator, va.Spec.ScaleTargetRef.Kind, va.Spec.ScaleTargetRef.Name, va.Spec.ModelID)
 			_, _ = fmt.Fprintf(GinkgoWriter, "DesiredOptimizedAlloc Reason: %q\n",
 				va.Status.DesiredOptimizedAlloc.LastUpdate.Reason)
 
@@ -945,12 +945,12 @@ retentionPeriod: "4m"`, modelID),
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to get VariantAutoscaling")
 
 			// Query metrics using the actual Spec values from the CR (like successful tests)
-			currentReplicasProm, desiredReplicasProm, desiredRatioProm, err := utils.GetInfernoReplicaMetrics(
-				va.Name, namespace, va.Spec.Accelerator, va.Spec.VariantID)
+			currentReplicasProm, desiredReplicasProm, desiredRatioProm, err := utils.GetWVAReplicaMetrics(
+				va.Spec.ScaleTargetRef.Name, va.Spec.ScaleTargetRef.Kind, namespace, va.Spec.Accelerator)
 
 			if err != nil {
-				_, _ = fmt.Fprintf(GinkgoWriter, "Metric query failed (Spec.Accelerator=%q, Spec.VariantID=%q): %v\n",
-					va.Spec.Accelerator, va.Spec.VariantID, err)
+				_, _ = fmt.Fprintf(GinkgoWriter, "Metric query failed (Spec.Accelerator=%q, ScaleTargetRef=%s/%s): %v\n",
+					va.Spec.Accelerator, va.Spec.ScaleTargetRef.Kind, va.Spec.ScaleTargetRef.Name, err)
 				g.Expect(err).NotTo(HaveOccurred(), "Should be able to query Prometheus metrics")
 			}
 
@@ -961,16 +961,16 @@ retentionPeriod: "4m"`, modelID),
 			g.Expect(desiredReplicasProm).To(BeNumerically(">=", 0), "Desired replicas should be non-negative")
 		}, 2*time.Minute, 10*time.Second).Should(Succeed(), "Controller should emit metrics with correct labels")
 
-		// Also verify that we can query metrics without accelerator_type and variant_id (should fail or return different results)
+		// Also verify that we can query metrics without accelerator_type and target_kind (should fail or return different results)
 		By("verifying query without all labels returns empty or different results (diagnostic)")
-		partialQuery := fmt.Sprintf("inferno_desired_replicas{variant_name=\"%s\",exported_namespace=\"%s\"}", deployName, namespace)
+		partialQuery := fmt.Sprintf("wva_desired_replicas{target_name=\"%s\",exported_namespace=\"%s\"}", deployName, namespace)
 		promClient, err := utils.NewPrometheusClient("https://localhost:9090", true)
 		Expect(err).NotTo(HaveOccurred())
 		ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel2()
 		partialValue, partialErr := promClient.QueryWithRetry(ctx2, partialQuery)
 		if partialErr != nil {
-			_, _ = fmt.Fprintf(GinkgoWriter, "Partial query (without accelerator_type/variant_id) failed as expected: %v\n", partialErr)
+			_, _ = fmt.Fprintf(GinkgoWriter, "Partial query (without accelerator_type/target_kind) failed as expected: %v\n", partialErr)
 		} else {
 			_, _ = fmt.Fprintf(GinkgoWriter, "Partial query returned value: %.0f (may be different from full query)\n", partialValue)
 		}
@@ -998,7 +998,7 @@ retentionPeriod: "4m"`, modelID),
 					"type": "prometheus",
 					"metadata": map[string]interface{}{
 						"serverAddress":       "https://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local:9090",
-						"query":               fmt.Sprintf("inferno_desired_replicas{variant_name=\"%s\",exported_namespace=\"%s\",accelerator_type=\"%s\",variant_id=\"%s-%s-1\"}", deployName, namespace, accelerator, modelID, accelerator),
+						"query":               fmt.Sprintf("wva_desired_replicas{target_name=\"%s\",target_kind=\"Deployment\",exported_namespace=\"%s\",accelerator_type=\"%s\"}", deployName, namespace, accelerator),
 						"threshold":           "1",
 						"activationThreshold": "0",
 						"metricType":          "AverageValue",
@@ -1106,16 +1106,16 @@ retentionPeriod: "4m"`, modelID),
 				"Controller should set desiredReplicas to 0 after idle period")
 
 			// Verify Prometheus has the correct metric value
-			_, desiredReplicasProm, _, err = utils.GetInfernoReplicaMetrics(va.Name, namespace, va.Spec.Accelerator, va.Spec.VariantID)
+			_, desiredReplicasProm, _, err = utils.GetWVAReplicaMetrics(va.Spec.ScaleTargetRef.Name, va.Spec.ScaleTargetRef.Kind, namespace, va.Spec.Accelerator)
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to query Prometheus metrics")
 
 			// Verify that the desired number of replicas in Prometheus matches VA status
 			g.Expect(int32(desiredReplicasProm)).To(Equal(va.Status.CurrentAlloc.NumReplicas),
-				"Prometheus inferno_desired_replicas should match VA status (both should be 0)")
+				"Prometheus wva_desired_replicas should match VA status (both should be 0)")
 		}, 3*time.Minute, 10*time.Second).Should(Succeed())
 
 		By("verifying Prometheus metric is set to 0")
-		_, _ = fmt.Fprintf(GinkgoWriter, "✓ Prometheus inferno_desired_replicas metric: %.0f\n", desiredReplicasProm)
+		_, _ = fmt.Fprintf(GinkgoWriter, "✓ Prometheus wva_desired_replicas metric: %.0f\n", desiredReplicasProm)
 		Expect(int32(desiredReplicasProm)).To(Equal(int32(0)), "Prometheus metric should be 0")
 
 		By("verifying KEDA scales deployment to 0 replicas")
@@ -1423,7 +1423,7 @@ retentionPeriod: "4m"`, modelID),
 				"Controller should have emitted metrics before traffic test")
 
 			// Verify we can query controller-emitted metrics from Prometheus
-			_, desiredReplicasProm, _, err := utils.GetInfernoReplicaMetrics(va.Name, namespace, va.Spec.Accelerator, va.Spec.VariantID)
+			_, desiredReplicasProm, _, err := utils.GetWVAReplicaMetrics(va.Spec.ScaleTargetRef.Name, va.Spec.ScaleTargetRef.Kind, namespace, va.Spec.Accelerator)
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to query controller metrics from Prometheus")
 
 			_, _ = fmt.Fprintf(GinkgoWriter, "✓ Controller emitting baseline metrics: desired=%.0f\n", desiredReplicasProm)
@@ -1551,7 +1551,7 @@ retentionPeriod: "4m"`, modelID),
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 
 		// Create KEDA ScaledObject (InferenceModel already created in BeforeSuite)
-		// Get VA to access VariantID for KEDA query
+		// Get VA to access ScaleTargetRef for KEDA query
 		va := &v1alpha1.VariantAutoscaling{}
 		err = crClient.Get(ctx, client.ObjectKey{Name: deployName, Namespace: namespace}, va)
 		Expect(err).NotTo(HaveOccurred(), "Should be able to get VariantAutoscaling for KEDA creation")
@@ -1580,7 +1580,7 @@ retentionPeriod: "4m"`, modelID),
 					"type": "prometheus",
 					"metadata": map[string]interface{}{
 						"serverAddress":       "https://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local:9090",
-						"query":               fmt.Sprintf(`inferno_desired_replicas{variant_name="%s",exported_namespace="%s",accelerator_type="%s",variant_id="%s"}`, deployName, namespace, va.Spec.Accelerator, va.Spec.VariantID),
+						"query":               fmt.Sprintf(`wva_desired_replicas{target_name="%s",target_kind="Deployment",exported_namespace="%s",accelerator_type="%s"}`, deployName, namespace, va.Spec.Accelerator),
 						"threshold":           "1",
 						"activationThreshold": "0",
 						"metricType":          "AverageValue",
@@ -1685,10 +1685,10 @@ retentionPeriod: "4m"`, modelID),
 				"Controller should see traffic and recommend replicas > 0 (if this fails, vLLM metrics may not be available)")
 
 			// Verify metrics were emitted to Prometheus (like idle scale-to-zero test)
-			currentReplicasProm, desiredReplicasProm, _, err = utils.GetInfernoReplicaMetrics(va.Name, namespace, va.Spec.Accelerator, va.Spec.VariantID)
-			g.Expect(err).NotTo(HaveOccurred(), "Should be able to query inferno_desired_replicas from Prometheus")
+			currentReplicasProm, desiredReplicasProm, _, err = utils.GetWVAReplicaMetrics(va.Spec.ScaleTargetRef.Name, va.Spec.ScaleTargetRef.Kind, namespace, va.Spec.Accelerator)
+			g.Expect(err).NotTo(HaveOccurred(), "Should be able to query wva_desired_replicas from Prometheus")
 			g.Expect(int32(desiredReplicasProm)).To(BeNumerically(">", 0),
-				"Prometheus inferno_desired_replicas should be > 0")
+				"Prometheus wva_desired_replicas should be > 0")
 
 			_, _ = fmt.Fprintf(GinkgoWriter, "✓ Metrics: current=%.0f, desired=%.0f\n", currentReplicasProm, desiredReplicasProm)
 		}, 5*time.Minute, 10*time.Second).Should(Succeed())
@@ -1739,10 +1739,10 @@ retentionPeriod: "4m"`, modelID),
 				"Optimizer should recommend 0 replicas after retention period with no traffic")
 
 			// Verify Prometheus metric
-			_, desiredReplicasProm, _, err = utils.GetInfernoReplicaMetrics(va.Name, namespace, va.Spec.Accelerator, va.Spec.VariantID)
+			_, desiredReplicasProm, _, err = utils.GetWVAReplicaMetrics(va.Spec.ScaleTargetRef.Name, va.Spec.ScaleTargetRef.Kind, namespace, va.Spec.Accelerator)
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to query Prometheus metrics")
 			g.Expect(int32(desiredReplicasProm)).To(Equal(int32(0)),
-				"Prometheus inferno_desired_replicas should be 0")
+				"Prometheus wva_desired_replicas should be 0")
 
 		}, 3*time.Minute, 10*time.Second).Should(Succeed())
 
@@ -2039,7 +2039,7 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 
 			// Verify Prometheus replica metrics
 			// In single-variant architecture, accelerator is in spec
-			_, desiredReplicas1, _, err = utils.GetInfernoReplicaMetrics(va1.Name, namespace, va1.Spec.Accelerator, va1.Spec.VariantID)
+			_, desiredReplicas1, _, err = utils.GetWVAReplicaMetrics(va1.Spec.ScaleTargetRef.Name, va1.Spec.ScaleTargetRef.Kind, namespace, va1.Spec.Accelerator)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va1.Name, err))
 
 			// Verify that the desired number of replicas has same value as Prometheus result
@@ -2059,7 +2059,7 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 
 			// Verify Prometheus replica metrics
 			// In single-variant architecture, accelerator is in spec
-			_, desiredReplicas2, _, err = utils.GetInfernoReplicaMetrics(va2.Name, namespace, va2.Spec.Accelerator, va2.Spec.VariantID)
+			_, desiredReplicas2, _, err = utils.GetWVAReplicaMetrics(va2.Spec.ScaleTargetRef.Name, va2.Spec.ScaleTargetRef.Kind, namespace, va2.Spec.Accelerator)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va2.Name, err))
 
 			// Verify that the desired number of replicas has same value as Prometheus result
@@ -2159,7 +2159,7 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 
 			// Verify Prometheus replica metrics
 			// In single-variant architecture, accelerator is in spec
-			_, desiredReplicas1, _, err = utils.GetInfernoReplicaMetrics(va1.Name, namespace, va1.Spec.Accelerator, va1.Spec.VariantID)
+			_, desiredReplicas1, _, err = utils.GetWVAReplicaMetrics(va1.Spec.ScaleTargetRef.Name, va1.Spec.ScaleTargetRef.Kind, namespace, va1.Spec.Accelerator)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va1.Name, err))
 
 			// Verify that the desired number of replicas has same value as Prometheus result
@@ -2179,7 +2179,7 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 
 			// Verify Prometheus replica metrics
 			// In single-variant architecture, accelerator is in spec
-			_, desiredReplicas2, _, err = utils.GetInfernoReplicaMetrics(va2.Name, namespace, va2.Spec.Accelerator, va2.Spec.VariantID)
+			_, desiredReplicas2, _, err = utils.GetWVAReplicaMetrics(va2.Spec.ScaleTargetRef.Name, va2.Spec.ScaleTargetRef.Kind, namespace, va2.Spec.Accelerator)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va2.Name, err))
 
 			// Verify that the desired number of replicas has same value as Prometheus result
@@ -2233,7 +2233,7 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 
 			// Verify Prometheus replica metrics
 			// In single-variant architecture, accelerator is in spec
-			_, desiredReplicas1, _, err = utils.GetInfernoReplicaMetrics(va1.Name, namespace, va1.Spec.Accelerator, va1.Spec.VariantID)
+			_, desiredReplicas1, _, err = utils.GetWVAReplicaMetrics(va1.Spec.ScaleTargetRef.Name, va1.Spec.ScaleTargetRef.Kind, namespace, va1.Spec.Accelerator)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va1.Name, err))
 
 			// Verify that the desired number of replicas has same value as Prometheus result
@@ -2253,7 +2253,7 @@ var _ = Describe("Test workload-variant-autoscaler with vllme deployment - multi
 
 			// Verify Prometheus replica metrics
 			// In single-variant architecture, accelerator is in spec
-			_, desiredReplicas2, _, err = utils.GetInfernoReplicaMetrics(va2.Name, namespace, va2.Spec.Accelerator, va2.Spec.VariantID)
+			_, desiredReplicas2, _, err = utils.GetWVAReplicaMetrics(va2.Spec.ScaleTargetRef.Name, va2.Spec.ScaleTargetRef.Kind, namespace, va2.Spec.Accelerator)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to query Prometheus metrics for: %s - got error: %v", va2.Name, err))
 
 			// Verify that the desired number of replicas has same value as Prometheus result

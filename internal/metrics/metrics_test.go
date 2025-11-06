@@ -60,6 +60,10 @@ var _ = Describe("Metrics", func() {
 				VariantID:        "meta/llama-3.1-8b-A100-4",
 				Accelerator:      "A100",
 				AcceleratorCount: 4,
+				ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+					Name: "test-deployment",
+					Kind: "Deployment",
+				},
 			},
 		}
 
@@ -200,14 +204,14 @@ var _ = Describe("Metrics", func() {
 						Name: "test_predicted_ttft_seconds",
 						Help: "Test TTFT metric",
 					},
-					[]string{"model_name", "variant_name", "variant_id", "namespace", "accelerator_type"},
+					[]string{"model_name", "target_name", "namespace", "accelerator_type"},
 				)
 				predictedITL = prometheus.NewGaugeVec(
 					prometheus.GaugeOpts{
 						Name: "test_predicted_itl_seconds",
 						Help: "Test ITL metric",
 					},
-					[]string{"model_name", "variant_name", "variant_id", "namespace", "accelerator_type"},
+					[]string{"model_name", "target_name", "namespace", "accelerator_type"},
 				)
 
 				registry.MustRegister(predictedTTFT)
@@ -298,6 +302,10 @@ var _ = Describe("Metrics", func() {
 					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
 						ModelID:   "model-1",
 						VariantID: "model-1-variant-id",
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							Name: "deployment-1",
+							Kind: "Deployment",
+						},
 					},
 				}
 
@@ -310,6 +318,10 @@ var _ = Describe("Metrics", func() {
 					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
 						ModelID:   "model-2",
 						VariantID: "model-2-variant-id",
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							Name: "deployment-2",
+							Kind: "Deployment",
+						},
 					},
 				}
 
@@ -320,9 +332,9 @@ var _ = Describe("Metrics", func() {
 				Expect(err).NotTo(HaveOccurred())
 			})
 
-			It("should use Spec.VariantID not Kubernetes UID for the variant_id label", func() {
-				// Create a VA with different UID and VariantID to verify the correct one is used
-				vaWithDifferentIDs := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
+			It("should use Spec.ScaleTargetRef.Name for the target_name label", func() {
+				// Create a VA with ScaleTargetRef to verify the correct field is used
+				vaWithTargetRef := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-variant",
 						Namespace: "test-namespace",
@@ -330,14 +342,18 @@ var _ = Describe("Metrics", func() {
 					},
 					Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
 						ModelID:   "meta/llama-3.1-8b",
-						VariantID: "meta/llama-3.1-8b-A100-4", // This should be used, not UID
+						VariantID: "meta/llama-3.1-8b-A100-4",
+						ScaleTargetRef: llmdVariantAutoscalingV1alpha1.CrossVersionObjectReference{
+							Name: "my-deployment", // This should be used for target_name label
+							Kind: "Deployment",
+						},
 					},
 				}
 
-				// This should succeed and use the Spec.VariantID, not the UID
+				// This should succeed and use the ScaleTargetRef.Name for target_name label
 				err := metricsEmitter.EmitPredictionMetrics(
 					ctx,
-					vaWithDifferentIDs,
+					vaWithTargetRef,
 					"meta/llama-3.1-8b",
 					0.150,
 					0.025,
@@ -345,9 +361,8 @@ var _ = Describe("Metrics", func() {
 				)
 
 				Expect(err).NotTo(HaveOccurred())
-				// The metric should have been set with VariantID="meta/llama-3.1-8b-A100-4"
-				// not VariantID="kubernetes-generated-uid-12345"
-				// (This is verified implicitly by the implementation using va.Spec.VariantID)
+				// The metric should have been set with target_name="my-deployment"
+				// (This is verified implicitly by the implementation using va.Spec.ScaleTargetRef.Name)
 			})
 		})
 	})
@@ -356,7 +371,7 @@ var _ = Describe("Metrics", func() {
 		It("should emit replica scaling metrics without error when initialized", func() {
 			// This test just verifies the API works; actual metric validation
 			// would require a registered metrics setup
-			err := metricsEmitter.EmitReplicaScalingMetrics(ctx, testVA, "up", "high_load")
+			err := metricsEmitter.EmitReplicaScalingMetrics(ctx, testVA, "up", "high_load", testAccelerator)
 			// We expect this might fail if not initialized, which is fine for this test
 			_ = err
 		})
@@ -365,7 +380,7 @@ var _ = Describe("Metrics", func() {
 	Describe("EmitReplicaMetrics", func() {
 		It("should emit replica metrics without error when initialized", func() {
 			err := metricsEmitter.EmitReplicaMetrics(
-				ctx, testVA, 2, 4, testAccelerator, string(testVA.UID),
+				ctx, testVA, 2, 4, testAccelerator,
 			)
 			// We expect this might fail if not initialized, which is fine for this test
 			_ = err
@@ -373,7 +388,7 @@ var _ = Describe("Metrics", func() {
 
 		It("should handle zero current replicas", func() {
 			err := metricsEmitter.EmitReplicaMetrics(
-				ctx, testVA, 0, 4, testAccelerator, string(testVA.UID),
+				ctx, testVA, 0, 4, testAccelerator,
 			)
 			_ = err
 		})

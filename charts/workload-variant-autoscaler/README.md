@@ -112,5 +112,5 @@ kubectl logs pod prometheus-adapter-xxxxx -n openshift-user-workload-monitoring 
 ```
 3. Check, after a few minutes following installation, for metric collection
 ```
-kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/$NAMESPACE/inferno_desired_replicas" | jq
+kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/$NAMESPACE/wva_desired_replicas" | jq
 ```

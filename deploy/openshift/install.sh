@@ -330,15 +330,15 @@ prometheus:
 
 rules:
   external:
-  - seriesQuery: 'inferno_desired_replicas{variant_name!="",exported_namespace!=""}'
+  - seriesQuery: 'wva_desired_replicas{target_name!="",exported_namespace!=""}'
     resources:
       overrides:
         exported_namespace: {resource: "namespace"}
-        variant_name: {resource: "deployment"}  
+        target_name: {resource: "deployment"}  
     name:
-      matches: "^inferno_desired_replicas"
-      as: "inferno_desired_replicas"
-    metricsQuery: 'inferno_desired_replicas{<<.LabelMatchers>>}'
+      matches: "^wva_desired_replicas"
+      as: "wva_desired_replicas"
+    metricsQuery: 'wva_desired_replicas{<<.LabelMatchers>>}'
 
 replicas: 2
 logLevel: 4
@@ -475,7 +475,7 @@ verify_deployment() {
     # Check external metrics API
     log_info "Checking external metrics API..."
     sleep 30  # Wait for metrics to be available
-    if kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/$LLMD_NS/inferno_desired_replicas" &> /dev/null; then
+    if kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/$LLMD_NS/wva_desired_replicas" &> /dev/null; then
         log_success "External metrics API is accessible"
     else
         log_warning "External metrics API not yet available (may need more time)"
@@ -522,7 +522,7 @@ print_summary() {
     echo "   kubectl logs -n $WVA_NS deployment/workload-variant-autoscaler-controller-manager -f"
     echo ""
     echo "3. Check external metrics:"
-    echo "   kubectl get --raw \"/apis/external.metrics.k8s.io/v1beta1/namespaces/$LLMD_NS/inferno_desired_replicas\" | jq"
+    echo "   kubectl get --raw \"/apis/external.metrics.k8s.io/v1beta1/namespaces/$LLMD_NS/wva_desired_replicas\" | jq"
     echo ""
     echo "4. Run e2e tests:"
     echo "   make test-e2e-openshift"

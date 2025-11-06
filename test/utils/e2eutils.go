@@ -1195,8 +1195,8 @@ func (p *PrometheusClient) QueryPromWithLabels(ctx context.Context, query string
 	}
 }
 
-// GetInfernoReplicaMetrics queries Prometheus for metrics emitted by the Inferno autoscaler
-func GetInfernoReplicaMetrics(variantName, namespace, acceleratorType, variantID string) (currentReplicas, desiredReplicas, desiredRatio float64, err error) {
+// GetWVAReplicaMetrics queries Prometheus for metrics emitted by the WVA autoscaler
+func GetWVAReplicaMetrics(targetName, targetKind, namespace, acceleratorType string) (currentReplicas, desiredReplicas, desiredRatio float64, err error) {
 
 	client, err := NewPrometheusClient("https://localhost:9090", true)
 	if err != nil {
@@ -1206,22 +1206,22 @@ func GetInfernoReplicaMetrics(variantName, namespace, acceleratorType, variantID
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	labels := fmt.Sprintf(`variant_name="%s",exported_namespace="%s",accelerator_type="%s",variant_id="%s"`, variantName, namespace, acceleratorType, variantID)
+	labels := fmt.Sprintf(`target_name="%s",target_kind="%s",exported_namespace="%s",accelerator_type="%s"`, targetName, targetKind, namespace, acceleratorType)
 
 	// Query both metrics with retries
-	currentQuery := fmt.Sprintf(`%s{%s}`, constants.InfernoCurrentReplicas, labels)
+	currentQuery := fmt.Sprintf(`%s{%s}`, constants.WVACurrentReplicas, labels)
 	currentReplicas, err = client.QueryWithRetry(ctx, currentQuery)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to query current replicas: %w", err)
 	}
 
-	desiredQuery := fmt.Sprintf(`%s{%s}`, constants.InfernoDesiredReplicas, labels)
+	desiredQuery := fmt.Sprintf(`%s{%s}`, constants.WVADesiredReplicas, labels)
 	desiredReplicas, err = client.QueryWithRetry(ctx, desiredQuery)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to query desired replicas: %w", err)
 	}
 
-	desiredRatioQuery := fmt.Sprintf(`%s{%s}`, constants.InfernoDesiredRatio, labels)
+	desiredRatioQuery := fmt.Sprintf(`%s{%s}`, constants.WVADesiredRatio, labels)
 	desiredRatio, err = client.QueryWithRetry(ctx, desiredRatioQuery)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to query desired ratio: %w", err)

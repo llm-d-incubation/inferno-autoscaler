@@ -84,20 +84,20 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 		Expect(hpa.Spec.ScaleTargetRef.Name).To(Equal(deployment), "HPA should target the correct deployment")
 		Expect(hpa.Spec.Metrics).To(HaveLen(1), "HPA should have one metric")
 		Expect(hpa.Spec.Metrics[0].Type).To(Equal(autoscalingv2.ExternalMetricSourceType), "HPA should use external metrics")
-		Expect(hpa.Spec.Metrics[0].External.Metric.Name).To(Equal(constants.InfernoDesiredReplicas), "HPA should use inferno_desired_replicas metric")
+		Expect(hpa.Spec.Metrics[0].External.Metric.Name).To(Equal(constants.WVADesiredReplicas), "HPA should use wva_desired_replicas metric")
 	})
 
 	It("should verify external metrics API is accessible", func() {
-		By("querying external metrics API for inferno_desired_replicas")
+		By("querying external metrics API for wva_desired_replicas")
 		Eventually(func(g Gomega) {
 			// Use raw API client to query external metrics
 			result, err := k8sClient.RESTClient().
 				Get().
-				AbsPath("/apis/external.metrics.k8s.io/v1beta1/namespaces/" + llmDNamespace + "/" + constants.InfernoDesiredReplicas).
+				AbsPath("/apis/external.metrics.k8s.io/v1beta1/namespaces/" + llmDNamespace + "/" + constants.WVADesiredReplicas).
 				DoRaw(ctx)
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to query external metrics API")
-			g.Expect(string(result)).To(ContainSubstring(constants.InfernoDesiredReplicas), "Metric should be available")
-			g.Expect(string(result)).To(ContainSubstring(deployment), "Metric should be for the correct variant")
+			g.Expect(string(result)).To(ContainSubstring(constants.WVADesiredReplicas), "Metric should be available")
+			g.Expect(string(result)).To(ContainSubstring(deployment), "Metric should be for the correct deployment")
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 	})
 
@@ -175,7 +175,7 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 			// The HPA should show a target value > 1 (indicating scale-up needed)
 			if !lowLoad {
 				for _, metric := range hpa.Status.CurrentMetrics {
-					if metric.External != nil && metric.External.Metric.Name == constants.InfernoDesiredReplicas {
+					if metric.External != nil && metric.External.Metric.Name == constants.WVADesiredReplicas {
 						currentValue := metric.External.Current.AverageValue
 						g.Expect(currentValue).NotTo(BeNil(), "Current metric value should not be nil")
 

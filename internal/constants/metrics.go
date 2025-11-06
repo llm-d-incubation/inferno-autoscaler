@@ -42,33 +42,33 @@ const (
 	VLLMTimePerOutputTokenSecondsCount = "vllm:time_per_output_token_seconds_count"
 )
 
-// Inferno Output Metrics
-// These metric names are used to emit Inferno autoscaler metrics to Prometheus.
+// WVA Output Metrics
+// These metric names are used to emit WVA (Workload Variant Autoscaler) metrics to Prometheus.
 // The metrics expose scaling decisions and current state for monitoring and alerting.
 const (
-	// InfernoReplicaScalingTotal is a counter that tracks the total number of scaling operations.
-	// Labels: variant_name, namespace, direction (up/down), reason, accelerator_type
-	InfernoReplicaScalingTotal = "inferno_replica_scaling_total"
+	// WVAReplicaScalingTotal is a counter that tracks the total number of scaling operations.
+	// Labels: target_name, target_kind, namespace, direction (up/down), reason, accelerator_type
+	WVAReplicaScalingTotal = "wva_replica_scaling_total"
 
-	// InfernoDesiredReplicas is a gauge that tracks the desired number of replicas.
-	// Labels: variant_name, namespace, accelerator_type
-	InfernoDesiredReplicas = "inferno_desired_replicas"
+	// WVADesiredReplicas is a gauge that tracks the desired number of replicas.
+	// Labels: target_name, target_kind, namespace, accelerator_type
+	WVADesiredReplicas = "wva_desired_replicas"
 
-	// InfernoCurrentReplicas is a gauge that tracks the current number of replicas.
-	// Labels: variant_name, namespace, accelerator_type
-	InfernoCurrentReplicas = "inferno_current_replicas"
+	// WVACurrentReplicas is a gauge that tracks the current number of replicas.
+	// Labels: target_name, target_kind, namespace, accelerator_type
+	WVACurrentReplicas = "wva_current_replicas"
 
-	// InfernoDesiredRatio is a gauge that tracks the ratio of desired to current replicas.
-	// Labels: variant_name, namespace, accelerator_type
-	InfernoDesiredRatio = "inferno_desired_ratio"
+	// WVADesiredRatio is a gauge that tracks the ratio of desired to current replicas.
+	// Labels: target_name, target_kind, namespace, accelerator_type
+	WVADesiredRatio = "wva_desired_ratio"
 
-	// InfernoPredictedTTFT is a gauge that tracks the predicted Time To First Token from ModelAnalyzer.
-	// Labels: model_name, variant_name, variant_id, namespace, accelerator_type
-	InfernoPredictedTTFT = "inferno_predicted_ttft_seconds"
+	// WVAPredictedTTFT is a gauge that tracks the predicted Time To First Token from ModelAnalyzer.
+	// Labels: model_name, target_name, namespace, accelerator_type
+	WVAPredictedTTFT = "wva_predicted_ttft_seconds"
 
-	// InfernoPredictedITL is a gauge that tracks the predicted Inter-Token Latency from ModelAnalyzer.
-	// Labels: model_name, variant_name, variant_id, namespace, accelerator_type
-	InfernoPredictedITL = "inferno_predicted_itl_seconds"
+	// WVAPredictedITL is a gauge that tracks the predicted Inter-Token Latency from ModelAnalyzer.
+	// Labels: model_name, target_name, namespace, accelerator_type
+	WVAPredictedITL = "wva_predicted_itl_seconds"
 )
 
 // Metric Label Names
@@ -76,8 +76,8 @@ const (
 const (
 	LabelModelName       = "model_name"
 	LabelNamespace       = "namespace"
-	LabelVariantName     = "variant_name"
-	LabelVariantID       = "variant_id"
+	LabelTargetName      = "target_name" // Name of the scale target (e.g., deployment name)
+	LabelTargetKind      = "target_kind" // Kind of the scale target (e.g., "Deployment")
 	LabelDirection       = "direction"
 	LabelReason          = "reason"
 	LabelAcceleratorType = "accelerator_type"

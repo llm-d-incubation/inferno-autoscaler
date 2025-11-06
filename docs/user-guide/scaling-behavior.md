@@ -368,11 +368,11 @@ Key fields to monitor:
 The controller exports Prometheus metrics for observability:
 
 ```promql
-# View desired replica counts with reasons
-va_desired_optimized_replicas{variant_name="llama-3-1-8b-a100-4"}
+# View desired replica counts
+wva_desired_replicas{target_name="llama-3-1-8b-deployment",target_kind="Deployment"}
 
-# Track when allocations change
-rate(va_allocation_changes_total[5m])
+# Track scaling operations
+rate(wva_replica_scaling_total[5m])
 ```
 
 ## Troubleshooting

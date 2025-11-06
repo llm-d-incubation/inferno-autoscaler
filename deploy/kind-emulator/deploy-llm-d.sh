@@ -300,8 +300,18 @@ get_llm_d_latest() {
 
 create_namespaces() {
     log_info "Creating namespaces..."
-    
-    for ns in $WVA_NS $MONITORING_NAMESPACE $LLMD_NS; do
+
+    # Build list of namespaces to create
+    local namespaces="$WVA_NS $LLMD_NS"
+
+    # Only create monitoring namespace if we're deploying Prometheus
+    if [ "$DEPLOY_PROMETHEUS" = "true" ]; then
+        namespaces="$namespaces $MONITORING_NAMESPACE"
+    else
+        log_info "Skipping monitoring namespace creation (DEPLOY_PROMETHEUS=false, assuming it already exists)"
+    fi
+
+    for ns in $namespaces; do
         if kubectl get namespace $ns &> /dev/null; then
             log_warning "Namespace $ns already exists"
         else
@@ -361,18 +371,24 @@ deploy_prometheus_stack() {
 deploy_wva_controller() {
     log_info "Deploying Workload-Variant-Autoscaler..."
     log_info "Using image: $WVA_IMAGE_REPO:$WVA_IMAGE_TAG"
-    
-    # Extract Prometheus CA certificate
-    log_info "Extracting Prometheus TLS certificate"
-    kubectl get secret $PROMETHEUS_SECRET_NAME -n $MONITORING_NAMESPACE -o jsonpath='{.data.tls\.crt}' | base64 -d > $PROM_CA_CERT_PATH
-    
+
+    # Extract Prometheus CA certificate only if we deployed Prometheus with TLS
+    local helm_ca_cert_arg=""
+    if [ "$DEPLOY_PROMETHEUS" = "true" ]; then
+        log_info "Extracting Prometheus TLS certificate"
+        kubectl get secret $PROMETHEUS_SECRET_NAME -n $MONITORING_NAMESPACE -o jsonpath='{.data.tls\.crt}' | base64 -d > $PROM_CA_CERT_PATH
+        helm_ca_cert_arg="--set-file wva.prometheus.caCert=$PROM_CA_CERT_PATH"
+    else
+        log_info "Skipping Prometheus TLS certificate extraction (DEPLOY_PROMETHEUS=false, assuming HTTP connection)"
+    fi
+
     # Deploy WVA using Helm chart
     log_info "Installing Workload-Variant-Autoscaler via Helm chart"
     cd "$WVA_PROJECT/charts"
-    
+
     helm upgrade -i workload-variant-autoscaler ./workload-variant-autoscaler \
         -n $WVA_NS \
-        --set-file wva.prometheus.caCert=$PROM_CA_CERT_PATH \
+        $helm_ca_cert_arg \
         --set wva.image.repository=$WVA_IMAGE_REPO \
         --set wva.image.tag=$WVA_IMAGE_TAG \
         --set wva.imagePullPolicy=$WVA_IMAGE_PULL_POLICY \
@@ -558,7 +574,7 @@ spec:
       containers:
       - name: $VLLM_EMULATOR_NAME
         image: quay.io/infernoautoscaler/vllme:0.2.3-multi-arch
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         env: 
         - name: MODEL_NAME
           value: "$MODEL_ID"
@@ -668,15 +684,15 @@ prometheus:
 
 rules:
   external:
-  - seriesQuery: 'inferno_desired_replicas{variant_name!="",exported_namespace!=""}'
+  - seriesQuery: 'wva_desired_replicas{target_name!="",exported_namespace!=""}'
     resources:
       overrides:
         exported_namespace: {resource: "namespace"}
-        variant_name: {resource: "deployment"}  
+        target_name: {resource: "deployment"}
     name:
-      matches: "^inferno_desired_replicas"
-      as: "inferno_desired_replicas"
-    metricsQuery: 'inferno_desired_replicas{<<.LabelMatchers>>}'
+      matches: "^wva_desired_replicas"
+      as: "wva_desired_replicas"
+    metricsQuery: 'wva_desired_replicas{<<.LabelMatchers>>}'
 
 replicas: 2
 logLevel: 4
@@ -834,7 +850,7 @@ print_summary() {
     echo "   kubectl logs -n $WVA_NS -l app.kubernetes.io/name=workload-variant-autoscaler -f"
     echo ""
     echo "4. Check external metrics API:"
-    echo "   kubectl get --raw \"/apis/external.metrics.k8s.io/v1beta1/namespaces/$LLMD_NS/inferno_desired_replicas\" | jq"
+    echo "   kubectl get --raw \"/apis/external.metrics.k8s.io/v1beta1/namespaces/$LLMD_NS/wva_desired_replicas\" | jq"
     echo ""
     echo "5. Port-forward Prometheus to view metrics:"
     echo "   kubectl port-forward -n $MONITORING_NAMESPACE svc/kube-prometheus-stack-prometheus 9090:9090"

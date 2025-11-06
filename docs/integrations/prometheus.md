@@ -4,7 +4,9 @@ The WVA exposes a focused set of custom metrics that provide insights into the a
 
 ## Metrics Overview
 
-All custom metrics are prefixed with `inferno_` and include labels for `variant_name`, `namespace`, and other relevant dimensions to enable detailed analysis and filtering.
+All custom metrics are prefixed with `wva_` and include labels for `target_name`, `namespace`, and other relevant dimensions to enable detailed analysis and filtering.
+
+**Important**: The `target_name` label contains the **deployment name** from the VariantAutoscaling's `scaleTargetRef.Name` field, **not** the VariantAutoscaling resource name. This is required for HPA integration via Prometheus Adapter. See [Metrics Labeling Architecture](../architecture/metrics-labeling.md) for details.
 
 ## Optimization Metrics
 
@@ -12,41 +14,46 @@ All custom metrics are prefixed with `inferno_` and include labels for `variant_
 
 ## Replica Management Metrics
 
-### `inferno_current_replicas`
+### `wva_current_replicas`
 - **Type**: Gauge
-- **Description**: Current number of replicas for each variant
+- **Description**: Current number of replicas for each scale target
 - **Labels**:
-  - `variant_name`: Name of the variant
+  - `target_name`: Deployment name from `scaleTargetRef.Name`
+  - `target_kind`: Resource kind from `scaleTargetRef.Kind` (e.g., "Deployment")
   - `namespace`: Kubernetes namespace
   - `accelerator_type`: Type of accelerator being used
-- **Use Case**: Monitor current number of replicas per variant
+- **Use Case**: Monitor current number of replicas per scale target
 
-### `inferno_desired_replicas`
+### `wva_desired_replicas`
 - **Type**: Gauge
-- **Description**: Desired number of replicas for each variant
+- **Description**: Desired number of replicas for each scale target (used by HPA for external metrics)
 - **Labels**:
-  - `variant_name`: Name of the variant
+  - `target_name`: Deployment name from `scaleTargetRef.Name`
+  - `target_kind`: Resource kind from `scaleTargetRef.Kind` (e.g., "Deployment")
   - `namespace`: Kubernetes namespace
   - `accelerator_type`: Type of accelerator being used
-- **Use Case**: Expose the desired optimized number of replicas per variant
+- **Use Case**: Expose the desired optimized number of replicas per scale target; consumed by HPA via Prometheus Adapter
 
-### `inferno_desired_ratio`
+### `wva_desired_ratio`
 - **Type**: Gauge
-- **Description**: Ratio of the desired number of replicas and the current number of replicas for each variant
+- **Description**: Ratio of the desired number of replicas and the current number of replicas for each scale target
 - **Labels**:
-  - `variant_name`: Name of the variant
+  - `target_name`: Deployment name from `scaleTargetRef.Name`
+  - `target_kind`: Resource kind from `scaleTargetRef.Kind` (e.g., "Deployment")
   - `namespace`: Kubernetes namespace
   - `accelerator_type`: Type of accelerator being used
-- **Use Case**: Compare the desired and current number of replicas per variant, for scaling purposes
+- **Use Case**: Compare the desired and current number of replicas per scale target, for scaling purposes
 
-### `inferno_replica_scaling_total`
+### `wva_replica_scaling_total`
 - **Type**: Counter
 - **Description**: Total number of replica scaling operations
 - **Labels**:
-  - `variant_name`: Name of the variant
+  - `target_name`: Deployment name from `scaleTargetRef.Name`
+  - `target_kind`: Resource kind from `scaleTargetRef.Kind` (e.g., "Deployment")
   - `namespace`: Kubernetes namespace
   - `direction`: Direction of scaling (up, down)
   - `reason`: Reason for scaling
+  - `accelerator_type`: Type of accelerator being used
 - **Use Case**: Track scaling frequency and reasons
 
 ## Configuration
@@ -79,23 +86,23 @@ spec:
 ### Basic Queries
 ```promql
 # Current replicas by variant
-inferno_current_replicas
+wva_current_replicas
 
 # Scaling frequency
-rate(inferno_replica_scaling_total[5m])
+rate(wva_replica_scaling_total[5m])
 
 # Desired replicas by variant
-inferno_desired_replicas
+wva_desired_replicas
 ```
 
 ### Advanced Queries
 ```promql
 # Scaling frequency by direction
-rate(inferno_replica_scaling_total{direction="scale_up"}[5m])
+rate(wva_replica_scaling_total{direction="scale_up"}[5m])
 
 # Replica count mismatch
-abs(inferno_desired_replicas - inferno_current_replicas)
+abs(wva_desired_replicas - wva_current_replicas)
 
 # Scaling frequency by reason
-rate(inferno_replica_scaling_total[5m]) by (reason)
+rate(wva_replica_scaling_total[5m]) by (reason)
 ```

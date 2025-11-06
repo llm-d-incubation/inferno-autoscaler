@@ -6,7 +6,7 @@ This document describes how to integrate the Kubernetes Event-driven Autoscaler 
 
 After deploying the Workload-Variant-Autoscaler following the provided guides, this guide allows the integration of the following components:
 
-1. **WVA Controller**: processes VariantAutoscaling objects and emits the `inferno_current_replicas`, the `inferno_desired_replicas` and the `inferno_desired_ratio` metrics
+1. **WVA Controller**: processes VariantAutoscaling objects and emits the `wva_current_replicas`, the `wva_desired_replicas` and the `wva_desired_ratio` metrics
 
 2. **Prometheus**: scrapes these metrics from the Workload-Variant-Autoscaler `/metrics` endpoint using TLS
 
@@ -14,7 +14,7 @@ After deploying the Workload-Variant-Autoscaler following the provided guides, t
 
 - Deploys a `ScaledObject` and configures the underlying HPA for the Deployment.
 
-- Reads the values for the `inferno_desired_replicas` metrics and adjusts Deployment replicas accordingly, using an `AverageValue` target.
+- Reads the values for the `wva_desired_replicas` metrics and adjusts Deployment replicas accordingly, using an `AverageValue` target.
 
 - Natively supports scale to zero.
 
@@ -127,7 +127,7 @@ kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-sim/s0
 }
 ```
 
-**Note**: KEDA creates its own external metric names based on the trigger configuration. The original Prometheus metric `inferno_desired_replicas` is therefore used to emit  the `s0-prometheus` metric in KEDA's external metrics API, where:
+**Note**: KEDA creates its own external metric names based on the trigger configuration. The original Prometheus metric `wva_desired_replicas` is therefore used to emit  the `s0-prometheus` metric in KEDA's external metrics API, where:
 
 - `s0` = Scaler index (first scaler = 0)
 - `prometheus` = Scaler type
@@ -148,7 +148,7 @@ kubectl get events -n llm-d-sim --field-selector type=Normal -w
 37m         Normal   KEDAScalersStarted           scaledobject/vllme-deployment-scaler                      Started scalers watch
 37m         Normal   ScaledObjectReady            scaledobject/vllme-deployment-scaler                      ScaledObject is ready for scaling
 36m         Normal   KEDAScaleTargetDeactivated   scaledobject/vllme-deployment-scaler                      Deactivated apps/v1.Deployment llm-d-sim/vllme-deployment from 1 to 0
-3m37s       Normal   KEDAScaleTargetActivated     scaledobject/vllme-deployment-scaler                      Scaled apps/v1.Deployment llm-d-sim/vllme-deployment from 0 to 1, triggered by inferno-desired-replicas
+3m37s       Normal   KEDAScaleTargetActivated     scaledobject/vllme-deployment-scaler                      Scaled apps/v1.Deployment llm-d-sim/vllme-deployment from 0 to 1, triggered by wva-desired-replicas
 3m37s       Normal   ScalingReplicaSet            deployment/vllme-deployment                               Scaled up replica set vllme-deployment-64f7cd79f5 from 0 to 1
 ```
 
@@ -165,7 +165,7 @@ kubectl get events -n llm-d-sim | grep -i keda
 38m         Normal    KEDAScalersStarted           scaledobject/vllme-deployment-scaler                      Scaler prometheus is built
 38m         Normal    KEDAScalersStarted           scaledobject/vllme-deployment-scaler                      Started scalers watch
 38m         Normal    KEDAScaleTargetDeactivated   scaledobject/vllme-deployment-scaler                      Deactivated apps/v1.Deployment llm-d-sim/vllme-deployment from 1 to 0
-4m55s       Normal    KEDAScaleTargetActivated     scaledobject/vllme-deployment-scaler                      Scaled apps/v1.Deployment llm-d-sim/vllme-deployment from 0 to 1, triggered by inferno-desired-replicas
+4m55s       Normal    KEDAScaleTargetActivated     scaledobject/vllme-deployment-scaler                      Scaled apps/v1.Deployment llm-d-sim/vllme-deployment from 0 to 1, triggered by wva-desired-replicas
 ```
 
 ## Example: scale-up scenario
@@ -289,25 +289,25 @@ spec:
             value: 5                          # Scale up by max 5 pods at a time
             periodSeconds: 15
 
-  # Prometheus trigger using inferno metrics
+  # Prometheus trigger using WVA metrics
   triggers:
   - type: prometheus
-    name: inferno-desired-replicas
+    name: wva-desired-replicas
     metadata:
       # Prometheus server address
       serverAddress: https://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local:9090
-      
-      # Use inferno_desired_replicas as the scaling metric
+
+      # Use wva_desired_replicas as the scaling metric
       # IMPORTANT: Query must include all 4 labels that the controller emits
       query: |
-        inferno_desired_replicas{
-          variant_name="vllme-deployment",
+        wva_desired_replicas{
+          target_name="vllme-deployment",
+          target_kind="Deployment",
           exported_namespace="llm-d-sim",
-          accelerator_type="A100",
-          variant_id="default/default-A100-1"
+          accelerator_type="A100"
         }
 
-      # Scaling configuration for inferno_desired_replicas metric (integer values)
+      # Scaling configuration for wva_desired_replicas metric (integer values)
       threshold: '1'                       
       activationThreshold: '0'             # Activation: scale out from 0 when the metric is above 0
       metricType: "AverageValue"           

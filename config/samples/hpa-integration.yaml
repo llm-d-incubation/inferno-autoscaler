@@ -8,7 +8,8 @@
 #   - VariantAutoscaling resource: any name (e.g., "llama-8b-a100")
 #   - scaleTargetRef.name: "vllme-deployment"
 #   - HPA scaleTargetRef.name: "vllme-deployment" (must match!)
-#   - Metric label variant_name: matches VariantAutoscaling resource name
+#   - Metric label target_name: matches the deployment name from scaleTargetRef
+#   - Metric label target_kind: matches the resource kind ("Deployment")
 
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -39,10 +40,11 @@ spec:
   - type: External
     external:
       metric:
-        name: inferno_desired_replicas
+        name: wva_desired_replicas
         selector:
           matchLabels:
-            variant_name: vllme-deployment
+            target_name: vllme-deployment
+            target_kind: Deployment
       target:
         type: AverageValue
         averageValue: "1"
