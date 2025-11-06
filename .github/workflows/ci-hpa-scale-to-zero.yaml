@@ -106,12 +106,12 @@ jobs:
             --namespace workload-variant-autoscaler-monitoring \
             --set prometheus.url=https://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local \
             --set prometheus.port=9090 \
-            --set rules.external[0].seriesQuery='inferno_desired_replicas{variant_name!="",exported_namespace!=""}' \
+            --set rules.external[0].seriesQuery='wva_desired_replicas{target_name!="",exported_namespace!=""}' \
             --set rules.external[0].resources.overrides.exported_namespace.resource=namespace \
-            --set rules.external[0].resources.overrides.variant_name.resource=deployment \
-            --set rules.external[0].name.matches='^inferno_desired_replicas' \
-            --set rules.external[0].name.as='inferno_desired_replicas' \
-            --set rules.external[0].metricsQuery='inferno_desired_replicas{<<.LabelMatchers>>}' \
+            --set rules.external[0].resources.overrides.target_name.resource=deployment \
+            --set rules.external[0].name.matches='^wva_desired_replicas' \
+            --set rules.external[0].name.as='wva_desired_replicas' \
+            --set rules.external[0].metricsQuery='wva_desired_replicas{<<.LabelMatchers>>}' \
             --set replicas=2 \
             --set logLevel=4 \
             --set tls.enable=false \
