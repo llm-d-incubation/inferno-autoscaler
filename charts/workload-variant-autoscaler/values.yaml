@@ -21,6 +21,7 @@ wva:
   prometheus:
     monitoringNamespace: openshift-user-workload-monitoring
     baseURL: "https://thanos-querier.openshift-monitoring.svc.cluster.local:9091"
+    # releaseLabel: kube-prometheus-stack  # Required for KIND/Kubernetes, not needed for OpenShift
     caCert: |
       -----BEGIN CERTIFICATE-----
       placeholder...

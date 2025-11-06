@@ -36,10 +36,13 @@ var (
 	// Optional Environment Variables:
 	// - CERT_MANAGER_INSTALL_SKIP=true: Skips CertManager installation during test setup.
 	// - KEDA_INSTALL_SKIP=true: Skips KEDA installation during test setup.
+	// - SKIP_KIND_DEPLOY=true: Skips KIND cluster creation and deployment. Useful when running
+	//   in CI/CD where the cluster is already created and controller is already deployed.
 	// These variables are useful if CertManager/KEDA is already installed, avoiding
 	// re-installation and conflicts.
 	skipCertManagerInstall = os.Getenv("CERT_MANAGER_INSTALL_SKIP") == "true"
 	skipKEDAInstall        = os.Getenv("KEDA_INSTALL_SKIP") == "true"
+	skipKindDeploy         = os.Getenv("SKIP_KIND_DEPLOY") == "true"
 	// isCertManagerAlreadyInstalled will be set true when CertManager CRDs be found on the cluster
 	isCertManagerAlreadyInstalled = false
 	// isKEDAAlreadyInstalled will be set true when KEDA CRDs be found on the cluster
@@ -69,18 +72,23 @@ func TestE2E(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	By("building the manager(Operator) image")
-	cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectImage))
-	_, err := utils.Run(cmd)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager(Operator) image")
+	if !skipKindDeploy {
+		By("building the manager(Operator) image")
+		cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectImage))
+		_, err := utils.Run(cmd)
+		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager(Operator) image")
 
-	By("exporting environment variables for deployment")
-	utils.SetupTestEnvironment(projectImage, numNodes, maximumAvailableGPUs, gpuTypes)
+		By("exporting environment variables for deployment")
+		utils.SetupTestEnvironment(projectImage, numNodes, maximumAvailableGPUs, gpuTypes)
 
-	// Deploy llm-d and workload-variant-autoscaler on the Kind cluster
-	launchCmd := exec.Command("make", "deploy-llm-d-wva-emulated-on-kind", fmt.Sprintf("IMG=%s", projectImage))
-	_, err = utils.Run(launchCmd)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to install llm-d and workload-variant-autoscaler")
+		// Deploy llm-d and workload-variant-autoscaler on the Kind cluster
+		launchCmd := exec.Command("make", "deploy-llm-d-wva-emulated-on-kind", fmt.Sprintf("IMG=%s", projectImage))
+		_, err = utils.Run(launchCmd)
+		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to install llm-d and workload-variant-autoscaler")
+	} else {
+		_, _ = fmt.Fprintf(GinkgoWriter, "SKIP_KIND_DEPLOY=true: Skipping KIND cluster creation and deployment\n")
+		_, _ = fmt.Fprintf(GinkgoWriter, "Assuming cluster is already running with controller deployed\n")
+	}
 	initializeK8sClient()
 
 	// Waiting for the workload-variant-autoscaler pods to be ready and for leader election
@@ -108,6 +116,38 @@ var _ = BeforeSuite(func() {
 			g.Expect(*lease.Spec.HolderIdentity).To(ContainSubstring("controller-manager"), "Lease holderIdentity is not correct")
 		}
 	}, 2*time.Minute, 1*time.Second).Should(Succeed())
+
+	// Restart Prometheus Adapter to ensure it discovers the new wva_* metrics
+	// Prometheus Adapter caches metric discovery at startup, so it needs to be restarted
+	// after the controller starts emitting metrics
+	By("restarting Prometheus Adapter to discover new metrics")
+	_, _ = fmt.Fprintf(GinkgoWriter, "Restarting Prometheus Adapter pods to refresh metric discovery...\n")
+	adapterPods, err := k8sClient.CoreV1().Pods("workload-variant-autoscaler-monitoring").List(
+		context.Background(),
+		metav1.ListOptions{LabelSelector: "app.kubernetes.io/name=prometheus-adapter"},
+	)
+	if err == nil && len(adapterPods.Items) > 0 {
+		for _, pod := range adapterPods.Items {
+			_ = k8sClient.CoreV1().Pods(pod.Namespace).Delete(context.Background(), pod.Name, metav1.DeleteOptions{})
+		}
+		// Wait for new pods to be ready
+		Eventually(func(g Gomega) {
+			pods, err := k8sClient.CoreV1().Pods("workload-variant-autoscaler-monitoring").List(
+				context.Background(),
+				metav1.ListOptions{LabelSelector: "app.kubernetes.io/name=prometheus-adapter"},
+			)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(len(pods.Items)).To(BeNumerically(">", 0), "At least one Prometheus Adapter pod should exist")
+			for _, pod := range pods.Items {
+				g.Expect(pod.Status.Phase).To(Equal(corev1.PodRunning), fmt.Sprintf("Pod %s should be running", pod.Name))
+				g.Expect(len(pod.Status.ContainerStatuses)).To(BeNumerically(">", 0), "Pod should have containers")
+				g.Expect(pod.Status.ContainerStatuses[0].Ready).To(BeTrue(), fmt.Sprintf("Pod %s should be ready", pod.Name))
+			}
+		}, 2*time.Minute, 5*time.Second).Should(Succeed())
+		_, _ = fmt.Fprintf(GinkgoWriter, "✓ Prometheus Adapter restarted and ready\n")
+	} else {
+		_, _ = fmt.Fprintf(GinkgoWriter, "⚠ Prometheus Adapter not found, skipping restart\n")
+	}
 
 	// Set MinimumReplicas to 0 if WVA_SCALE_TO_ZERO is true in the ConfigMap
 	cm, err := k8sClient.CoreV1().ConfigMaps(controllerNamespace).Get(context.Background(), "workload-variant-autoscaler-variantautoscaling-config", metav1.GetOptions{})
@@ -159,8 +199,12 @@ var _ = AfterSuite(func() {
 		utils.UninstallCertManager()
 	}
 
-	// Destroy the Kind cluster
-	cmd := exec.Command("bash", "deploy/kind-emulator/teardown.sh")
-	_, err := utils.Run(cmd)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to destroy Kind cluster")
+	// Destroy the Kind cluster only if we created it
+	if !skipKindDeploy {
+		cmd := exec.Command("bash", "deploy/kind-emulator/teardown.sh")
+		_, err := utils.Run(cmd)
+		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to destroy Kind cluster")
+	} else {
+		_, _ = fmt.Fprintf(GinkgoWriter, "SKIP_KIND_DEPLOY=true: Skipping KIND cluster deletion (managed by CI/CD)\n")
+	}
 })

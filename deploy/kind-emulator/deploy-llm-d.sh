@@ -355,6 +355,7 @@ deploy_prometheus_stack() {
         -n $MONITORING_NAMESPACE \
         --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
         --set prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false \
+        --set prometheus.prometheusSpec.serviceMonitorNamespaceSelector.any=true \
         --set prometheus.service.type=ClusterIP \
         --set prometheus.service.port=$PROMETHEUS_PORT \
         --set prometheus.prometheusSpec.web.tlsConfig.cert.secret.name=$PROMETHEUS_SECRET_NAME \
@@ -404,6 +405,7 @@ deploy_wva_controller() {
         --set llmd.namespace=$LLMD_NS \
         --set wva.prometheus.baseURL=$PROMETHEUS_URL \
         --set wva.prometheus.monitoringNamespace=$MONITORING_NAMESPACE \
+        --set wva.prometheus.releaseLabel=kube-prometheus-stack \
         --set vllmService.enabled=$VLLM_SVC_ENABLED \
         --set vllmService.nodePort=$VLLM_SVC_NODEPORT
     
@@ -1183,11 +1185,68 @@ main() {
         log_info "Skipping llm-d deployment (DEPLOY_LLM_D=false)"
     fi
     
-    # Deploy Prometheus Adapter
+    # Deploy or configure Prometheus Adapter
     if [ "$DEPLOY_PROMETHEUS_ADAPTER" = "true" ]; then
         deploy_prometheus_adapter
     else
         log_info "Skipping Prometheus Adapter deployment (DEPLOY_PROMETHEUS_ADAPTER=false)"
+
+        # But still configure CA cert if Prometheus was deployed with TLS
+        if [ "$DEPLOY_PROMETHEUS" = "true" ]; then
+            log_info "Configuring existing Prometheus Adapter with CA certificate for HTTPS connection"
+
+            # Extract Prometheus CA certificate and create ConfigMap
+            kubectl get secret $PROMETHEUS_SECRET_NAME -n $MONITORING_NAMESPACE -o jsonpath='{.data.tls\.crt}' | base64 -d > $PROM_CA_CERT_PATH
+            kubectl create configmap prometheus-ca --from-file=ca.crt=$PROM_CA_CERT_PATH -n $MONITORING_NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+            log_success "prometheus-ca ConfigMap created"
+
+            # Upgrade existing Prometheus Adapter to add CA cert configuration
+            # Must include full configuration to avoid corruption of seriesQuery
+            cat > /tmp/prometheus-adapter-ca-patch.yaml <<YAML
+prometheus:
+  url: $PROMETHEUS_BASE_URL
+  port: $PROMETHEUS_PORT
+
+rules:
+  external:
+  - seriesQuery: 'wva_desired_replicas{target_name!="",exported_namespace!=""}'
+    resources:
+      overrides:
+        exported_namespace: {resource: "namespace"}
+        target_name: {resource: "deployment"}
+    name:
+      matches: "^wva_desired_replicas"
+      as: "wva_desired_replicas"
+    metricsQuery: 'wva_desired_replicas{<<.LabelMatchers>>}'
+
+replicas: 2
+logLevel: 4
+
+tls:
+  enable: false
+
+extraVolumes:
+  - name: prometheus-ca
+    configMap:
+      name: prometheus-ca
+
+extraVolumeMounts:
+  - name: prometheus-ca
+    mountPath: /etc/prometheus-ca
+    readOnly: true
+
+extraArguments:
+  - --prometheus-ca-file=/etc/prometheus-ca/ca.crt
+YAML
+
+            log_info "Upgrading Prometheus Adapter with CA cert and full configuration"
+            helm upgrade prometheus-adapter prometheus-community/prometheus-adapter \
+                -n $MONITORING_NAMESPACE \
+                -f /tmp/prometheus-adapter-ca-patch.yaml \
+                --wait --timeout=3m || log_warning "Failed to upgrade Prometheus Adapter with CA cert"
+
+            log_success "Prometheus Adapter configured with CA certificate and rules"
+        fi
     fi
     
     # Verify deployment

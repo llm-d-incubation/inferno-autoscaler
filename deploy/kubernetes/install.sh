@@ -310,6 +310,7 @@ deploy_prometheus_stack() {
         -n $MONITORING_NAMESPACE \
         --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
         --set prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false \
+        --set prometheus.prometheusSpec.serviceMonitorNamespaceSelector.any=true \
         --set prometheus.service.type=ClusterIP \
         --set prometheus.service.port=$PROMETHEUS_PORT \
         --set prometheus.prometheusSpec.web.tlsConfig.cert.secret.name=$PROMETHEUS_SECRET_NAME \
@@ -352,6 +353,7 @@ deploy_wva_controller() {
         --set llmd.namespace=$LLMD_NS \
         --set wva.prometheus.baseURL=$PROMETHEUS_URL \
         --set wva.prometheus.monitoringNamespace=$MONITORING_NAMESPACE \
+        --set wva.prometheus.releaseLabel=kube-prometheus-stack \
         --set vllmService.enabled=$VLLM_SVC_ENABLED \
         --set vllmService.nodePort=$VLLM_SVC_NODEPORT
     
