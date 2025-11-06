@@ -151,6 +151,100 @@ jobs:
           echo "✓ Controller deployment initiated"
           kubectl get pods -n workload-variant-autoscaler-system
 
+      - name: Restart Prometheus Adapter to connect to Prometheus
+        run: |
+          echo "Restarting Prometheus Adapter pods to establish connection to Prometheus..."
+          echo "Note: Prometheus Adapter was installed before Prometheus existed."
+          echo "      Now that Prometheus is deployed with TLS, we need to restart Prometheus Adapter"
+          echo "      so it can connect to Prometheus and discover metrics."
+          echo ""
+
+          # Delete existing Prometheus Adapter pods to force restart
+          echo "Deleting existing Prometheus Adapter pods..."
+          kubectl delete pods -n workload-variant-autoscaler-monitoring \
+            -l app.kubernetes.io/name=prometheus-adapter || {
+              echo "Warning: Failed to delete pods with app.kubernetes.io/name label, trying alternative..."
+              kubectl delete pods -n workload-variant-autoscaler-monitoring \
+                -l app=prometheus-adapter || true
+            }
+
+          # Wait for new pods to be created and ready
+          echo "Waiting for new Prometheus Adapter pods to be ready..."
+          RETRY_COUNT=0
+          MAX_RETRIES=24  # 2 minutes with 5 second intervals
+
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            echo "Checking Prometheus Adapter pods (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)..."
+
+            # Try primary label selector
+            RUNNING_PODS=$(kubectl get pods -n workload-variant-autoscaler-monitoring \
+              -l app.kubernetes.io/name=prometheus-adapter \
+              --field-selector=status.phase=Running \
+              --no-headers 2>/dev/null | wc -l)
+
+            if [ "$RUNNING_PODS" -eq "0" ]; then
+              # Try alternative label selector
+              RUNNING_PODS=$(kubectl get pods -n workload-variant-autoscaler-monitoring \
+                -l app=prometheus-adapter \
+                --field-selector=status.phase=Running \
+                --no-headers 2>/dev/null | wc -l)
+            fi
+
+            if [ "$RUNNING_PODS" -gt "0" ]; then
+              echo "Found $RUNNING_PODS running Prometheus Adapter pod(s)"
+
+              # Verify all pods are actually ready (containers ready)
+              ALL_READY=true
+              PODS=$(kubectl get pods -n workload-variant-autoscaler-monitoring \
+                -l app.kubernetes.io/name=prometheus-adapter \
+                -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+
+              if [ -z "$PODS" ]; then
+                PODS=$(kubectl get pods -n workload-variant-autoscaler-monitoring \
+                  -l app=prometheus-adapter \
+                  -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+              fi
+
+              for pod in $PODS; do
+                READY=$(kubectl get pod $pod -n workload-variant-autoscaler-monitoring \
+                  -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null)
+                if [ "$READY" != "true" ]; then
+                  ALL_READY=false
+                  echo "Pod $pod is not ready yet (ready=$READY)"
+                  break
+                fi
+              done
+
+              if [ "$ALL_READY" = true ]; then
+                echo "✓ All Prometheus Adapter pods are ready"
+                kubectl get pods -n workload-variant-autoscaler-monitoring -l app.kubernetes.io/name=prometheus-adapter
+                break
+              fi
+            fi
+
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              sleep 5
+            fi
+          done
+
+          if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+            echo "ERROR: Prometheus Adapter pods did not become ready in time"
+            echo ""
+            echo "===== Prometheus Adapter Pods Status ====="
+            kubectl get pods -n workload-variant-autoscaler-monitoring -l app.kubernetes.io/name=prometheus-adapter -o wide || true
+            kubectl get pods -n workload-variant-autoscaler-monitoring -l app=prometheus-adapter -o wide || true
+            echo ""
+            echo "===== Prometheus Adapter Pod Describe ====="
+            kubectl describe pods -n workload-variant-autoscaler-monitoring -l app.kubernetes.io/name=prometheus-adapter || true
+            echo ""
+            echo "===== Prometheus Adapter Logs ====="
+            kubectl logs -n workload-variant-autoscaler-monitoring -l app.kubernetes.io/name=prometheus-adapter --tail=50 || true
+            exit 1
+          fi
+
+          echo "✓ Prometheus Adapter restarted and connected to Prometheus"
+
       - name: Wait for controller pod to be ready
         run: |
           echo "Waiting for controller pod to be running..."
