@@ -352,6 +352,8 @@ jobs:
       - name: Run HPA scale-to-zero E2E tests
         timeout-minutes: 40
         env:
+          E2E_IMG: ghcr.io/ev-shindin/workload-variant-autoscaler:latest
+          SKIP_DOCKER_BUILD: "true"
           SKIP_KIND_DEPLOY: "true"
           KEDA_INSTALL_SKIP: "true"
           LLMD_NAMESPACE: llm-d-sim
@@ -363,6 +365,7 @@ jobs:
         run: |
           echo "Running HPA scale-to-zero E2E tests..."
           echo "Environment variables:"
+          echo "  E2E_IMG=$E2E_IMG"
           echo "  LLMD_NAMESPACE=$LLMD_NAMESPACE"
           echo "  MONITORING_NAMESPACE=$MONITORING_NAMESPACE"
           echo "  CONTROLLER_NAMESPACE=$CONTROLLER_NAMESPACE"
