@@ -122,10 +122,10 @@ jobs:
 
       - name: Build and deploy controller to cluster
         env:
-          IMG: quay.io/infernoautoscaler/inferno-controller:0.0.1-test
+          IMG: ghcr.io/ev-shindin/workload-variant-autoscaler:latest
         run: |
-          echo "Building controller image..."
-          make docker-build IMG=$IMG
+          echo "Pulling pre-built controller image..."
+          docker pull $IMG
 
           echo "Loading controller image into KIND cluster..."
           kind load docker-image $IMG --name kind-hpa-cluster
