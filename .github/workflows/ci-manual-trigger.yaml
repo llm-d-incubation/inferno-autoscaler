@@ -167,6 +167,9 @@ jobs:
       - name: Run make test-e2e
         if: ${{ github.event.inputs.skip_e2e != 'true' }}
         timeout-minutes: 40
+        env:
+          E2E_IMG: ghcr.io/ev-shindin/workload-variant-autoscaler:latest
+          SKIP_DOCKER_BUILD: "true"
         run: |
           echo "Running E2E tests..."
           make test-e2e
