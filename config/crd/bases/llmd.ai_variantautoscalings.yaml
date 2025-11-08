@@ -215,6 +215,10 @@ spec:
             - variantID
             - variantProfile
             type: object
+            x-kubernetes-validations:
+            - message: maxReplicas must be greater than or equal to minReplicas
+              rule: '!has(self.maxReplicas) || !has(self.minReplicas) || self.maxReplicas
+                >= self.minReplicas'
           status:
             description: Status represents the current status of autoscaling for the
               model variant.

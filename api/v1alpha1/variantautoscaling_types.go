@@ -5,6 +5,7 @@ import (
 )
 
 // VariantAutoscalingSpec defines the desired state for autoscaling a model variant.
+// +kubebuilder:validation:XValidation:rule="!has(self.maxReplicas) || !has(self.minReplicas) || self.maxReplicas >= self.minReplicas",message="maxReplicas must be greater than or equal to minReplicas"
 type VariantAutoscalingSpec struct {
 	// ScaleTargetRef references the target resource (Deployment) to scale.
 	// This allows the VariantAutoscaling resource name to be independent of the Deployment name,

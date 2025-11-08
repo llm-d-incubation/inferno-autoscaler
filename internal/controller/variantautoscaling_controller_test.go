@@ -883,7 +883,8 @@ data:
 
 		It("should filter out VAs marked for deletion", func() {
 			var variantAutoscalingList llmdVariantAutoscalingV1alpha1.VariantAutoscalingList
-			err := k8sClient.List(ctx, &variantAutoscalingList)
+			// Scope to default namespace to avoid seeing VAs from other tests
+			err := k8sClient.List(ctx, &variantAutoscalingList, client.InNamespace("default"))
 			Expect(err).NotTo(HaveOccurred(), "Failed to list VariantAutoscaling resources")
 			filterActiveVariantAutoscalings(variantAutoscalingList.Items)
 			Expect(len(variantAutoscalingList.Items)).To(Equal(3), "All VariantAutoscaling resources should be active before deletion")
@@ -893,7 +894,8 @@ data:
 				Expect(k8sClient.Delete(ctx, &variantAutoscalingList.Items[i])).To(Succeed())
 			}
 
-			err = k8sClient.List(ctx, &variantAutoscalingList)
+			// Scope to default namespace to avoid seeing VAs from other tests
+			err = k8sClient.List(ctx, &variantAutoscalingList, client.InNamespace("default"))
 			Expect(err).NotTo(HaveOccurred(), "Failed to list VariantAutoscaling resources")
 			filterActiveVariantAutoscalings(variantAutoscalingList.Items)
 			Expect(len(variantAutoscalingList.Items)).To(Equal(0), "No active VariantAutoscaling resources should be found")
@@ -924,7 +926,8 @@ data:
 			Expect(serviceClassMap).NotTo(BeNil(), "Service class config map should not be nil")
 
 			var variantAutoscalingList llmdVariantAutoscalingV1alpha1.VariantAutoscalingList
-			err = k8sClient.List(ctx, &variantAutoscalingList)
+			// Scope to default namespace to avoid seeing VAs from other tests
+			err = k8sClient.List(ctx, &variantAutoscalingList, client.InNamespace("default"))
 			Expect(err).NotTo(HaveOccurred(), "Failed to list VariantAutoscaling resources")
 			activeVAs := filterActiveVariantAutoscalings(variantAutoscalingList.Items)
 			Expect(len(activeVAs)).To(Equal(totalVAs), "All VariantAutoscaling resources should be active")

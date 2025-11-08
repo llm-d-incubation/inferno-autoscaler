@@ -127,6 +127,24 @@ func initMetricsEmitter() {
 	logger.Log.Info("Metrics emitter created successfully")
 }
 
+// Reconcile implements the reconciliation loop for VariantAutoscaling resources.
+//
+// IMPORTANT: This controller uses a GLOBAL OPTIMIZATION PATTERN where every reconciliation
+// processes ALL VariantAutoscaling resources across ALL namespaces together to find the
+// globally cost-optimal allocation.
+//
+// The 'req' parameter indicates which event triggered this reconciliation (VA created/updated,
+// or ConfigMap changed), but it is NOT USED to scope the reconciliation. Every reconciliation
+// always lists and processes ALL VAs regardless of which specific resource triggered it.
+//
+// Reconciliation Triggers:
+//   - Periodic timer (default 60s, configurable via GLOBAL_OPT_INTERVAL)
+//   - VariantAutoscaling created
+//   - VariantAutoscaling spec updated (status-only updates filtered out)
+//   - ConfigMap changed (single reconciliation triggered for all VAs)
+//
+// Note: VariantAutoscaling deletion does NOT trigger reconciliation. Deleted VAs (those with
+// non-zero deletionTimestamp) are filtered out during the next periodic reconciliation.
 func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	// Default requeue duration (used for transient errors)
 	requeueDuration := DefaultReconciliationInterval
@@ -976,10 +994,10 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 		validVAs = append(validVAs, va)
 
 		var updateVA llmdVariantAutoscalingV1alpha1.VariantAutoscaling
-		err = utils.GetVariantAutoscalingWithBackoff(ctx, r.Client, deploy.Name, deploy.Namespace, &updateVA)
+		err = utils.GetVariantAutoscalingWithBackoff(ctx, r.Client, va.Name, va.Namespace, &updateVA)
 		if err != nil {
-			logger.Log.Error(err, "unable to get variantAutoscaling for deployment, using fallback allocation for metric emission - ", "deployment-name: ", deploy.Name, ", namespace: ", deploy.Namespace)
-			// This is unusual - deployment exists but VA doesn't (should not happen normally)
+			logger.Log.Error(err, "unable to get variantAutoscaling, using fallback allocation for metric emission - ", "va-name: ", va.Name, ", namespace: ", va.Namespace)
+			// This is unusual - VA was in the list but can't be retrieved (should not happen normally)
 			// Skip this one as we can't emit metrics without the VA object
 			continue
 		}
@@ -1262,13 +1280,57 @@ func (r *VariantAutoscalingReconciler) applyOptimizedAllocations(
 
 				// Check if this is first run (LastUpdate.UpdateTime is zero) or retention period not exceeded
 				if previousAlloc.LastUpdate.UpdateTime.IsZero() {
-					// First run: preserve currentReplicas as grace period for Prometheus discovery
-					logger.Log.Info("Optimizer returned 0 replicas but this is first run, preserving current deployment replicas",
-						"variantName", updateVa.Name,
-						"currentReplicas", currentReplicas)
+					// First run: check if we need to bootstrap with 1 replica
+					// This handles the case where currentReplicas=0 (HPA already scaled down)
+					// but we need a warm replica for Prometheus discovery and retention period logic
 
-					newAlloc.NumReplicas = currentReplicas
-					newReason = "First run: preserving current replicas for Prometheus discovery grace period"
+					// Check conditions for bootstrapping with 1 replica:
+					// 1. VA minReplicas = 0
+					// 2. currentReplicas = 0
+					// 3. Either: single variant OR cheapest variant among multiple variants
+
+					vaMinReplicasZero := updateVa.Spec.MinReplicas == nil || *updateVa.Spec.MinReplicas == 0
+
+					// Count variants for this model
+					variantCountForModel := 0
+					for _, v := range updateList.Items {
+						if v.Spec.ModelID == modelName {
+							variantCountForModel++
+						}
+					}
+					isSingleVariant := variantCountForModel == 1
+
+					// Check if this is the cheapest variant (lowest accelerator count)
+					isCheapest := isCheapestVariantForModel(&updateVa, updateList.Items, modelName)
+
+					if currentReplicas == 0 && vaMinReplicasZero {
+						// Bootstrap logic: ensure at least one warm replica for the model
+						if isSingleVariant || isCheapest {
+							// Bootstrap with 1 replica (single variant OR cheapest among multiple)
+							logger.Log.Info("Optimizer returned 0 replicas but this is first run, bootstrapping with 1 replica",
+								"variantName", updateVa.Name,
+								"currentReplicas", currentReplicas,
+								"isSingleVariant", isSingleVariant,
+								"isCheapest", isCheapest)
+							newAlloc.NumReplicas = 1
+							newReason = "First run: bootstrapping with 1 replica for Prometheus discovery"
+						} else {
+							// Multiple variants, not cheapest - stay at 0
+							logger.Log.Info("Optimizer returned 0 replicas, first run with multiple variants (not cheapest), staying at 0",
+								"variantName", updateVa.Name,
+								"currentReplicas", currentReplicas,
+								"isCheapest", isCheapest)
+							newAlloc.NumReplicas = 0
+							newReason = "First run: multiple variants, not cheapest, waiting for traffic"
+						}
+					} else {
+						// Follow existing rules: preserve currentReplicas
+						logger.Log.Info("Optimizer returned 0 replicas but this is first run, preserving current deployment replicas",
+							"variantName", updateVa.Name,
+							"currentReplicas", currentReplicas)
+						newAlloc.NumReplicas = currentReplicas
+						newReason = "First run: preserving current replicas for Prometheus discovery grace period"
+					}
 				} else {
 					timeSinceLastUpdate := time.Since(previousAlloc.LastUpdate.UpdateTime.Time)
 					if timeSinceLastUpdate <= retentionPeriod {
@@ -1558,23 +1620,33 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 
 	//logger.Log.Info("Prometheus client initialized (validation skipped)")
 
-	// Helper to enqueue all VariantAutoscaling resources for reconciliation
+	// Helper to trigger global reconciliation when ConfigMap changes.
+	// Since the controller uses a global optimization pattern (every reconciliation processes
+	// ALL VAs), we only need to enqueue a single reconcile request, not one per VA.
+	// This avoids N redundant reconciliations when a ConfigMap is updated.
 	enqueueAllVAs := func(ctx context.Context, obj client.Object) []reconcile.Request {
 		var list llmdVariantAutoscalingV1alpha1.VariantAutoscalingList
 		if err := r.List(ctx, &list); err != nil {
 			logger.Log.Error(err, "Failed to list VariantAutoscalings for ConfigMap watch")
 			return nil
 		}
-		requests := make([]reconcile.Request, len(list.Items))
-		for i, va := range list.Items {
-			requests[i] = reconcile.Request{
-				NamespacedName: client.ObjectKeyFromObject(&va),
-			}
+
+		if len(list.Items) == 0 {
+			logger.Log.Info("No VariantAutoscalings found, skipping ConfigMap reconciliation",
+				"configMap", obj.GetName())
+			return nil
 		}
-		logger.Log.Debug("ConfigMap changed, enqueuing reconcile requests",
+
+		// Return only ONE request to trigger global reconciliation.
+		// The specific VA used as trigger is arbitrary since Reconcile() processes ALL VAs.
+		logger.Log.Info("ConfigMap changed, triggering global reconciliation",
 			"configMap", obj.GetName(),
-			"requestCount", len(requests))
-		return requests
+			"totalVAs", len(list.Items),
+			"trigger", list.Items[0].Name)
+
+		return []reconcile.Request{
+			{NamespacedName: client.ObjectKeyFromObject(&list.Items[0])},
+		}
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
