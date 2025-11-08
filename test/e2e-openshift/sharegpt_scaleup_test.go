@@ -73,6 +73,21 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 		Expect(va).NotTo(BeNil(), fmt.Sprintf("Should find VariantAutoscaling with scaleTargetRef pointing to %s", deployment))
 		vaName = va.Name
 		_, _ = fmt.Fprintf(GinkgoWriter, "Found VariantAutoscaling: %s\n", vaName)
+
+		By("ensuring VA minReplicas is set to 1 for stable baseline")
+		if va.Spec.MinReplicas == nil || *va.Spec.MinReplicas != 1 {
+			minReplicas := int32(1)
+			va.Spec.MinReplicas = &minReplicas
+			err = crClient.Update(ctx, va)
+			Expect(err).NotTo(HaveOccurred(), "Should be able to set VA minReplicas=1")
+			_, _ = fmt.Fprintf(GinkgoWriter, "Set VA minReplicas=1 for stable baseline, waiting for reconciliation...\n")
+			time.Sleep(30 * time.Second)
+			// Re-fetch VA after reconciliation
+			err = crClient.Get(ctx, client.ObjectKey{Name: vaName, Namespace: llmDNamespace}, va)
+			Expect(err).NotTo(HaveOccurred(), "Should be able to get VA after update")
+		}
+		_, _ = fmt.Fprintf(GinkgoWriter, "VA minReplicas=%d confirmed\n", *va.Spec.MinReplicas)
+
 		// In single-variant architecture, check that optimization has run by verifying NumReplicas > 0
 		Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(BeNumerically(">", 0), "DesiredOptimizedAlloc should have replicas set")
 		initialOptimized = int32(va.Status.DesiredOptimizedAlloc.NumReplicas)
@@ -85,6 +100,21 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 		Expect(hpa.Spec.Metrics).To(HaveLen(1), "HPA should have one metric")
 		Expect(hpa.Spec.Metrics[0].Type).To(Equal(autoscalingv2.ExternalMetricSourceType), "HPA should use external metrics")
 		Expect(hpa.Spec.Metrics[0].External.Metric.Name).To(Equal(constants.WVADesiredReplicas), "HPA should use wva_desired_replicas metric")
+
+	By("ensuring VA minReplicas is set to 1 for stable baseline")
+	va = &v1alpha1.VariantAutoscaling{}
+	err = crClient.Get(ctx, client.ObjectKey{Name: vaName, Namespace: llmDNamespace}, va)
+	Expect(err).NotTo(HaveOccurred(), "Should be able to get VA")
+
+	if va.Spec.MinReplicas == nil || *va.Spec.MinReplicas != 1 {
+		minReplicas := int32(1)
+		va.Spec.MinReplicas = &minReplicas
+		err = crClient.Update(ctx, va)
+		Expect(err).NotTo(HaveOccurred(), "Should be able to set VA minReplicas=1")
+		_, _ = fmt.Fprintf(GinkgoWriter, "Set VA minReplicas=1 for stable baseline, waiting for reconciliation...\n")
+		time.Sleep(30 * time.Second)
+	}
+	_, _ = fmt.Fprintf(GinkgoWriter, "VA minReplicas=%d confirmed\n", *va.Spec.MinReplicas)
 	})
 
 	It("should verify external metrics API is accessible", func() {

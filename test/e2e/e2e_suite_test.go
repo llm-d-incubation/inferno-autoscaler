@@ -32,17 +32,31 @@ import (
 	"github.com/llm-d-incubation/workload-variant-autoscaler/test/utils"
 )
 
+// getProjectImage returns the controller image to use for e2e tests.
+// It checks the E2E_IMG environment variable first, otherwise defaults to the test image.
+func getProjectImage() string {
+	if img := os.Getenv("E2E_IMG"); img != "" {
+		return img
+	}
+	return "quay.io/infernoautoscaler/inferno-controller:0.0.1-test"
+}
+
 var (
 	// Optional Environment Variables:
 	// - CERT_MANAGER_INSTALL_SKIP=true: Skips CertManager installation during test setup.
 	// - KEDA_INSTALL_SKIP=true: Skips KEDA installation during test setup.
 	// - SKIP_KIND_DEPLOY=true: Skips KIND cluster creation and deployment. Useful when running
 	//   in CI/CD where the cluster is already created and controller is already deployed.
+	// - SKIP_DOCKER_BUILD=true: Skips building the controller Docker image. Useful when using
+	//   a pre-built image from a registry.
+	// - E2E_IMG: Override the controller image to use for e2e tests. If not set, defaults to
+	//   building and using "quay.io/infernoautoscaler/inferno-controller:0.0.1-test".
 	// These variables are useful if CertManager/KEDA is already installed, avoiding
 	// re-installation and conflicts.
 	skipCertManagerInstall = os.Getenv("CERT_MANAGER_INSTALL_SKIP") == "true"
 	skipKEDAInstall        = os.Getenv("KEDA_INSTALL_SKIP") == "true"
 	skipKindDeploy         = os.Getenv("SKIP_KIND_DEPLOY") == "true"
+	skipDockerBuild        = os.Getenv("SKIP_DOCKER_BUILD") == "true"
 	// isCertManagerAlreadyInstalled will be set true when CertManager CRDs be found on the cluster
 	isCertManagerAlreadyInstalled = false
 	// isKEDAAlreadyInstalled will be set true when KEDA CRDs be found on the cluster
@@ -50,7 +64,8 @@ var (
 
 	// projectImage is the name of the image which will be build and loaded
 	// with the code source changes to be tested.
-	projectImage = "quay.io/infernoautoscaler/inferno-controller:0.0.1-test"
+	// Can be overridden by setting E2E_IMG environment variable.
+	projectImage = getProjectImage()
 
 	MinimumReplicas = 1
 )
@@ -73,17 +88,22 @@ func TestE2E(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	if !skipKindDeploy {
-		By("building the manager(Operator) image")
-		cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectImage))
-		_, err := utils.Run(cmd)
-		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager(Operator) image")
+		if !skipDockerBuild {
+			By("building the manager(Operator) image")
+			cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectImage))
+			_, err := utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager(Operator) image")
+		} else {
+			_, _ = fmt.Fprintf(GinkgoWriter, "SKIP_DOCKER_BUILD=true: Skipping Docker image build\n")
+			_, _ = fmt.Fprintf(GinkgoWriter, "Using pre-built image: %s\n", projectImage)
+		}
 
 		By("exporting environment variables for deployment")
 		utils.SetupTestEnvironment(projectImage, numNodes, maximumAvailableGPUs, gpuTypes)
 
 		// Deploy llm-d and workload-variant-autoscaler on the Kind cluster
 		launchCmd := exec.Command("make", "deploy-llm-d-wva-emulated-on-kind", fmt.Sprintf("IMG=%s", projectImage))
-		_, err = utils.Run(launchCmd)
+		_, err := utils.Run(launchCmd)
 		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to install llm-d and workload-variant-autoscaler")
 	} else {
 		_, _ = fmt.Fprintf(GinkgoWriter, "SKIP_KIND_DEPLOY=true: Skipping KIND cluster creation and deployment\n")

@@ -43,11 +43,11 @@ var (
 	controllerNamespace = getEnvString("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")
 	monitoringNamespace = getEnvString("MONITORING_NAMESPACE", "openshift-user-workload-monitoring")
 	llmDNamespace       = getEnvString("LLMD_NAMESPACE", "llm-d-inference-scheduling")
-	gatewayName         = getEnvString("GATEWAY_NAME", "infra-inference-scheduling-inference-gateway")
+	gatewayName         = getEnvString("GATEWAY_NAME", "infra-inference-scheduling-inference-gateway-istio")
 	modelID             = getEnvString("MODEL_ID", "unsloth/Meta-Llama-3.1-8B")
 	deployment          = getEnvString("DEPLOYMENT", "ms-inference-scheduling-llm-d-modelservice-decode")
 	requestRate         = getEnvInt("REQUEST_RATE", 20)
-	numPrompts          = getEnvInt("NUM_PROMPTS", 3000)
+	numPrompts          = getEnvInt("NUM_PROMPTS", 6000)
 )
 
 var (
@@ -153,21 +153,57 @@ var _ = BeforeSuite(func() {
 	}, 2*time.Minute, 1*time.Second).Should(Succeed())
 
 	By("verifying that llm-d infrastructure is running")
-	Eventually(func(g Gomega) {
-		// Check Gateway
-		deploymentList, err := k8sClient.AppsV1().Deployments(llmDNamespace).List(ctx, metav1.ListOptions{})
-		if err != nil {
-			g.Expect(err).NotTo(HaveOccurred(), "Should be able to list deployments in llm-d namespace")
-		}
-		g.Expect(deploymentList.Items).NotTo(BeEmpty(), "llm-d deployments should exist")
+	// Check that deployments exist
+	deploymentList, err := k8sClient.AppsV1().Deployments(llmDNamespace).List(ctx, metav1.ListOptions{})
+	Expect(err).NotTo(HaveOccurred(), "Should be able to list deployments in llm-d namespace")
+	Expect(deploymentList.Items).NotTo(BeEmpty(), "llm-d deployments should exist")
 
-		// Check that vLLM deployment exists
+	// Check that vLLM deployment exists
+	vllmDeployment, err := k8sClient.AppsV1().Deployments(llmDNamespace).Get(ctx, deployment, metav1.GetOptions{})
+	Expect(err).NotTo(HaveOccurred(), "vLLM deployment should exist")
+
+	// Handle scale-to-zero case: if deployment is at 0 replicas, manually scale to 1
+	// Note: In Kubernetes 1.31+, HPA does not automatically scale from 0 even when minReplicas > 0
+	if vllmDeployment.Status.ReadyReplicas == 0 {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Deployment is scaled to zero. Manually scaling to 1 replica for test initialization...\n")
+
+		// First, update HPA minReplicas if needed
+		hpa, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(llmDNamespace).Get(ctx, "vllm-deployment-hpa", metav1.GetOptions{})
+		if err == nil && hpa.Spec.MinReplicas != nil && *hpa.Spec.MinReplicas == 0 {
+			minReplicas := int32(1)
+			hpa.Spec.MinReplicas = &minReplicas
+			_, err = k8sClient.AutoscalingV2().HorizontalPodAutoscalers(llmDNamespace).Update(ctx, hpa, metav1.UpdateOptions{})
+			Expect(err).NotTo(HaveOccurred(), "Should be able to update HPA minReplicas")
+		}
+
+		// Manually scale the deployment to 1 replica (HPA won't do this automatically from 0)
+		replicas := int32(1)
+		vllmDeployment.Spec.Replicas = &replicas
+		_, err = k8sClient.AppsV1().Deployments(llmDNamespace).Update(ctx, vllmDeployment, metav1.UpdateOptions{})
+		Expect(err).NotTo(HaveOccurred(), "Should be able to scale deployment to 1")
+		_, _ = fmt.Fprintf(GinkgoWriter, "Scaled deployment to 1 replica, waiting for pod to become ready...\n")
+	}
+
+	// Wait for at least one replica to be ready (increased timeout to 7 minutes for large model loading)
+	Eventually(func(g Gomega) {
 		vllmDeployment, err := k8sClient.AppsV1().Deployments(llmDNamespace).Get(ctx, deployment, metav1.GetOptions{})
 		if err != nil {
 			g.Expect(err).NotTo(HaveOccurred(), "vLLM deployment should exist")
 		}
 		g.Expect(vllmDeployment.Status.ReadyReplicas).To(BeNumerically(">", 0), "At least one vLLM replica should be ready")
-	}, 5*time.Minute, 5*time.Second).Should(Succeed())
+		_, _ = fmt.Fprintf(GinkgoWriter, "vLLM deployment has %d ready replicas\n", vllmDeployment.Status.ReadyReplicas)
+	}, 7*time.Minute, 5*time.Second).Should(Succeed())
+
+	// Reset HPA minReplicas back to 0 for scale-to-zero tests
+	// Note: We temporarily set it to 1 for initialization, now reset it for actual tests
+	hpa, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(llmDNamespace).Get(ctx, "vllm-deployment-hpa", metav1.GetOptions{})
+	if err == nil && hpa.Spec.MinReplicas != nil && *hpa.Spec.MinReplicas == 1 {
+		minReplicas := int32(0)
+		hpa.Spec.MinReplicas = &minReplicas
+		_, err = k8sClient.AutoscalingV2().HorizontalPodAutoscalers(llmDNamespace).Update(ctx, hpa, metav1.UpdateOptions{})
+		Expect(err).NotTo(HaveOccurred(), "Should be able to reset HPA minReplicas to 0")
+		_, _ = fmt.Fprintf(GinkgoWriter, "Reset HPA minReplicas back to 0 for scale-to-zero tests\n")
+	}
 
 	By("verifying that Prometheus Adapter is running")
 	Eventually(func(g Gomega) {

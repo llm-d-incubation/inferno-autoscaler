@@ -120,7 +120,7 @@ var _ = Describe("Test idle scale-to-zero with HPA", Ordered, func() {
 		modelID = "test-hpa-idle-sto-zero-model"
 		accelerator = getEnvOrDefault("ACCELERATOR_TYPE", "A100")
 		initialReplicas = 1
-		retentionDuration = 4 * time.Minute
+		retentionDuration = 2 * time.Minute
 
 		By("checking if Prometheus Adapter is installed")
 		monitoringNs := getEnvOrDefault("MONITORING_NAMESPACE", "workload-variant-autoscaler-monitoring")
@@ -146,7 +146,7 @@ var _ = Describe("Test idle scale-to-zero with HPA", Ordered, func() {
 			Data: map[string]string{
 				fmt.Sprintf("model.%s", configMapKey): fmt.Sprintf(`modelID: "%s"
 enableScaleToZero: true
-retentionPeriod: "4m"`, modelID),
+retentionPeriod: "2m"`, modelID),
 			},
 		}
 		_, err := hpaK8sClient.CoreV1().ConfigMaps(getEnvOrDefault("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")).Create(ctx, configMap, metav1.CreateOptions{})
@@ -497,7 +497,7 @@ var _ = Describe("Test traffic-based scale-to-zero with HPA", Ordered, func() {
 		modelID = getEnvOrDefault("DEFAULT_MODEL_ID", "default/default")
 		accelerator = getEnvOrDefault("ACCELERATOR_TYPE", "A100")
 		initialReplicas = 1
-		retentionDuration = 4 * time.Minute
+		retentionDuration = 2 * time.Minute
 
 		By("checking if Prometheus Adapter is installed")
 		monitoringNs := getEnvOrDefault("MONITORING_NAMESPACE", "workload-variant-autoscaler-monitoring")
@@ -523,7 +523,7 @@ var _ = Describe("Test traffic-based scale-to-zero with HPA", Ordered, func() {
 			Data: map[string]string{
 				fmt.Sprintf("model.%s", configMapKey): fmt.Sprintf(`modelID: "%s"
 enableScaleToZero: true
-retentionPeriod: "4m"`, modelID),
+retentionPeriod: "2m"`, modelID),
 			},
 		}
 		_, err := hpaK8sClient.CoreV1().ConfigMaps(getEnvOrDefault("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")).Create(ctx, configMap, metav1.CreateOptions{})
@@ -938,7 +938,7 @@ var _ = Describe("Test idle with HPA (scale-to-zero disabled)", Ordered, func() 
 		modelID = "test-hpa-idle-no-sto-zero-model"
 		accelerator = getEnvOrDefault("ACCELERATOR_TYPE", "A100")
 		initialReplicas = 1
-		retentionDuration = 4 * time.Minute
+		retentionDuration = 2 * time.Minute
 
 		By("checking if Prometheus Adapter is installed")
 		monitoringNs := getEnvOrDefault("MONITORING_NAMESPACE", "workload-variant-autoscaler-monitoring")
@@ -997,7 +997,7 @@ var _ = Describe("Test idle with HPA (scale-to-zero disabled)", Ordered, func() 
 			Data: map[string]string{
 				fmt.Sprintf("model.%s", configMapKey): fmt.Sprintf(`modelID: "%s"
 enableScaleToZero: false
-retentionPeriod: "4m"`, modelID),
+retentionPeriod: "2m"`, modelID),
 			},
 		}
 		_, err = hpaK8sClient.CoreV1().ConfigMaps(getEnvOrDefault("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")).Create(ctx, configMap, metav1.CreateOptions{})
@@ -1346,7 +1346,7 @@ var _ = Describe("Test traffic-based with HPA (scale-to-zero disabled)", Ordered
 		modelID = getEnvOrDefault("DEFAULT_MODEL_ID", "default/default")
 		accelerator = getEnvOrDefault("ACCELERATOR_TYPE", "A100")
 		initialReplicas = 1
-		retentionDuration = 4 * time.Minute
+		retentionDuration = 2 * time.Minute
 
 		By("checking if Prometheus Adapter is installed")
 		monitoringNs := getEnvOrDefault("MONITORING_NAMESPACE", "workload-variant-autoscaler-monitoring")
@@ -1405,7 +1405,7 @@ var _ = Describe("Test traffic-based with HPA (scale-to-zero disabled)", Ordered
 			Data: map[string]string{
 				fmt.Sprintf("model.%s", configMapKey): fmt.Sprintf(`modelID: "%s"
 enableScaleToZero: false
-retentionPeriod: "4m"`, modelID),
+retentionPeriod: "2m"`, modelID),
 			},
 		}
 		_, err = hpaK8sClient.CoreV1().ConfigMaps(getEnvOrDefault("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")).Create(ctx, configMap, metav1.CreateOptions{})
@@ -1784,7 +1784,7 @@ var _ = Describe("Test idle with HPA scale-to-zero enabled but VA minReplicas=2"
 		modelID = "test-hpa-va-minrep-idle-model"
 		accelerator = getEnvOrDefault("ACCELERATOR_TYPE", "A100")
 		initialReplicas = 2
-		retentionDuration = 4 * time.Minute
+		retentionDuration = 2 * time.Minute
 
 		By("checking if Prometheus Adapter is installed")
 		monitoringNs := getEnvOrDefault("MONITORING_NAMESPACE", "workload-variant-autoscaler-monitoring")
@@ -1843,7 +1843,7 @@ var _ = Describe("Test idle with HPA scale-to-zero enabled but VA minReplicas=2"
 			Data: map[string]string{
 				fmt.Sprintf("model.%s", configMapKey): fmt.Sprintf(`modelID: "%s"
 enableScaleToZero: true
-retentionPeriod: "4m"`, modelID),
+retentionPeriod: "2m"`, modelID),
 			},
 		}
 		_, err = hpaK8sClient.CoreV1().ConfigMaps(getEnvOrDefault("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")).Create(ctx, configMap, metav1.CreateOptions{})
@@ -2153,7 +2153,7 @@ var _ = Describe("Test traffic scale-up and scale-down with HPA scale-to-zero en
 		modelID = "test-hpa-va-minrep-traffic-model"
 		accelerator = getEnvOrDefault("ACCELERATOR_TYPE", "A100")
 		initialReplicas = 2
-		retentionDuration = 4 * time.Minute
+		retentionDuration = 2 * time.Minute
 
 		By("checking if Prometheus Adapter is installed")
 		monitoringNs := getEnvOrDefault("MONITORING_NAMESPACE", "workload-variant-autoscaler-monitoring")
@@ -2212,7 +2212,7 @@ var _ = Describe("Test traffic scale-up and scale-down with HPA scale-to-zero en
 			Data: map[string]string{
 				fmt.Sprintf("model.%s", configMapKey): fmt.Sprintf(`modelID: "%s"
 enableScaleToZero: true
-retentionPeriod: "4m"`, modelID),
+retentionPeriod: "2m"`, modelID),
 			},
 		}
 		_, err = hpaK8sClient.CoreV1().ConfigMaps(getEnvOrDefault("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")).Create(ctx, configMap, metav1.CreateOptions{})
@@ -2485,7 +2485,7 @@ retentionPeriod: "4m"`, modelID),
 		// Disable scale-to-zero
 		configMap.Data[fmt.Sprintf("model.%s", configMapKey)] = fmt.Sprintf(`modelID: "%s"
 enableScaleToZero: false
-retentionPeriod: "4m"`, modelID)
+retentionPeriod: "2m"`, modelID)
 
 		_, err = hpaK8sClient.CoreV1().ConfigMaps(controllerNamespace).Update(ctx, configMap, metav1.UpdateOptions{})
 		Expect(err).NotTo(HaveOccurred(), "Should be able to update ConfigMap")
@@ -2514,7 +2514,7 @@ retentionPeriod: "4m"`, modelID)
 
 		configMap.Data[fmt.Sprintf("model.%s", configMapKey)] = fmt.Sprintf(`modelID: "%s"
 enableScaleToZero: true
-retentionPeriod: "4m"`, modelID)
+retentionPeriod: "2m"`, modelID)
 
 		_, err = hpaK8sClient.CoreV1().ConfigMaps(controllerNamespace).Update(ctx, configMap, metav1.UpdateOptions{})
 		Expect(err).NotTo(HaveOccurred(), "Should be able to update ConfigMap")
