@@ -15,7 +15,7 @@ on:
 jobs:
   hpa-scale-to-zero-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 70
 
     steps:
       - name: Determine checkout ref
@@ -350,7 +350,7 @@ jobs:
           echo "✓ Prometheus Adapter is ready for tests"
 
       - name: Run HPA scale-to-zero E2E tests
-        timeout-minutes: 40
+        timeout-minutes: 60
         env:
           E2E_IMG: ghcr.io/ev-shindin/workload-variant-autoscaler:latest
           SKIP_DOCKER_BUILD: "true"

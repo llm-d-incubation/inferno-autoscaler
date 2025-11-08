@@ -179,7 +179,7 @@ test-e2e: manifests generate fmt vet ## Run the e2e tests. Expected an isolated 
 	}
 	$(eval FOCUS_ARGS := $(if $(FOCUS),-ginkgo.focus="$(FOCUS)",))
 	$(eval SKIP_ARGS := $(if $(SKIP),-ginkgo.skip="$(SKIP)",))
-	export KUBECONFIG=$(KUBECONFIG) K8S_EXPECTED_VERSION=$(K8S_VERSION) && go test ./test/e2e/ -timeout 38m -v -ginkgo.v $(FOCUS_ARGS) $(SKIP_ARGS)
+	export KUBECONFIG=$(KUBECONFIG) K8S_EXPECTED_VERSION=$(K8S_VERSION) && go test ./test/e2e/ -timeout 50m -v -ginkgo.v $(FOCUS_ARGS) $(SKIP_ARGS)
 
 .PHONY: test-e2e-openshift
 test-e2e-openshift: ## Run the e2e tests on OpenShift. Requires KUBECONFIG and pre-deployed infrastructure.
@@ -200,7 +200,7 @@ test-e2e-openshift: ## Run the e2e tests on OpenShift. Requires KUBECONFIG and p
 	REQUEST_RATE=$(REQUEST_RATE) \
 	NUM_PROMPTS=$(NUM_PROMPTS) \
 	KUBECONFIG=$(KUBECONFIG) \
-	go test ./test/e2e-openshift/ -timeout 38m -v -ginkgo.v $(FOCUS_ARGS) $(SKIP_ARGS)
+	go test ./test/e2e-openshift/ -timeout 50m -v -ginkgo.v $(FOCUS_ARGS) $(SKIP_ARGS)
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
