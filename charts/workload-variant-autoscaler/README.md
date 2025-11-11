@@ -39,7 +39,6 @@ metadata:
   labels:
     app.kubernetes.io/name: workload-variant-autoscaler
     control-plane: controller-manager
-    openshift.io/user-monitoring: "true"
 ---
 apiVersion: v1
 kind: Namespace
