@@ -1,54 +1,48 @@
+# Development values for workload-variant-autoscaler
+# This file contains development-specific configurations with relaxed security settings
+
 wva:
   enabled: true
-
+  baseName: inference-scheduling
+  replicaCount: 1
   image:
     repository: ghcr.io/llm-d/workload-variant-autoscaler
     tag: latest
   imagePullPolicy: Always
 
+  reconcileInterval: 30s
+
+  modelName: ms-inference-scheduling-llm-d-modelservice
+
   metrics:
     enabled: true
     port: 8443
     secure: true
-
-  reconcileInterval: 60s
-
+  
+  # Development logging configuration
+  logging:
+    level: debug  # Development: debug, Production: info
   prometheus:
     monitoringNamespace: openshift-user-workload-monitoring
     baseURL: "https://thanos-querier.openshift-monitoring.svc.cluster.local:9091"
-    # Security configuration
+    # Development security configuration (relaxed for easier development)
     tls:
-      # Note: insecureSkipVerify defaults to true for backward compatibility
-      # Override to false in production deployments for strict TLS verification
+      insecureSkipVerify: true   # Development: true, Production: false
       caCertPath: "/etc/ssl/certs/prometheus-ca.crt"
     # caCert: |  # Uncomment and provide your CA certificate
     #   -----BEGIN CERTIFICATE-----
     #   YOUR_CA_CERTIFICATE_HERE
     #   -----END CERTIFICATE-----
+
 llmd:
   namespace: llm-d-inference-scheduling
   modelName: ms-inference-scheduling-llm-d-modelservice
   modelID: "unsloth/Meta-Llama-3.1-8B"
 va:
   enabled: true
-  # Single-variant configuration
-  variantID: "unsloth/Meta-Llama-3.1-8B-H100-1"  # Format: {modelID}-{accelerator}-{acceleratorCount}
   accelerator: H100
-  acceleratorCount: 1
-  variantCost: "50.00"  # Cost per replica (optional, defaults to "10")
-  minReplicas: 0  # Minimum replicas (optional, defaults to 0)
-  maxReplicas: 10  # Maximum replicas (optional)
   sloTpot: 10
   sloTtft: 1000
-  # Performance parameters for this variant
-  perfParms:
-    decodeParms:
-      alpha: "7.470"
-      beta: "0.044"
-    prefillParms:
-      gamma: "15.415"
-      delta: "0.000337"
-  maxBatchSize: 512
 hpa:
   enabled: true
   maxReplicas: 10

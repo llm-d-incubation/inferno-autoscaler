@@ -14,7 +14,10 @@ spec:
     port: https
     scheme: https
     tlsConfig:
-      insecureSkipVerify: true
+      insecureSkipVerify: {{ if and .Values.wva.prometheus.tls (hasKey .Values.wva.prometheus.tls "insecureSkipVerify") }}{{ .Values.wva.prometheus.tls.insecureSkipVerify }}{{ else }}true{{ end }}
+      {{- if and .Values.wva.prometheus.caCert (or (not .Values.wva.prometheus.tls) (not (hasKey .Values.wva.prometheus.tls "insecureSkipVerify")) (not .Values.wva.prometheus.tls.insecureSkipVerify)) }}
+      caFile: /etc/ssl/certs/prometheus-ca.crt
+      {{- end }}
   namespaceSelector:
     matchNames:
     - {{ .Release.Namespace }}

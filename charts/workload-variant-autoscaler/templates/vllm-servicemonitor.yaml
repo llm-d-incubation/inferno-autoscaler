@@ -14,6 +14,12 @@ spec:
   - port: vllm
     path: /metrics
     interval: {{ .Values.vllmService.interval }}
+    scheme: {{ .Values.vllmService.scheme | default "http" }}
+    {{- if eq (.Values.vllmService.scheme | default "http") "https" }}
+    tlsConfig:
+      insecureSkipVerify: {{ .Values.wva.prometheus.tls.insecureSkipVerify }}
+    bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    {{- end }}
   namespaceSelector:
     any: true
 {{- end }}

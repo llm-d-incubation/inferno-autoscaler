@@ -2,6 +2,21 @@
 
 Automated deployment script for WVA and llm-d infrastructure on OpenShift clusters.
 
+> **Note**: This guide covers OpenShift-specific deployment details. For a complete overview of deployment methods, Helm chart configuration, and the full configuration reference, see the [main deployment guide](../README.md).
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Configuration Options](#configuration-options)
+- [Usage Examples](#usage-examples)
+- [Script Features](#script-features)
+- [What Gets Deployed](#what-gets-deployed)
+- [Troubleshooting](#troubleshooting)
+- [Post-Deployment](#post-deployment)
+- [Cleanup](#cleanup)
+
 ## Overview
 
 This script automates the complete deployment process on OpenShift cluster including:
@@ -49,9 +64,8 @@ kubectl get nodes -o jsonpath='{range .items[?(@.status.allocatable.nvidia\.com/
 export HF_TOKEN="your-hf-token-here"
 
 # Optional: Customize deployment
-export BASE_NAME="inference-scheduling"              # Default
 export MODEL_ID="unsloth/Meta-Llama-3.1-8B"         # Default
-export WVA_IMAGE="ghcr.io/llm-d/workload-variant-autoscaler:v0.0.1"  # Default
+export WVA_IMAGE="ghcr.io/llm-d/workload-variant-autoscaler:latest"  # Default
 ```
 
 ### 2. Deploy the Workload Variant Autoscaler and llm-d using Make
@@ -74,42 +88,27 @@ That's it! The script will:
 
 ## Configuration Options
 
-### Environment Variables
+For a complete list of environment variables and configuration options, see the [Configuration Reference](../README.md#configuration-reference) in the main deployment guide.
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `HF_TOKEN` | HuggingFace token (required) | - |
-| `WELL_LIT_PATH_NAME` | Name of the deployed well-lit path | `inference-scheduling` |
-| `LLMD_NS` | llm-d namespace | `llm-d-$WELL_LIT_PATH_NAME` |
-| `MONITORING_NAMESPACE` | Prometheus monitoring namespace | `openshift-user-workload-monitoring` |
-| `MODEL_ID` | Model to deploy | `unsloth/Meta-Llama-3.1-8B` |
-| `ACCELERATOR_TYPE` | GPU type (auto-detected) | `H100` |
-| `SLO_TPOT` | Time per Output Token SLO target for the deployed model and GPU type | `9` |
-| `SLO_TTFT` | Time to First Token SLO target for the deployed model and GPU type | `1000` |
-| `WVA_IMAGE_REPO` | WVA controller image base repository | `ghcr.io/llm-d/workload-variant-autoscaler` |
-| `WVA_IMAGE_TAG` | WVA controller image tag | `v0.0.1` |
-| `LLM_D_RELEASE` | llm-d release version | `v0.3.0` |
-| `LLM_D_MODELSERVICE_NAME` | Name of the ModelService deployed by llm-d | `ms-$WELL_LIT_PATH_NAME-llm-d-modelservice-decode` |
-| `PROM_CA_CERT_PATH` | Path for the Prometheus certificate | `/tmp/prometheus-ca.crt` |
-| `VLLM_SVC_ENABLED` | Flag to enable deployment of the Service exposing vLLM Deployment | `true` |
-| `VLLM_SVC_NODEPORT` | Port used as NodePort by the Service | `ms-$WELL_LIT_PATH_NAME-llm-d-modelservice-decode` |
-| `GATEWAY_PROVIDER` | Deployed Gateway API implementation | `istio` |
-| `BENCHMARK_MODE` | Deploying using benchmark configuration for Istio | `true` |
-| `INSTALL_GATEWAY_CTRLPLANE` | Need to install Gateway Control Plane | `false` |
-
-*Note*: when `true`, the `BENCHMARK_MODE` will **override** any `GATEWAY_PROVIDER` previously set to use the benchmark configuration for Istio.
-
-### Deployment Flags
-
-Control which components to deploy:
+**Key environment variables for OpenShift**:
 
 ```bash
-# Deploy only specific components
+export HF_TOKEN="hf_xxxxx"                  # Required: HuggingFace token
+export MODEL_ID="unsloth/Meta-Llama-3.1-8B" # Model to deploy
+export ACCELERATOR_TYPE="H100"              # GPU type (auto-detected)
+export GATEWAY_PROVIDER="istio"             # Gateway: istio or kgateway
+export BENCHMARK_MODE="true"                # Use Istio benchmark config
+```
+
+**Deployment flags** - Control which components to deploy:
+
+```bash
 export DEPLOY_WVA=true                    # Deploy WVA controller
 export DEPLOY_LLM_D=true                  # Deploy llm-d infrastructure
 export DEPLOY_PROMETHEUS_ADAPTER=true     # Deploy Prometheus Adapter
-export SKIP_CHECKS=false                  # Skip prerequisite checks
 ```
+
+**Note**: OpenShift uses the built-in User Workload Monitoring (Thanos) instead of deploying a separate Prometheus stack.
 
 ## Usage Examples
 
@@ -117,7 +116,7 @@ export SKIP_CHECKS=false                  # Skip prerequisite checks
 
 ```bash
 export HF_TOKEN="hf_xxxxx"
-make deploy-llm-d-wva-on-openshift
+make deploy-wva-on-openshift
 ```
 
 ### Example 2: Custom Model and Namespace
@@ -126,7 +125,7 @@ make deploy-llm-d-wva-on-openshift
 export HF_TOKEN="hf_xxxxx"
 export BASE_NAME="my-inference"
 export MODEL_ID="meta-llama/Llama-2-7b-hf"
-make deploy-llm-d-wva-on-openshift
+make deploy-wva-on-openshift
 ```
 
 ### Example 3: Deploy Only WVA (llm-d Already Deployed)
@@ -135,7 +134,7 @@ make deploy-llm-d-wva-on-openshift
 export DEPLOY_WVA=true
 export DEPLOY_LLM_D=false
 export DEPLOY_PROMETHEUS_ADAPTER=false
-make deploy-llm-d-wva-on-openshift
+make deploy-wva-on-openshift
 ```
 
 ### Example 4: Re-run with Different GPU Type
@@ -143,7 +142,7 @@ make deploy-llm-d-wva-on-openshift
 ```bash
 export HF_TOKEN="hf_xxxxx"
 export ACCELERATOR_TYPE="A100"
-make deploy-llm-d-wva-on-openshift
+make deploy-wva-on-openshift
 ```
 
 ## Script Features
@@ -209,7 +208,7 @@ Displays:
 
 ### 2. llm-d Infrastructure
 
-- **Namespace**: `llm-d-inference-scheduling` (default)
+- **Namespace**: `llm-d-inference-scheduler` (default)
 - **Components**:
   - Gateway (kgateway)
   - Inference Scheduler (GAIE)
@@ -289,7 +288,7 @@ export HF_TOKEN="hf_xxxxxxxxxxxxxxxxxxxxx"
 
 ```bash
 kubectl get pods -n openshift-user-workload-monitoring | grep prometheus-adapter
-kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-inference-scheduling/inferno_desired_replicas" | jq
+kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-inference-scheduler/inferno_desired_replicas" | jq
 ```
 
 ### vLLM Pods Not Starting
@@ -297,7 +296,7 @@ kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-infere
 **Check logs**:
 
 ```bash
-kubectl logs -n llm-d-inference-scheduling deployment/ms-inference-scheduling-llm-d-modelservice-decode
+kubectl logs -n llm-d-inference-scheduler deployment/ms-inference-scheduling-llm-d-modelservice-decode
 ```
 
 **Common issues**:
@@ -317,12 +316,12 @@ kubectl logs -n llm-d-inference-scheduling deployment/ms-inference-scheduling-ll
 ```bash
 # Check all components
 kubectl get pods -n workload-variant-autoscaler-system
-kubectl get pods -n llm-d-inference-scheduling
-kubectl get variantautoscaling -n llm-d-inference-scheduling
-kubectl get hpa -n llm-d-inference-scheduling
+kubectl get pods -n llm-d-inference-scheduler
+kubectl get variantautoscaling -n llm-d-inference-scheduler
+kubectl get hpa -n llm-d-inference-scheduler
 
 # Check external metrics
-kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-inference-scheduling/inferno_desired_replicas" | jq
+kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-inference-scheduler/inferno_desired_replicas" | jq
 ```
 
 ### Monitor WVA Logs
@@ -333,7 +332,7 @@ kubectl logs -n workload-variant-autoscaler-system \
   -f
 ```
 
-### Run E2E Tests
+### Run E2E Tests on OpenShift
 
 ```bash
 make test-e2e-openshift
@@ -348,7 +347,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: vllm-bench-test
-  namespace: llm-d-inference-scheduling
+  namespace: llm-d-inference-scheduler
 spec:
   template:
     spec:
@@ -374,9 +373,9 @@ To remove all deployed components:
 
 ```bash
 # Delete llm-d infrastructure
-helm uninstall infra-inference-scheduling -n llm-d-inference-scheduling
-helm uninstall gaie-inference-scheduling -n llm-d-inference-scheduling
-helm uninstall ms-inference-scheduling -n llm-d-inference-scheduling
+helm uninstall infra-inference-scheduling -n llm-d-inference-scheduler
+helm uninstall gaie-inference-scheduling -n llm-d-inference-scheduler
+helm uninstall ms-inference-scheduling -n llm-d-inference-scheduler
 
 # Delete Prometheus Adapter
 helm uninstall prometheus-adapter -n openshift-user-workload-monitoring
@@ -385,68 +384,5 @@ helm uninstall prometheus-adapter -n openshift-user-workload-monitoring
 make undeploy
 
 # Delete namespaces
-kubectl delete namespace llm-d-inference-scheduling
+kubectl delete namespace llm-d-inference-scheduler
 ```
-
-## Script Structure
-
-```bash
-deploy-llmd+wva-openshift.sh
-├── Prerequisites Check
-│   ├── Tool availability (oc, kubectl, helm, yq)
-│   └── OpenShift connection
-├── GPU Detection
-│   └── Automatic GPU type identification
-├── Configuration
-│   ├── Find Thanos URL
-│   └── Create namespace
-├── Deploy WVA Controller
-│   ├── Update Prometheus URL
-│   ├── Deploy via make
-│   ├── Create ConfigMaps
-│   ├── Deploy ServiceMonitor
-│   └── Add RBAC
-├── Deploy llm-d Infrastructure
-│   ├── Create HF token secret
-│   ├── Clone llm-d-infra repo
-│   ├── Install dependencies
-│   ├── Install kgateway
-│   ├── Configure and deploy llm-d
-│   ├── Deploy Service/ServiceMonitor
-│   └── Apply EPP ConfigMap fix
-├── Deploy Prometheus Adapter
-│   ├── Extract Thanos certificate
-│   ├── Create CA ConfigMap
-│   ├── Deploy via Helm
-│   └── Add RBAC
-├── Create Resources
-│   ├── VariantAutoscaling
-│   ├── HPA
-│   └── vLLM probes
-├── Verification
-│   └── Check all components
-└── Summary Report
-```
-
-## Contributing
-
-When modifying the script:
-
-1. Follow the existing function structure
-2. Add error handling for new operations
-3. Update the documentation
-4. Test on a clean OpenShift cluster
-5. Maintain backward compatibility
-
-## Support
-
-For issues or questions:
-
-1. Check the [troubleshooting section](#troubleshooting)
-2. Check WVA and llm-d logs
-3. Open an issue on GitHub
-
-## Related Documentation
-
-- `test/e2e-openshift/README.md`: E2E testing documentation
-- `README.md`: Main project documentation

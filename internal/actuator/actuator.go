@@ -59,12 +59,13 @@ func (a *Actuator) EmitMetrics(ctx context.Context, VariantAutoscaling *llmdOptv
 			currentReplicas = int32(VariantAutoscaling.Status.CurrentAlloc.NumReplicas) // fallback
 		}
 
+		// In single-variant architecture, accelerator is in spec
 		if err := a.MetricsEmitter.EmitReplicaMetrics(
 			ctx,
 			VariantAutoscaling,
 			currentReplicas, // Real current from Deployment
 			int32(VariantAutoscaling.Status.DesiredOptimizedAlloc.NumReplicas), // Inferno's optimization target
-			VariantAutoscaling.Status.DesiredOptimizedAlloc.Accelerator,
+			VariantAutoscaling.Spec.Accelerator,
 		); err != nil {
 			logger.Log.Error(err, "Failed to emit optimization signals for variantAutoscaling - ",
 				"variantAutoscaling-name: ", VariantAutoscaling.Name)
@@ -72,7 +73,7 @@ func (a *Actuator) EmitMetrics(ctx context.Context, VariantAutoscaling *llmdOptv
 			// Metrics are critical for HPA, but emission failures shouldn't break core functionality
 			return nil
 		}
-		logger.Log.Debug("EmitReplicaMetrics completed for ", "variantAutoscaling-name: ", VariantAutoscaling.Name, ", current-replicas: ", VariantAutoscaling.Status.CurrentAlloc.NumReplicas, ", desired-replicas: ", VariantAutoscaling.Status.DesiredOptimizedAlloc.NumReplicas, ", accelerator: ", VariantAutoscaling.Status.DesiredOptimizedAlloc.Accelerator)
+		logger.Log.Debug("EmitReplicaMetrics completed for ", "variantAutoscaling-name: ", VariantAutoscaling.Name, ", current-replicas: ", VariantAutoscaling.Status.CurrentAlloc.NumReplicas, ", desired-replicas: ", VariantAutoscaling.Status.DesiredOptimizedAlloc.NumReplicas, ", accelerator: ", VariantAutoscaling.Spec.Accelerator)
 		return nil
 	}
 	logger.Log.Info("Skipping EmitReplicaMetrics for variantAutoscaling - ", "variantAutoscaling-name: ", VariantAutoscaling.Name, " - NumReplicas is 0")

@@ -2,6 +2,24 @@
 
 Automated deployment script for WVA, llm-d infrastructure, Prometheus, and HPA on Kubernetes clusters.
 
+> **Note**: This guide covers Kubernetes-specific deployment details. For a complete overview of deployment methods, Helm chart configuration, and the full configuration reference, see the [main deployment guide](../README.md).
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Configuration Options](#configuration-options)
+- [Usage Examples](#usage-examples)
+- [Script Features](#script-features)
+- [What Gets Deployed](#what-gets-deployed)
+- [Troubleshooting](#troubleshooting)
+- [Post-Deployment](#post-deployment)
+- [Cleanup](#cleanup)
+- [Metrics Validation Feature](#metrics-validation-feature)
+- [Advanced Usage](#advanced-usage)
+- [Performance Tuning](#performance-tuning)
+
 ## Overview
 
 This script automates the complete deployment process on kubernetes cluster including:
@@ -44,11 +62,11 @@ This script automates the complete deployment process on kubernetes cluster incl
 export HF_TOKEN="your-hf-token-here"
 
 # Optional: Customize deployment
-export WELL_LIT_PATH_NAME="inference-scheduling"                          # Default
+export WELL_LIT_PATH_NAME="inference-scheduler"                           # Default
 export MODEL_ID="unsloth/Meta-Llama-3.1-8B"                               # Default
 export WVA_IMAGE_REPO="ghcr.io/llm-d/workload-variant-autoscaler"         # Default
-export WVA_IMAGE_TAG="v0.0.1"                                             # Default
-export ACCELERATOR_TYPE="A100"                                            # Auto-detected or default
+export WVA_IMAGE_TAG="latest"                                             # Default
+export ACCELERATOR_TYPE="H100"                                            # Auto-detected or default
 ```
 
 ### 2. Run the Deployment Script using Make
@@ -73,42 +91,26 @@ That's it! The script will:
 
 ## Configuration Options
 
-### Environment Variables
+For a complete list of environment variables and configuration options, see the [Configuration Reference](../README.md#configuration-reference) in the main deployment guide.
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `HF_TOKEN` | HuggingFace token (required) | - |
-| `WELL_LIT_PATH_NAME` | Name of the deployed well-lit path | `inference-scheduling` |
-| `LLMD_NS` | llm-d namespace | `llm-d-$WELL_LIT_PATH_NAME` |
-| `MONITORING_NAMESPACE` | Prometheus monitoring namespace | `openshift-user-workload-monitoring` |
-| `MODEL_ID` | Model to deploy | `unsloth/Meta-Llama-3.1-8B` |
-| `ACCELERATOR_TYPE` | GPU type (auto-detected) | `A100` |
-| `SLO_TPOT` | Time per Output Token SLO target for the deployed model and GPU type | `9` |
-| `SLO_TTFT` | Time to First Token SLO target for the deployed model and GPU type | `1000` |
-| `WVA_IMAGE_REPO` | WVA controller image base repository | `ghcr.io/llm-d/workload-variant-autoscaler` |
-| `WVA_IMAGE_TAG` | WVA controller image tag | `v0.0.1` |
-| `LLM_D_RELEASE` | llm-d release version | `v0.3.0` |
-| `LLM_D_MODELSERVICE_NAME` | Name of the ModelService deployed by llm-d | `ms-$WELL_LIT_PATH_NAME-llm-d-modelservice-decode` |
-| `PROM_CA_CERT_PATH` | Path for the Prometheus certificate | `/tmp/prometheus-ca.crt` |
-| `VLLM_SVC_ENABLED` | Flag to enable deployment of the Service exposing vLLM Deployment | `true` |
-| `VLLM_SVC_NODEPORT` | Port used as NodePort by the Service | `ms-$WELL_LIT_PATH_NAME-llm-d-modelservice-decode` |
-| `GATEWAY_PROVIDER` | Deployed Gateway API implementation | `istio` |
-| `BENCHMARK_MODE` | Deploying using benchmark configuration for Istio | `true` |
-| `INSTALL_GATEWAY_CTRLPLANE` | Need to install Gateway Control Plane | `false` |
-
-### Deployment Flags
-
-Control which components to deploy:
+**Key environment variables for Kubernetes**:
 
 ```bash
-# Deploy specific components
-export DEPLOY_PROMETHEUS=true          # Deploy kube-prometheus-stack
+export HF_TOKEN="hf_xxxxx"                  # Required: HuggingFace token
+export MODEL_ID="unsloth/Meta-Llama-3.1-8B" # Model to deploy
+export ACCELERATOR_TYPE="A100"              # GPU type (auto-detected)
+export GATEWAY_PROVIDER="istio"             # Gateway: istio or kgateway
+export BENCHMARK_MODE="true"                # Use Istio benchmark config
+```
+
+**Deployment flags** - Control which components to deploy:
+
+```bash
+export DEPLOY_PROMETHEUS=true         # Deploy kube-prometheus-stack
 export DEPLOY_WVA=true                # Deploy WVA controller
 export DEPLOY_LLM_D=true              # Deploy llm-d infrastructure
 export DEPLOY_PROMETHEUS_ADAPTER=true # Deploy Prometheus Adapter
 export DEPLOY_HPA=true                # Deploy HPA
-export DEPLOY_VLLM_EMULATOR=false     # Use emulator if no GPUs (auto-detected)
-export SKIP_CHECKS=false              # Skip prerequisite checks
 ```
 
 ## Usage Examples
@@ -224,9 +226,9 @@ Displays:
 
 ### 3. llm-d Infrastructure
 
-- **Namespace**: `llm-d-inference-scheduling` (default)
+- **Namespace**: `llm-d-inference-scheduler` (default)
 - **Components**:
-  - Gateway (kgateway v2.0.3)
+  - Gateway
   - Inference Scheduler (GAIE/EPP)
   - vLLM deployment with model
   - Service for vLLM (port 8200)
@@ -247,30 +249,6 @@ Displays:
 - **VariantAutoscaling**: Custom resource for WVA optimization
 - **HPA**: HorizontalPodAutoscaler for deployment scaling
 - **ServiceMonitors**: Metrics collection configuration
-
-## Namespaces Overview
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ workload-variant-autoscaler-system                          │
-│   └─ WVA Controller (watches VariantAutoscaling CRs)        │
-├─────────────────────────────────────────────────────────────┤
-│ workload-variant-autoscaler-monitoring                      │
-│   ├─ Prometheus (scrapes metrics)                           │
-│   ├─ Prometheus Adapter (external metrics API)              │
-│   ├─ ServiceMonitor: WVA metrics                            │
-│   └─ ServiceMonitor: vLLM metrics                           │
-├─────────────────────────────────────────────────────────────┤
-│ llm-d-inference-scheduling                                  │
-│   ├─ vLLM Deployment (exposes /metrics)                     │
-│   ├─ Gateway (request routing)                              │
-│   ├─ GAIE/EPP (endpoint picking)                            │
-│   ├─ VariantAutoscaling CR                                  │
-│   └─ HPA (scales based on inferno_desired_replicas)         │
-├─────────────────────────────────────────────────────────────┤
-│ Istio                                    │
-└─────────────────────────────────────────────────────────────┘
-```
 
 ## Troubleshooting
 
@@ -304,10 +282,6 @@ kubectl get nodes
 ```
 
 ### Script Fails: HF_TOKEN Not Set
-
-```bash
-[ERROR] HF_TOKEN environment variable is not set
-```
 
 **Solution**: Set your HuggingFace token:
 
@@ -625,80 +599,6 @@ This means:
 - Providing troubleshooting steps
 - Will retry automatically
 
-## Architecture
-
-### ServiceMonitor Namespace Strategy
-
-**Key Decision**: ServiceMonitors are in `workload-variant-autoscaler-monitoring`, NOT in the same namespace as the apps they monitor.
-
-```
-ServiceMonitors:     workload-variant-autoscaler-monitoring
-WVA Controller:      workload-variant-autoscaler-system
-vLLM Pods:           llm-d-inference-scheduling
-```
-
-### Metrics Flow
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ vLLM Pods (llm-d-inference-scheduling)                      │
-│   └─ Expose /metrics on port 8200                           │
-└─────────────────────────────────────────────────────────────┘
-                         ↓ (scraped by)
-┌─────────────────────────────────────────────────────────────┐
-│ ServiceMonitor (workload-variant-autoscaler-monitoring)     │
-│   └─ Tells Prometheus where to scrape                       │
-└─────────────────────────────────────────────────────────────┘
-                         ↓ (configures)
-┌─────────────────────────────────────────────────────────────┐
-│ Prometheus (workload-variant-autoscaler-monitoring)         │
-│   └─ Scrapes and stores vLLM metrics                        │
-└─────────────────────────────────────────────────────────────┘
-                         ↓ (queries)
-┌─────────────────────────────────────────────────────────────┐
-│ WVA Controller (workload-variant-autoscaler-system)         │
-│   ├─ ValidateMetricsAvailability() ← NEW!                   │
-│   ├─ Collect metrics from Prometheus                        │
-│   ├─ Run WVA optimization                               │
-│   ├─ Set status conditions ← NEW!                           │
-│   └─ Emit inferno_desired_replicas metric                   │
-└─────────────────────────────────────────────────────────────┘
-                         ↓ (exposed by)
-┌─────────────────────────────────────────────────────────────┐
-│ Prometheus Adapter (workload-variant-autoscaler-monitoring) │
-│   └─ Exposes as external.metrics.k8s.io API                 │
-└─────────────────────────────────────────────────────────────┘
-                         ↓ (consumed by)
-┌─────────────────────────────────────────────────────────────┐
-│ HPA (llm-d-inference-scheduling)                            │
-│   └─ Scales vLLM deployment based on inferno_desired_replicas│
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Differences from OpenShift Script
-
-### Key Changes for Kubernetes
-
-1. **Prometheus**:
-   - OpenShift: Uses Thanos querier
-   - Kubernetes: Deploys kube-prometheus-stack
-
-2. **Monitoring Namespace**:
-   - OpenShift: `openshift-user-workload-monitoring`
-   - Kubernetes: `workload-variant-autoscaler-monitoring`
-
-3. **RBAC**:
-   - OpenShift: Uses `oc adm policy` commands
-   - Kubernetes: Standard RBAC via manifests
-
-4. **Service Type**:
-   - OpenShift: Often uses NodePort or Routes
-   - Kubernetes: Uses ClusterIP (can customize)
-
-5. **GPU Detection**:
-   - Both: Auto-detect GPU type
-   - Kubernetes: Also checks for device plugin/operator
-
 ## Advanced Usage
 
 ### Custom Prometheus Configuration
@@ -767,28 +667,3 @@ kubectl patch hpa vllm-deployment-hpa -n llm-d-inference-scheduling --type merge
   }
 }'
 ```
-
-## Contributing
-
-When modifying the script:
-
-1. Follow the existing function structure
-2. Add error handling for new operations
-3. Update this documentation
-4. Test on a clean Kubernetes cluster
-5. Maintain compatibility with both GPU and non-GPU clusters
-
-## Related Documentation
-
-- `docs/metrics-health-monitoring.md`: Metrics validation feature guide
-- `docs/hpa-integration.md`: HPA integration guide
-- `README.md`: Main project documentation
-
-## Support
-
-For issues or questions:
-
-1. Check the [troubleshooting section](#troubleshooting)
-2. Check WVA and llm-d logs
-3. Review `docs/metrics-health-monitoring.md` for metrics issues
-4. Open an issue on GitHub

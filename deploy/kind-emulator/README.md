@@ -2,6 +2,21 @@
 
 Quick start guide for local development using Kind (Kubernetes in Docker) with emulated GPU resources.
 
+> **Note**: This guide covers Kind-specific deployment for local testing. For a complete overview of deployment methods, Helm chart configuration, and the full configuration reference, see the [main deployment guide](../README.md).
+
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Configuration Options](#configuration-options)
+- [Scripts](#scripts)
+- [Cluster Configuration](#cluster-configuration)
+- [Testing Locally](#testing-locally)
+- [Troubleshooting](#troubleshooting)
+- [Development Workflow](#development-workflow)
+- [Clean Up](#clean-up)
+- [Next Steps](#next-steps)
+
 ## Prerequisites
 
 - Docker
@@ -17,7 +32,7 @@ Deploy WVA with full llm-d infrastructure:
 
 ```bash
 # From project root
-make deploy-llm-d-wva-emulated-on-kind
+make deploy-wva-emulated-on-kind
 ```
 
 This creates:
@@ -30,29 +45,26 @@ This creates:
 
 ## Configuration Options
 
-### Environment Variables
+For a complete list of environment variables and configuration options, see the [Configuration Reference](../README.md#configuration-reference) in the main deployment guide.
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `HF_TOKEN` | HuggingFace token (required) | - |
-| `WELL_LIT_PATH_NAME` | Name of the deployed well-lit path | `inference-scheduling` |
-| `LLMD_NS` | llm-d namespace | `llm-d-$WELL_LIT_PATH_NAME` |
-| `MONITORING_NAMESPACE` | Prometheus monitoring namespace | `openshift-user-workload-monitoring` |
-| `MODEL_ID` | Model to deploy | `unsloth/Meta-Llama-3.1-8B` |
-| `ACCELERATOR_TYPE` | GPU type (auto-detected) | `H100` |
-| `SLO_TPOT` | Time per Output Token SLO target for the deployed model and GPU type | `9` |
-| `SLO_TTFT` | Time to First Token SLO target for the deployed model and GPU type | `1000` |
-| `WVA_IMAGE_REPO` | WVA controller image base repository | `ghcr.io/llm-d/workload-variant-autoscaler` |
-| `WVA_IMAGE_TAG` | WVA controller image tag | `v0.0.1` |
-| `LLM_D_RELEASE` | llm-d release version | `v0.3.0` |
-| `LLM_D_MODELSERVICE_NAME` | Name of the ModelService deployed by llm-d | `ms-$WELL_LIT_PATH_NAME-llm-d-modelservice-decode` |
-| `PROM_CA_CERT_PATH` | Path for the Prometheus certificate | `/tmp/prometheus-ca.crt` |
-| `VLLM_SVC_ENABLED` | Flag to enable deployment of the Service exposing vLLM Deployment | `true` |
-| `VLLM_SVC_NODEPORT` | Port used as NodePort by the Service | `ms-$WELL_LIT_PATH_NAME-llm-d-modelservice-decode` |
-| `GATEWAY_PROVIDER` | Deployed Gateway API implementation | `kgateway` |
-| `INSTALL_GATEWAY_CTRLPLANE` | Need to install Gateway Control Plane | `false` |
+**Key environment variables for Kind emulator**:
 
-*Note*: the emulated environment currently uses the `llm-d-infra v1.3.1` release, using kgateway, for retrocompatibility with vLLM-emulator. This will change once the `llm-d-inference-sim` implements the required metrics needed for scaling with WVA. For more information, see this [issue](https://github.com/llm-d/llm-d-inference-sim/issues/211).
+```bash
+export HF_TOKEN="hf_xxxxx"                  # Required: HuggingFace token
+export MODEL_ID="unsloth/Meta-Llama-3.1-8B" # Model to deploy
+export ACCELERATOR_TYPE="H100"              # Emulated GPU type
+export GATEWAY_PROVIDER="kgateway"          # Gateway for Kind (kgateway recommended)
+```
+
+**Deployment flags**:
+
+```bash
+export DEPLOY_PROMETHEUS=true         # Deploy Prometheus stack
+export DEPLOY_WVA=true                # Deploy WVA controller
+export DEPLOY_LLM_D=true              # Deploy llm-d infrastructure (emulated)
+export DEPLOY_PROMETHEUS_ADAPTER=true # Deploy Prometheus Adapter
+export DEPLOY_HPA=true                # Deploy HPA
+```
 
 ### Step-by-Step Setup
 
@@ -77,13 +89,13 @@ export DEPLOY_PROMETHEUS=true # Prometheus is needed for WVA to scrape metrics
 export VLLM_SVC_ENABLED=true
 export DEPLOY_PROMETHEUS_ADAPTER=false
 export DEPLOY_HPA=false
-make deploy-llm-d-wva-emulated-on-kind
+make deploy-wva-emulated-on-kind
 ```
 
 **3. Deploy with llm-d (by default):**
 
 ```bash
-make deploy-llm-d-wva-emulated-on-kind
+make deploy-wva-emulated-on-kind
 ```
 
 ## Scripts
@@ -101,30 +113,6 @@ Creates Kind cluster with emulated GPU support.
 - `-t`: Vendor type (nvidia|amd|intel|mix) - default: mix
 - `-n`: Number of nodes - default: 3
 - `-g`: GPUs per node - default: 2
-
-### deploy-wva.sh
-
-Deploys WVA controller to existing cluster.
-
-```bash
-./deploy-wva.sh
-```
-
-### deploy-llm-d.sh
-
-Deploys WVA with llm-d infrastructure.
-
-```bash
-./deploy-llm-d.sh -i <your-image>
-```
-
-### undeploy-llm-d.sh
-
-Removes WVA and llm-d infrastructure.
-
-```bash
-./undeploy-llm-d.sh
-```
 
 ### teardown.sh
 
@@ -301,26 +289,19 @@ kubectl get pods -n <namespace>
 **Remove deployments:**
 
 ```bash
-make undeploy-llm-d-wva-emulated-on-kind
+make undeploy-wva-emulated-on-kind
 ```
 
 **Remove deployments and delete the Kind cluster:**
 
 ```bash
-make undeploy-llm-d-wva-emulated-on-kind-delete-cluster
+make undeploy-wva-emulated-on-kind-delete-cluster
 ```
 
 **Destroy cluster:**
 
 ```bash
 make destroy-kind-cluster
-```
-
-**Or use scripts directly:**
-
-```bash
-./undeploy-llm-d.sh
-./teardown.sh
 ```
 
 ## Next Steps

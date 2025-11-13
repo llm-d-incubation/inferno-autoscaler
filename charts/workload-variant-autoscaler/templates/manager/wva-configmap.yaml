@@ -16,18 +16,18 @@ data:
 
   # TLS Configuration (TLS is always enabled for HTTPS-only support)
   # PROMETHEUS_TLS_INSECURE_SKIP_VERIFY: "true"  # Skip certificate verification (development/testing only)
-  # PROMETHEUS_CA_CERT_PATH: "/path/to/ca.crt"   # CA certificate for server validation
+  PROMETHEUS_CA_CERT_PATH: {{ .Values.wva.prometheus.tls.caCertPath | default "/etc/ssl/certs/prometheus-ca.crt" | quote }}   # CA certificate for server validation
   # PROMETHEUS_CLIENT_CERT_PATH: "/path/to/client.crt"  # Client certificate for mutual TLS
   # PROMETHEUS_CLIENT_KEY_PATH: "/path/to/client.key"   # Client private key for mutual TLS
   # PROMETHEUS_SERVER_NAME: "prometheus.example.com"    # Expected server name for SNI
-  PROMETHEUS_TLS_INSECURE_SKIP_VERIFY: "true"
-  
+  PROMETHEUS_TLS_INSECURE_SKIP_VERIFY: {{ if and .Values.wva.prometheus.tls (hasKey .Values.wva.prometheus.tls "insecureSkipVerify") }}{{ .Values.wva.prometheus.tls.insecureSkipVerify | quote }}{{ else }}"true"{{ end }}
+
   # Authentication Configuration (BearerToken takes precedence over TokenPath)
   # PROMETHEUS_BEARER_TOKEN: "your-token-here"           # Direct bearer token (development/testing)
   # PROMETHEUS_TOKEN_PATH: "/path/to/token/file"        # Path to bearer token file (production with mounted secrets)
-  
+
   # Optimization configuration
-  GLOBAL_OPT_INTERVAL: "60s"
+  GLOBAL_OPT_INTERVAL: {{ .Values.wva.reconcileInterval | quote }}
 
   # Option to scale variants to zero replicas (default: true)
   WVA_SCALE_TO_ZERO: "false"

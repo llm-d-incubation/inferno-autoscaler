@@ -302,18 +302,12 @@ var _ = Describe("Collector", func() {
 				&model.Sample{Value: model.SampleValue(0.05)}, // 0.05 seconds
 			}
 
-			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
+			allocation, _, _, _, _, _, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(allocation.Accelerator).To(Equal("A100"))
-			Expect(allocation.NumReplicas).To(Equal(2))
-			Expect(allocation.MaxBatch).To(Equal(256))
-			Expect(allocation.VariantCost).To(Equal("80.00"))           // 2 replicas * 40.0 acc cost
-			Expect(allocation.TTFTAverage).To(Equal("500.00"))          // 0.5 * 1000 ms
-			Expect(allocation.ITLAverage).To(Equal("50.00"))            // 0.05 * 1000 ms
-			Expect(allocation.Load.ArrivalRate).To(Equal("10.50"))      // req per min
-			Expect(allocation.Load.AvgInputTokens).To(Equal("100.00"))  // input tokens per req
-			Expect(allocation.Load.AvgOutputTokens).To(Equal("150.00")) // output tokens per req
+			// In the new API, Allocation only has NumReplicas
+			Expect(allocation.NumReplicas).To(Equal(int32(2)))
+			// All other fields (accelerator, maxBatch, cost, TTFT, ITL, load) are now in Spec or removed
 		})
 
 		It("should handle missing accelerator label", func() {
@@ -322,19 +316,32 @@ var _ = Describe("Collector", func() {
 
 			// Setup minimal mock responses
 			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
-			tokenQuery := utils.CreateDecToksQuery(modelID, testNamespace)
+			avgPromptToksQuery := utils.CreatePromptToksQuery(modelID, testNamespace)
+			avgDecToksQuery := utils.CreateDecToksQuery(modelID, testNamespace)
+			ttftQuery := utils.CreateTTFTQuery(modelID, testNamespace)
+			itlQuery := utils.CreateITLQuery(modelID, testNamespace)
 
 			mockProm.QueryResults[arrivalQuery] = model.Vector{
 				&model.Sample{Value: model.SampleValue(5.0)},
 			}
-			mockProm.QueryResults[tokenQuery] = model.Vector{
+			mockProm.QueryResults[avgPromptToksQuery] = model.Vector{
 				&model.Sample{Value: model.SampleValue(100.0)},
 			}
+			mockProm.QueryResults[avgDecToksQuery] = model.Vector{
+				&model.Sample{Value: model.SampleValue(100.0)},
+			}
+			mockProm.QueryResults[ttftQuery] = model.Vector{
+				&model.Sample{Value: model.SampleValue(0.5)},
+			}
+			mockProm.QueryResults[itlQuery] = model.Vector{
+				&model.Sample{Value: model.SampleValue(0.05)},
+			}
 
-			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
+			allocation, _, _, _, _, _, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(allocation.Accelerator).To(Equal("")) // Empty due to deleted accName label
+			// In the new API, Allocation only has NumReplicas - accelerator is in Spec
+			Expect(allocation.NumReplicas).To(Equal(int32(2)))
 		})
 
 		It("should handle Prometheus Query errors", func() {
@@ -342,7 +349,7 @@ var _ = Describe("Collector", func() {
 			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
 			mockProm.QueryErrors[arrivalQuery] = fmt.Errorf("prometheus connection failed")
 
-			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
+			allocation, _, _, _, _, _, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("prometheus connection failed"))
@@ -352,20 +359,24 @@ var _ = Describe("Collector", func() {
 		It("should handle empty metric results gracefully", func() {
 			// Setup empty responses (no data points)
 			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
-			tokenQuery := utils.CreateDecToksQuery(modelID, testNamespace)
+			avgPromptToksQuery := utils.CreatePromptToksQuery(modelID, testNamespace)
+			avgDecToksQuery := utils.CreateDecToksQuery(modelID, testNamespace)
+			ttftQuery := utils.CreateTTFTQuery(modelID, testNamespace)
+			itlQuery := utils.CreateITLQuery(modelID, testNamespace)
 
 			// Empty vectors (no data)
 			mockProm.QueryResults[arrivalQuery] = model.Vector{}
-			mockProm.QueryResults[tokenQuery] = model.Vector{}
+			mockProm.QueryResults[avgPromptToksQuery] = model.Vector{}
+			mockProm.QueryResults[avgDecToksQuery] = model.Vector{}
+			mockProm.QueryResults[ttftQuery] = model.Vector{}
+			mockProm.QueryResults[itlQuery] = model.Vector{}
 
-			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
+			allocation, _, _, _, _, _, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(allocation.ITLAverage).To(Equal("0.00"))
-			Expect(allocation.TTFTAverage).To(Equal("0.00"))
-			Expect(allocation.Load.ArrivalRate).To(Equal("0.00"))
-			Expect(allocation.Load.AvgInputTokens).To(Equal("0.00"))
-			Expect(allocation.Load.AvgOutputTokens).To(Equal("0.00"))
+			// In the new API, Allocation only has NumReplicas
+			// Metrics being empty should still return a valid allocation
+			Expect(allocation.NumReplicas).To(Equal(int32(2)))
 		})
 	})
 
@@ -425,7 +436,7 @@ var _ = Describe("Collector", func() {
 
 		It("should return available when metrics are found with namespace label", func() {
 			// Setup mock response with namespace label
-			query := fmt.Sprintf(`vllm:request_success_total{model_name="%s",namespace="%s"}`, modelName, testNamespace)
+			query := fmt.Sprintf(`vllm:num_requests_running{model_name="%s",namespace="%s"}`, modelName, testNamespace)
 			mockProm.QueryResults[query] = model.Vector{
 				&model.Sample{
 					Value:     model.SampleValue(100.0),
@@ -442,8 +453,8 @@ var _ = Describe("Collector", func() {
 
 		It("should fallback to query without namespace label when first query returns empty", func() {
 			// Setup mock responses - first query empty, fallback has results
-			queryWithNamespace := fmt.Sprintf(`vllm:request_success_total{model_name="%s",namespace="%s"}`, modelName, testNamespace)
-			queryWithoutNamespace := fmt.Sprintf(`vllm:request_success_total{model_name="%s"}`, modelName)
+			queryWithNamespace := fmt.Sprintf(`vllm:num_requests_running{model_name="%s",namespace="%s"}`, modelName, testNamespace)
+			queryWithoutNamespace := fmt.Sprintf(`vllm:num_requests_running{model_name="%s"}`, modelName)
 
 			mockProm.QueryResults[queryWithNamespace] = model.Vector{}
 			mockProm.QueryResults[queryWithoutNamespace] = model.Vector{
@@ -461,7 +472,7 @@ var _ = Describe("Collector", func() {
 
 		It("should return unavailable when Prometheus query fails", func() {
 			// Setup error for query
-			query := fmt.Sprintf(`vllm:request_success_total{model_name="%s",namespace="%s"}`, modelName, testNamespace)
+			query := fmt.Sprintf(`vllm:num_requests_running{model_name="%s",namespace="%s"}`, modelName, testNamespace)
 			mockProm.QueryErrors[query] = fmt.Errorf("prometheus connection error")
 
 			result := ValidateMetricsAvailability(ctx, mockProm, modelName, testNamespace)
@@ -473,8 +484,8 @@ var _ = Describe("Collector", func() {
 
 		It("should return unavailable when no metrics found", func() {
 			// Setup empty responses for both queries
-			queryWithNamespace := fmt.Sprintf(`vllm:request_success_total{model_name="%s",namespace="%s"}`, modelName, testNamespace)
-			queryWithoutNamespace := fmt.Sprintf(`vllm:request_success_total{model_name="%s"}`, modelName)
+			queryWithNamespace := fmt.Sprintf(`vllm:num_requests_running{model_name="%s",namespace="%s"}`, modelName, testNamespace)
+			queryWithoutNamespace := fmt.Sprintf(`vllm:num_requests_running{model_name="%s"}`, modelName)
 
 			mockProm.QueryResults[queryWithNamespace] = model.Vector{}
 			mockProm.QueryResults[queryWithoutNamespace] = model.Vector{}
@@ -489,7 +500,7 @@ var _ = Describe("Collector", func() {
 
 		It("should return unavailable when metrics are stale", func() {
 			// Setup mock response with stale timestamp (older than 5 minutes)
-			query := fmt.Sprintf(`vllm:request_success_total{model_name="%s",namespace="%s"}`, modelName, testNamespace)
+			query := fmt.Sprintf(`vllm:num_requests_running{model_name="%s",namespace="%s"}`, modelName, testNamespace)
 			staleTime := time.Now().Add(-10 * time.Minute)
 			mockProm.QueryResults[query] = model.Vector{
 				&model.Sample{
@@ -507,8 +518,8 @@ var _ = Describe("Collector", func() {
 
 		It("should handle fallback query errors", func() {
 			// Setup empty first query and error on fallback
-			queryWithNamespace := fmt.Sprintf(`vllm:request_success_total{model_name="%s",namespace="%s"}`, modelName, testNamespace)
-			queryWithoutNamespace := fmt.Sprintf(`vllm:request_success_total{model_name="%s"}`, modelName)
+			queryWithNamespace := fmt.Sprintf(`vllm:num_requests_running{model_name="%s",namespace="%s"}`, modelName, testNamespace)
+			queryWithoutNamespace := fmt.Sprintf(`vllm:num_requests_running{model_name="%s"}`, modelName)
 
 			mockProm.QueryResults[queryWithNamespace] = model.Vector{}
 			mockProm.QueryErrors[queryWithoutNamespace] = fmt.Errorf("fallback query failed")
@@ -522,7 +533,7 @@ var _ = Describe("Collector", func() {
 
 		It("should accept fresh metrics within the 5 minute window", func() {
 			// Setup mock response with recent timestamp
-			query := fmt.Sprintf(`vllm:request_success_total{model_name="%s",namespace="%s"}`, modelName, testNamespace)
+			query := fmt.Sprintf(`vllm:num_requests_running{model_name="%s",namespace="%s"}`, modelName, testNamespace)
 			freshTime := time.Now().Add(-2 * time.Minute)
 			mockProm.QueryResults[query] = model.Vector{
 				&model.Sample{
