@@ -1,37 +1,57 @@
 apiVersion: llmd.ai/v1alpha1
-# Optimizing a variant, create only when the model is deployed and serving traffic
-# this is for the collector the collect existing (previous) running metrics of the variant.
+# Single-variant autoscaling resource - create one VariantAutoscaling CR per variant
+# This should only be created when the model is deployed and serving traffic
 kind: VariantAutoscaling
 metadata:
-  # Unique name of the variant
-  name: vllme-deployment 
+  # Name typically matches the Deployment name (Kubernetes DNS-1123 compliant)
+  name: vllme-deployment
   namespace: llm-d-sim
   labels:
     inference.optimization/acceleratorName: A100
-# This is essentially static input to the optimizer
 spec:
+  # Reference to the target Deployment to scale
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vllme-deployment
+
   # OpenAI API compatible name of the model
   modelID: default/default
-  # Add SLOs in configmap, add reference to this per model data
-  # to avoid duplication and Move to ISOs when available
+
+  # Business identifier for this variant (model + accelerator + count combination)
+  # Format: {modelID}-{accelerator}-{acceleratorCount}
+  # May contain slashes, dots, mixed case (not restricted to DNS-1123)
+  variantID: "default/default-A100-1"
+
+  # Accelerator type for this variant
+  accelerator: "A100"
+
+  # Number of accelerator units per replica
+  acceleratorCount: 1
+
+  # Cost per replica for this variant (optional, defaults to "10")
+  variantCost: "40.00"
+
+  # Minimum replicas (optional, defaults to 0, allows scale-to-zero)
+  minReplicas: 0
+
+  # Maximum replicas (optional, unlimited if not specified)
+  maxReplicas: 10
+
+  # SLO configuration reference
   sloClassRef:
-    # Configmap name to load in the same namespace as optimizer object
-    # we start with static (non-changing) ConfigMaps (for ease of implementation only)
     name: premium
-    # Key (modelID) present inside configmap
     key: opt-125m
-  # Static profiled benchmarked data for a variant running on different accelerators
-  modelProfile:
-    accelerators:
-      - acc: "A100"
-        accCount: 1
-        perfParms: 
-          decodeParms:
-            # Decode parameters for ITL equation: itl = alpha + beta * maxBatchSize
-            alpha: "20.58"
-            beta: "0.41"
-          # Prefill parameters for TTFT equation: ttft = gamma + delta * tokens * maxBatchSize  
-          prefillParms:
-            gamma: "5.2"
-            delta: "0.1"
-        maxBatchSize: 4
+
+  # Performance profile for this specific variant
+  variantProfile:
+    perfParms:
+      decodeParms:
+        # Decode parameters for ITL equation: itl = alpha + beta * maxBatchSize
+        alpha: "20.58"
+        beta: "0.41"
+      prefillParms:
+        # Prefill parameters for TTFT equation: ttft = gamma + delta * tokens * maxBatchSize
+        gamma: "5.2"
+        delta: "0.1"
+    maxBatchSize: 4

@@ -15,11 +15,39 @@ metadata:
   name: llama-8b-autoscaler
   namespace: llm-inference
 spec:
-  modelName: "meta/llama-3.1-8b"
-  serviceClass: "Premium"
-  acceleratorType: "A100"
+  # Reference to the target Deployment to scale
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: llama-8b-deployment
+
+  # Model and variant identifiers
+  modelID: "meta/llama-3.1-8b"
+  variantID: "meta/llama-3.1-8b-A100-1"
+
+  # Accelerator configuration
+  accelerator: "A100"
+  acceleratorCount: 1
+
+  # Replica bounds
   minReplicas: 1
-  maxBatchSize: 256
+  maxReplicas: 10
+
+  # SLO configuration reference
+  sloClassRef:
+    name: premium-slo
+    key: opt-125m
+
+  # Performance profile
+  variantProfile:
+    maxBatchSize: 256
+    perfParms:
+      decodeParms:
+        alpha: "6.958"
+        beta: "0.042"
+      prefillParms:
+        gamma: "5.2"
+        delta: "0.1"
 ```
 
 ### Complete Reference
@@ -89,21 +117,31 @@ data:
 
 ## Configuration Options
 
-### Model-Specific Settings
+### Required Fields
 
-- **modelName**: Identifier for your model (e.g., "meta/llama-3.1-8b")
-- **serviceClass**: Service tier (must match ConfigMap)
-- **acceleratorType**: Preferred GPU type (e.g., "A100", "MI300X")
+- **scaleTargetRef**: Reference to the target Deployment to scale
+  - `kind`: Resource kind (typically "Deployment")
+  - `name`: Name of the Deployment
+- **modelID**: Unique identifier for your model (e.g., "meta/llama-3.1-8b")
+- **variantID**: Business identifier for this variant (format: `{modelID}-{accelerator}-{count}`)
+- **accelerator**: GPU type for this variant (e.g., "A100", "H100")
+- **acceleratorCount**: Number of accelerator units per replica (minimum: 1)
+- **sloClassRef**: Reference to SLO configuration ConfigMap
+  - `name`: ConfigMap name
+  - `key`: Key within the ConfigMap
+- **variantProfile**: Performance characteristics for this variant
+  - `maxBatchSize`: Maximum batch size supported
+  - `perfParms`: Performance parameters for TTFT and ITL calculations
 
-### Scaling Parameters
+### Optional Fields
 
-- **minReplicas**: Minimum number of replicas (default: 1)
-- **maxBatchSize**: Maximum batch size for inference
-- **keepAccelerator**: Pin to specific accelerator type (true/false)
+- **minReplicas**: Minimum number of replicas (default: 0, allows scale-to-zero)
+- **maxReplicas**: Maximum number of replicas (unlimited if not specified)
+- **variantCost**: Cost per replica for this variant (default: "10")
 
 ### Advanced Options
 
-See [CRD Reference](crd-reference.md) for advanced configuration options.
+See [CRD Reference](crd-reference.md) for complete field documentation and validation rules.
 
 ## Best Practices
 

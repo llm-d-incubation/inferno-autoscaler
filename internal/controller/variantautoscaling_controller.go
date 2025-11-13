@@ -240,11 +240,10 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 		}
 		logger.Log.Info("Found SLO for model - ", "model: ", modelName, ", class: ", className, ", slo-tpot: ", entry.SLOTPOT, ", slo-ttft: ", entry.SLOTTFT)
 
-		for _, modelAcceleratorProfile := range va.Spec.ModelProfile.Accelerators {
-			if utils.AddModelAcceleratorProfileToSystemData(systemData, modelName, &modelAcceleratorProfile) != nil {
-				logger.Log.Error("variantAutoscaling bad model accelerator profile data, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
-				continue
-			}
+		// In single-variant architecture, each VA has only one accelerator
+		if utils.AddModelAcceleratorProfileToSystemData(systemData, modelName, va.Spec.Accelerator, va.Spec.AcceleratorCount, &va.Spec.VariantProfile) != nil {
+			logger.Log.Error("variantAutoscaling bad variant profile data, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
+			continue
 		}
 
 		accName := va.Labels["inference.optimization/acceleratorName"]
@@ -259,17 +258,23 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 			continue
 		}
 
+		// Get the Deployment using ScaleTargetRef
+		if va.Spec.ScaleTargetRef.Name == "" {
+			logger.Log.Error("variantAutoscaling missing ScaleTargetRef.Name, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
+			continue
+		}
+
 		var deploy appsv1.Deployment
-		err = utils.GetDeploymentWithBackoff(ctx, r.Client, va.Name, va.Namespace, &deploy)
+		err = utils.GetDeploymentWithBackoff(ctx, r.Client, va.Spec.ScaleTargetRef.Name, va.Namespace, &deploy)
 		if err != nil {
-			logger.Log.Error(err, "failed to get Deployment after retries - ", "variantAutoscaling-name: ", va.Name)
+			logger.Log.Error(err, "failed to get Deployment after retries - ", "variantAutoscaling-name: ", va.Name, ", scaleTargetRef: ", va.Spec.ScaleTargetRef.Name)
 			continue
 		}
 
 		var updateVA llmdVariantAutoscalingV1alpha1.VariantAutoscaling
-		err = utils.GetVariantAutoscalingWithBackoff(ctx, r.Client, deploy.Name, deploy.Namespace, &updateVA)
+		err = utils.GetVariantAutoscalingWithBackoff(ctx, r.Client, va.Name, va.Namespace, &updateVA)
 		if err != nil {
-			logger.Log.Error(err, "unable to get variantAutoscaling for deployment - ", "deployment-name: ", deploy.Name, ", namespace: ", deploy.Namespace)
+			logger.Log.Error(err, "unable to get variantAutoscaling - ", "variantAutoscaling-name: ", va.Name, ", namespace: ", va.Namespace)
 			continue
 		}
 
@@ -314,7 +319,7 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 			continue
 		}
 
-		currentAllocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, r.PromAPI)
+		currentAllocation, arrivalRate, avgInputTokens, avgOutputTokens, itlAverage, ttftAverage, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, r.PromAPI)
 		if err != nil {
 			logger.Log.Error(err, "unable to fetch metrics, skipping this variantAutoscaling loop")
 			// Don't update status here - will be updated in next reconcile when metrics are available
@@ -322,7 +327,8 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 		}
 		updateVA.Status.CurrentAlloc = currentAllocation
 
-		if err := utils.AddServerInfoToSystemData(systemData, &updateVA, className); err != nil {
+		// Pass collected metrics to optimizer
+		if err := utils.AddServerInfoToSystemData(systemData, &updateVA, className, arrivalRate, avgInputTokens, avgOutputTokens, itlAverage, ttftAverage); err != nil {
 			logger.Log.Info("variantAutoscaling bad deployment server data, skipping optimization - ", "variantAutoscaling-name: ", updateVA.Name)
 			continue
 		}
@@ -370,26 +376,27 @@ func (r *VariantAutoscalingReconciler) applyOptimizedAllocations(
 		updateVa.Status.Conditions = va.Status.Conditions
 
 		// Set OptimizationReady condition to True on successful optimization
+		// In single-variant architecture, accelerator is in spec
 		llmdVariantAutoscalingV1alpha1.SetCondition(&updateVa,
 			llmdVariantAutoscalingV1alpha1.TypeOptimizationReady,
 			metav1.ConditionTrue,
 			llmdVariantAutoscalingV1alpha1.ReasonOptimizationSucceeded,
 			fmt.Sprintf("Optimization completed: %d replicas on %s",
 				updateVa.Status.DesiredOptimizedAlloc.NumReplicas,
-				updateVa.Status.DesiredOptimizedAlloc.Accelerator))
+				updateVa.Spec.Accelerator))
 
 		act := actuator.NewActuator(r.Client)
 
 		// Emit optimization signals for external autoscalers
 		if err := act.EmitMetrics(ctx, &updateVa); err != nil {
-			logger.Log.Error(err, "failed to emit optimization signals for external autoscalers", "variant", updateVa.Name)
+			logger.Log.Error(err, "failed to emit optimization signals for external autoscalers - ", "variant: ", updateVa.Name)
 		} else {
-			logger.Log.Info(fmt.Sprintf("Successfully emitted optimization signals for external autoscalers - variant: %s", updateVa.Name))
+			logger.Log.Debug("Successfully emitted optimization signals for external autoscalers - ", "variant: ", updateVa.Name)
 			updateVa.Status.Actuation.Applied = true // Signals emitted successfully
 		}
 
 		if err := utils.UpdateStatusWithBackoff(ctx, r.Client, &updateVa, utils.StandardBackoff, "VariantAutoscaling"); err != nil {
-			logger.Log.Error(err, "failed to patch status for variantAutoscaling after retries", "variantAutoscaling-name", updateVa.Name)
+			logger.Log.Error(err, "failed to patch status for variantAutoscaling after retries - ", "variantAutoscaling-name: ", updateVa.Name)
 			continue
 		}
 	}

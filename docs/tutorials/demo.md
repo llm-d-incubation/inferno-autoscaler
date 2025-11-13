@@ -86,17 +86,41 @@ metadata:
     inference.optimization/modelName: Meta-Llama-3.1-8B
     inference.optimization/acceleratorName: H100
 spec:
+  # Reference to the target Deployment
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vllm
+
+  # Model and variant identifiers
   modelID: unsloth/Meta-Llama-3.1-8B
+  variantID: "unsloth/Meta-Llama-3.1-8B-H100-1"
+
+  # Accelerator configuration
+  accelerator: "H100"
+  acceleratorCount: 1
+
+  # Replica bounds (optional)
+  minReplicas: 0
+  maxReplicas: 10
+
+  # SLO configuration reference
   sloClassRef:
     name: premium-slo
     key: opt-125m
-  modelProfile:
-    accelerators:
-      - acc: "H100"
-        accCount: 1
+
+  # Performance profile for this variant
+  variantProfile:
+    maxBatchSize: 512
+    perfParms:
+      decodeParms:
+        # ITL equation: itl = alpha + beta * maxBatchSize
         alpha: "6.958"
         beta: "0.042"
-        maxBatchSize: 512 
+      prefillParms:
+        # TTFT equation: ttft = gamma + delta * tokens * maxBatchSize
+        gamma: "5.2"
+        delta: "0.1"
 ```
 
 

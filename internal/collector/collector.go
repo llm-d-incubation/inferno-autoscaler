@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"strconv"
 	"time"
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
@@ -73,6 +72,25 @@ func queryAndExtractMetric(ctx context.Context, promAPI promv1.API, query string
 	}
 
 	return resultVal, nil
+}
+
+// queryWithFallback tries a query with namespace label first, then falls back to without namespace
+// This supports both real vLLM deployments (with namespace) and vllm-emulator (without namespace)
+func queryWithFallback(ctx context.Context, promAPI promv1.API, queryWithNS, queryWithoutNS, metricName string) (float64, error) {
+	// Try with namespace first
+	result, err := queryAndExtractMetric(ctx, promAPI, queryWithNS, metricName)
+	if err != nil {
+		return 0.0, err
+	}
+
+	// If result is non-zero, return it
+	if result != 0.0 {
+		return result, nil
+	}
+
+	// Otherwise try fallback query without namespace (for vllm-emulator compatibility)
+	logger.Log.Debug("Primary query returned zero, trying fallback without namespace", "metric", metricName)
+	return queryAndExtractMetric(ctx, promAPI, queryWithoutNS, metricName)
 }
 
 // MetricsValidationResult contains the result of metrics availability check
@@ -159,18 +177,21 @@ func AddMetricsToOptStatus(ctx context.Context,
 	opt *llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
 	deployment appsv1.Deployment,
 	acceleratorCostVal float64,
-	promAPI promv1.API) (llmdVariantAutoscalingV1alpha1.Allocation, error) {
+	promAPI promv1.API) (llmdVariantAutoscalingV1alpha1.Allocation, float64, float64, float64, float64, float64, error) {
 
 	deployNamespace := deployment.Namespace
 	modelName := opt.Spec.ModelID
 
-	// --- 1. Define Queries ---
+	// --- 1. Define Queries (with and without namespace for fallback) ---
 
 	// Metric 1: Arrival rate (requests per minute)
 	arrivalQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
 		constants.VLLMRequestSuccessTotal,
 		constants.LabelModelName, modelName,
 		constants.LabelNamespace, deployNamespace)
+	arrivalQueryFallback := fmt.Sprintf(`sum(rate(%s{%s="%s"}[1m]))`,
+		constants.VLLMRequestSuccessTotal,
+		constants.LabelModelName, modelName)
 
 	// Metric 2: Average prompt length (Input Tokens)
 	avgPromptToksQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
@@ -180,6 +201,11 @@ func AddMetricsToOptStatus(ctx context.Context,
 		constants.VLLMRequestPromptTokensCount,
 		constants.LabelModelName, modelName,
 		constants.LabelNamespace, deployNamespace)
+	avgPromptToksQueryFallback := fmt.Sprintf(`sum(rate(%s{%s="%s"}[1m]))/sum(rate(%s{%s="%s"}[1m]))`,
+		constants.VLLMRequestPromptTokensSum,
+		constants.LabelModelName, modelName,
+		constants.VLLMRequestPromptTokensCount,
+		constants.LabelModelName, modelName)
 
 	// Metric 3: Average decode length (Output Tokens)
 	avgDecToksQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
@@ -189,6 +215,11 @@ func AddMetricsToOptStatus(ctx context.Context,
 		constants.VLLMRequestGenerationTokensCount,
 		constants.LabelModelName, modelName,
 		constants.LabelNamespace, deployNamespace)
+	avgDecToksQueryFallback := fmt.Sprintf(`sum(rate(%s{%s="%s"}[1m]))/sum(rate(%s{%s="%s"}[1m]))`,
+		constants.VLLMRequestGenerationTokensSum,
+		constants.LabelModelName, modelName,
+		constants.VLLMRequestGenerationTokensCount,
+		constants.LabelModelName, modelName)
 
 	// Metric 4: Average TTFT (Time to First Token) ms
 	ttftQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
@@ -198,6 +229,11 @@ func AddMetricsToOptStatus(ctx context.Context,
 		constants.VLLMTimeToFirstTokenSecondsCount,
 		constants.LabelModelName, modelName,
 		constants.LabelNamespace, deployNamespace)
+	ttftQueryFallback := fmt.Sprintf(`sum(rate(%s{%s="%s"}[1m]))/sum(rate(%s{%s="%s"}[1m]))`,
+		constants.VLLMTimeToFirstTokenSecondsSum,
+		constants.LabelModelName, modelName,
+		constants.VLLMTimeToFirstTokenSecondsCount,
+		constants.LabelModelName, modelName)
 
 	// Metric 5: Average ITL (Inter-Token Latency) ms
 	itlQuery := fmt.Sprintf(`sum(rate(%s{%s="%s",%s="%s"}[1m]))/sum(rate(%s{%s="%s",%s="%s"}[1m]))`,
@@ -207,74 +243,72 @@ func AddMetricsToOptStatus(ctx context.Context,
 		constants.VLLMTimePerOutputTokenSecondsCount,
 		constants.LabelModelName, modelName,
 		constants.LabelNamespace, deployNamespace)
+	itlQueryFallback := fmt.Sprintf(`sum(rate(%s{%s="%s"}[1m]))/sum(rate(%s{%s="%s"}[1m]))`,
+		constants.VLLMTimePerOutputTokenSecondsSum,
+		constants.LabelModelName, modelName,
+		constants.VLLMTimePerOutputTokenSecondsCount,
+		constants.LabelModelName, modelName)
 
-	// --- 2. Execute Queries ---
+	// --- 2. Execute Queries with fallback ---
 
-	arrivalVal, err := queryAndExtractMetric(ctx, promAPI, arrivalQuery, "ArrivalRate")
+	// In single-variant architecture, these metrics are collected and returned to the controller
+	// They are not stored in status, but passed directly to the optimizer
+	arrivalRate, err := queryWithFallback(ctx, promAPI, arrivalQuery, arrivalQueryFallback, "ArrivalRate")
 	if err != nil {
-		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
+		return llmdVariantAutoscalingV1alpha1.Allocation{}, 0, 0, 0, 0, 0, err
 	}
-	arrivalVal *= 60 // convert from req/sec to req/min
+	arrivalRate *= 60 // convert from req/sec to req/min
 
-	avgInputTokens, err := queryAndExtractMetric(ctx, promAPI, avgPromptToksQuery, "AvgInputTokens")
+	avgInputTokens, err := queryWithFallback(ctx, promAPI, avgPromptToksQuery, avgPromptToksQueryFallback, "AvgInputTokens")
 	if err != nil {
-		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
-	}
-
-	avgOutputTokens, err := queryAndExtractMetric(ctx, promAPI, avgDecToksQuery, "AvgOutputTokens")
-	if err != nil {
-		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
+		return llmdVariantAutoscalingV1alpha1.Allocation{}, 0, 0, 0, 0, 0, err
 	}
 
-	ttftAverageTime, err := queryAndExtractMetric(ctx, promAPI, ttftQuery, "TTFTAverageTime")
+	avgOutputTokens, err := queryWithFallback(ctx, promAPI, avgDecToksQuery, avgDecToksQueryFallback, "AvgOutputTokens")
 	if err != nil {
-		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
+		return llmdVariantAutoscalingV1alpha1.Allocation{}, 0, 0, 0, 0, 0, err
 	}
-	ttftAverageTime *= 1000 // convert to msec
 
-	itlAverage, err := queryAndExtractMetric(ctx, promAPI, itlQuery, "ITLAverage")
+	ttftAverage, err := queryWithFallback(ctx, promAPI, ttftQuery, ttftQueryFallback, "TTFTAverageTime")
 	if err != nil {
-		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
+		return llmdVariantAutoscalingV1alpha1.Allocation{}, 0, 0, 0, 0, 0, err
 	}
-	itlAverage *= 1000 // convert to msec
+	ttftAverage *= 1000 // convert from seconds to milliseconds
+
+	itlAverage, err := queryWithFallback(ctx, promAPI, itlQuery, itlQueryFallback, "ITLAverage")
+	if err != nil {
+		return llmdVariantAutoscalingV1alpha1.Allocation{}, 0, 0, 0, 0, 0, err
+	}
+	itlAverage *= 1000 // convert from seconds to milliseconds
 
 	// --- 3. Collect K8s and Static Info ---
 
 	// number of replicas
 	numReplicas := int(*deployment.Spec.Replicas)
 
-	// accelerator type
-	acc := ""
+	// These are collected but not stored in status in single-variant architecture
+	// Accelerator, maxBatch, and cost are now in spec
+	// Metrics validation still needed to ensure Prometheus is working
+	_ = ""
 	if val, ok := opt.Labels["inference.optimization/acceleratorName"]; ok {
-		acc = val
+		_ = val
 	} else {
 		logger.Log.Warn("acceleratorName label not found on VariantAutoscaling object", "object-name", opt.Name)
 	}
 
-	// cost
-	discoveredCost := float64(*deployment.Spec.Replicas) * acceleratorCostVal
-
-	// max batch size
-	// TODO: collect value from server
-	maxBatch := 256
+	_ = float64(*deployment.Spec.Replicas) * acceleratorCostVal
+	_ = 256
 
 	// --- 4. Populate Allocation Status ---
 
 	// populate current alloc
+	// In single-variant architecture, only numReplicas is stored in status.
+	// Variant characteristics (accelerator, maxBatch, cost) are in spec.
+	// Load metrics, TTFT, ITL are collected and returned to the controller (not stored in status).
 	currentAlloc := llmdVariantAutoscalingV1alpha1.Allocation{
-		Accelerator: acc,
-		NumReplicas: numReplicas,
-		MaxBatch:    maxBatch,
-		VariantCost: strconv.FormatFloat(float64(discoveredCost), 'f', 2, 32),
-		TTFTAverage: strconv.FormatFloat(float64(ttftAverageTime), 'f', 2, 32),
-		ITLAverage:  strconv.FormatFloat(float64(itlAverage), 'f', 2, 32),
-		Load: llmdVariantAutoscalingV1alpha1.LoadProfile{
-			ArrivalRate:     strconv.FormatFloat(float64(arrivalVal), 'f', 2, 32),
-			AvgInputTokens:  strconv.FormatFloat(float64(avgInputTokens), 'f', 2, 32),
-			AvgOutputTokens: strconv.FormatFloat(float64(avgOutputTokens), 'f', 2, 32),
-		},
+		NumReplicas: int32(numReplicas),
 	}
-	return currentAlloc, nil
+	return currentAlloc, arrivalRate, avgInputTokens, avgOutputTokens, itlAverage, ttftAverage, nil
 }
 
 // Helper to handle if a value is NaN or infinite

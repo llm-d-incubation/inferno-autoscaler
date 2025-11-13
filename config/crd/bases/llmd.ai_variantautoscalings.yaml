@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.17.2
+    controller-gen.kubebuilder.io/version: v0.19.0
   name: variantautoscalings.llmd.ai
 spec:
   group: llmd.ai
@@ -20,7 +20,10 @@ spec:
     - jsonPath: .spec.modelID
       name: Model
       type: string
-    - jsonPath: .status.currentAlloc.accelerator
+    - jsonPath: .spec.variantID
+      name: VariantID
+      type: string
+    - jsonPath: .spec.accelerator
       name: Accelerator
       type: string
     - jsonPath: .status.currentAlloc.numReplicas
@@ -28,7 +31,7 @@ spec:
       type: integer
     - jsonPath: .status.desiredOptimizedAlloc.numReplicas
       name: Optimized
-      type: string
+      type: integer
     - jsonPath: .status.conditions[?(@.type=='MetricsAvailable')].status
       name: MetricsReady
       type: string
@@ -38,181 +41,140 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: |-
-          VariantAutoscaling is the Schema for the variantautoscalings API.
-          It represents the autoscaling configuration and status for a model variant.
         properties:
           apiVersion:
-            description: |-
-              APIVersion defines the versioned schema of this representation of an object.
-              Servers should convert recognized schemas to the latest internal value, and
-              may reject unrecognized values.
-              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
           kind:
-            description: |-
-              Kind is a string value representing the REST resource this object represents.
-              Servers may infer this from the endpoint the client submits requests to.
-              Cannot be updated.
-              In CamelCase.
-              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
           metadata:
             type: object
           spec:
-            description: Spec defines the desired state for autoscaling the model
-              variant.
             properties:
-              modelID:
-                description: ModelID specifies the unique identifier of the model
-                  to be autoscaled.
+              accelerator:
                 minLength: 1
                 type: string
-              modelProfile:
-                description: ModelProfile provides resource and performance characteristics
-                  for the model variant.
+              acceleratorCount:
+                minimum: 1
+                type: integer
+              maxReplicas:
+                format: int32
+                minimum: 1
+                type: integer
+              minReplicas:
+                default: 0
+                format: int32
+                minimum: 0
+                type: integer
+              modelID:
+                minLength: 1
+                type: string
+              scaleTargetRef:
                 properties:
-                  accelerators:
-                    description: Accelerators is a list of accelerator profiles for
-                      the model variant.
-                    items:
-                      description: |-
-                        AcceleratorProfile defines the configuration for an accelerator used in autoscaling.
-                        It specifies the type and count of accelerator, as well as parameters for scaling behavior.
-                      properties:
-                        acc:
-                          description: Acc specifies the type or name of the accelerator
-                            (e.g., GPU type).
-                          minLength: 1
-                          type: string
-                        accCount:
-                          description: AccCount specifies the number of accelerator
-                            units to be used.
-                          minimum: 1
-                          type: integer
-                        maxBatchSize:
-                          description: MaxBatchSize is the maximum batch size supported
-                            by the accelerator.
-                          minimum: 1
-                          type: integer
-                        perfParms:
-                          description: PerParms specifies the prefill and decode parameters
-                            for ttft and itl models
-                          properties:
-                            decodeParms:
-                              additionalProperties:
-                                type: string
-                              description: |-
-                                DecodeParms contains parameters for the decode phase (ITL calculation)
-                                Expected keys: "alpha", "beta" for equation: itl = alpha + beta * maxBatchSize
-                              minProperties: 1
-                              type: object
-                            prefillParms:
-                              additionalProperties:
-                                type: string
-                              description: |-
-                                PrefillParms contains parameters for the prefill phase (TTFT calculation)
-                                Expected keys: "gamma", "delta" for equation: ttft = gamma + delta * tokens * maxBatchSize
-                              minProperties: 1
-                              type: object
-                          required:
-                          - decodeParms
-                          - prefillParms
-                          type: object
-                      required:
-                      - acc
-                      - accCount
-                      - maxBatchSize
-                      - perfParms
-                      type: object
-                    minItems: 1
-                    type: array
-                required:
-                - accelerators
-                type: object
-              sloClassRef:
-                description: SLOClassRef references the ConfigMap key containing Service
-                  Level Objective (SLO) configuration.
-                properties:
-                  key:
-                    description: Key is the key within the ConfigMap.
+                  apiVersion:
+                    minLength: 1
+                    type: string
+                  kind:
                     minLength: 1
                     type: string
                   name:
-                    description: Name is the name of the ConfigMap.
+                    minLength: 1
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
+              sloClassRef:
+                properties:
+                  key:
+                    minLength: 1
+                    type: string
+                  name:
                     minLength: 1
                     type: string
                 required:
                 - key
                 - name
                 type: object
+              variantCost:
+                default: "10"
+                pattern: ^\d+(\.\d+)?$
+                type: string
+              variantID:
+                minLength: 1
+                pattern: ^.+-[A-Za-z0-9_-]+-[1-9][0-9]*$
+                type: string
+              variantProfile:
+                properties:
+                  maxBatchSize:
+                    minimum: 1
+                    type: integer
+                  perfParms:
+                    properties:
+                      decodeParms:
+                        additionalProperties:
+                          type: string
+                        minProperties: 1
+                        type: object
+                      prefillParms:
+                        additionalProperties:
+                          type: string
+                        minProperties: 1
+                        type: object
+                    required:
+                    - decodeParms
+                    - prefillParms
+                    type: object
+                required:
+                - maxBatchSize
+                - perfParms
+                type: object
             required:
+            - accelerator
+            - acceleratorCount
             - modelID
-            - modelProfile
+            - scaleTargetRef
             - sloClassRef
+            - variantID
+            - variantProfile
             type: object
+            x-kubernetes-validations:
+            - message: maxReplicas must be greater than or equal to minReplicas
+              rule: '!has(self.maxReplicas) || !has(self.minReplicas) || self.maxReplicas
+                >= self.minReplicas'
           status:
-            description: Status represents the current status of autoscaling for the
-              model variant.
             properties:
               actuation:
-                description: Actuation provides details about the actuation process
-                  and its current status.
                 properties:
                   applied:
-                    description: Applied indicates whether the actuation was successfully
-                      applied.
                     type: boolean
                 required:
                 - applied
                 type: object
               conditions:
-                description: Conditions represent the latest available observations
-                  of the VariantAutoscaling's state
                 items:
-                  description: Condition contains details for one aspect of the current
-                    state of this API Resource.
                   properties:
                     lastTransitionTime:
-                      description: |-
-                        lastTransitionTime is the last time the condition transitioned from one status to another.
-                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
                       format: date-time
                       type: string
                     message:
-                      description: |-
-                        message is a human readable message indicating details about the transition.
-                        This may be an empty string.
                       maxLength: 32768
                       type: string
                     observedGeneration:
-                      description: |-
-                        observedGeneration represents the .metadata.generation that the condition was set based upon.
-                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
-                        with respect to the current state of the instance.
                       format: int64
                       minimum: 0
                       type: integer
                     reason:
-                      description: |-
-                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
-                        Producers of specific condition types may define expected values and meanings for this field,
-                        and whether the values are considered a guaranteed API.
-                        The value should be a CamelCase string.
-                        This field may not be empty.
                       maxLength: 1024
                       minLength: 1
                       pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
                       type: string
                     status:
-                      description: status of the condition, one of True, False, Unknown.
                       enum:
                       - "True"
                       - "False"
                       - Unknown
                       type: string
                     type:
-                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
                       maxLength: 316
                       pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                       type: string
@@ -228,88 +190,37 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               currentAlloc:
-                description: CurrentAlloc specifies the current resource allocation
-                  for the variant.
                 properties:
-                  accelerator:
-                    description: Accelerator is the type of accelerator currently
-                      allocated.
-                    minLength: 1
-                    type: string
-                  itlAverage:
-                    description: ITLAverage is the average inter token latency for
-                      the current allocation.
-                    pattern: ^\d+(\.\d+)?$
-                    type: string
-                  load:
-                    description: Load describes the workload characteristics for the
-                      current allocation.
-                    properties:
-                      arrivalRate:
-                        description: ArrivalRate is the rate of incoming requests
-                          in inference server.
-                        type: string
-                      avgInputTokens:
-                        description: AvgInputTokens is the average number of input(prefill)
-                          tokens per request in inference server.
-                        type: string
-                      avgOutputTokens:
-                        description: AvgOutputTokens is the average number of output(decode)
-                          tokens per request in inference server.
-                        type: string
-                    required:
-                    - arrivalRate
-                    - avgInputTokens
-                    - avgOutputTokens
-                    type: object
-                  maxBatch:
-                    description: MaxBatch is the maximum batch size currently allocated.
-                    minimum: 0
-                    type: integer
                   numReplicas:
-                    description: NumReplicas is the number of replicas currently allocated.
+                    format: int32
                     minimum: 0
                     type: integer
-                  ttftAverage:
-                    description: TTFTAverage is the average time to first token for
-                      the current allocation
-                    pattern: ^\d+(\.\d+)?$
-                    type: string
-                  variantCost:
-                    description: VariantCost is the cost associated with the current
-                      variant allocation.
-                    pattern: ^\d+(\.\d+)?$
-                    type: string
                 required:
-                - accelerator
-                - itlAverage
-                - load
-                - maxBatch
                 - numReplicas
-                - ttftAverage
-                - variantCost
                 type: object
               desiredOptimizedAlloc:
-                description: DesiredOptimizedAlloc indicates the target optimized
-                  allocation based on autoscaling logic.
                 properties:
-                  accelerator:
-                    description: Accelerator is the type of accelerator for the optimized
-                      allocation.
-                    minLength: 2
-                    type: string
                   lastRunTime:
-                    description: LastRunTime is the timestamp of the last optimization
-                      run.
                     format: date-time
                     type: string
+                  lastUpdate:
+                    properties:
+                      numReplicasChanged:
+                        format: int32
+                        maximum: 10000
+                        minimum: -10000
+                        type: integer
+                      reason:
+                        type: string
+                      updateTime:
+                        format: date-time
+                        type: string
+                    type: object
                   numReplicas:
-                    description: NumReplicas is the number of replicas for the optimized
-                      allocation.
+                    format: int32
                     minimum: 0
                     type: integer
                 required:
-                - accelerator
                 - numReplicas
                 type: object
             type: object

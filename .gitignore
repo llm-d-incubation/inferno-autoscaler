@@ -26,3 +26,7 @@ gpu.cluster
 # Miscellaneous
 .DS_Store
 ~*
+
+# llm-d repositories (cloned dynamically by deployment scripts)
+llm-d/
+llm-d-infra/
