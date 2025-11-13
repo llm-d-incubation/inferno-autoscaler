@@ -34,10 +34,13 @@ import (
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/constants"
 )
 
+var lowLoad = numPrompts <= 2000 && requestRate <= 8
+
 var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 	var (
 		ctx                  context.Context
 		jobName              string
+		vaName               string
 		initialReplicas      int32
 		initialOptimized     int32
 		scaledReplicas       int32
@@ -55,13 +58,38 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 		initialReplicas = deploy.Status.ReadyReplicas
 		_, _ = fmt.Fprintf(GinkgoWriter, "Initial ready replicas: %d\n", initialReplicas)
 
-		By("recording initial VariantAutoscaling state")
-		va := &v1alpha1.VariantAutoscaling{}
-		err = crClient.Get(ctx, client.ObjectKey{
-			Namespace: llmDNamespace,
-			Name:      deployment,
-		}, va)
-		Expect(err).NotTo(HaveOccurred(), "Should be able to get VariantAutoscaling")
+		By("finding VariantAutoscaling by scaleTargetRef")
+		vaList := &v1alpha1.VariantAutoscalingList{}
+		err = crClient.List(ctx, vaList, client.InNamespace(llmDNamespace))
+		Expect(err).NotTo(HaveOccurred(), "Should be able to list VariantAutoscalings")
+
+		var va *v1alpha1.VariantAutoscaling
+		for i := range vaList.Items {
+			if vaList.Items[i].Spec.ScaleTargetRef.Name == deployment {
+				va = &vaList.Items[i]
+				break
+			}
+		}
+		Expect(va).NotTo(BeNil(), fmt.Sprintf("Should find VariantAutoscaling with scaleTargetRef pointing to %s", deployment))
+		vaName = va.Name
+		_, _ = fmt.Fprintf(GinkgoWriter, "Found VariantAutoscaling: %s\n", vaName)
+
+		By("ensuring VA minReplicas is set to 1 for stable baseline")
+		if va.Spec.MinReplicas == nil || *va.Spec.MinReplicas != 1 {
+			minReplicas := int32(1)
+			va.Spec.MinReplicas = &minReplicas
+			err = crClient.Update(ctx, va)
+			Expect(err).NotTo(HaveOccurred(), "Should be able to set VA minReplicas=1")
+			_, _ = fmt.Fprintf(GinkgoWriter, "Set VA minReplicas=1 for stable baseline, waiting for reconciliation...\n")
+			time.Sleep(30 * time.Second)
+			// Re-fetch VA after reconciliation
+			err = crClient.Get(ctx, client.ObjectKey{Name: vaName, Namespace: llmDNamespace}, va)
+			Expect(err).NotTo(HaveOccurred(), "Should be able to get VA after update")
+		}
+		_, _ = fmt.Fprintf(GinkgoWriter, "VA minReplicas=%d confirmed\n", *va.Spec.MinReplicas)
+
+		// In single-variant architecture, check that optimization has run by verifying NumReplicas > 0
+		Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(BeNumerically(">", 0), "DesiredOptimizedAlloc should have replicas set")
 		initialOptimized = int32(va.Status.DesiredOptimizedAlloc.NumReplicas)
 		_, _ = fmt.Fprintf(GinkgoWriter, "Initial optimized replicas: %d\n", initialOptimized)
 
@@ -71,20 +99,35 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 		Expect(hpa.Spec.ScaleTargetRef.Name).To(Equal(deployment), "HPA should target the correct deployment")
 		Expect(hpa.Spec.Metrics).To(HaveLen(1), "HPA should have one metric")
 		Expect(hpa.Spec.Metrics[0].Type).To(Equal(autoscalingv2.ExternalMetricSourceType), "HPA should use external metrics")
-		Expect(hpa.Spec.Metrics[0].External.Metric.Name).To(Equal(constants.InfernoDesiredReplicas), "HPA should use inferno_desired_replicas metric")
+		Expect(hpa.Spec.Metrics[0].External.Metric.Name).To(Equal(constants.WVADesiredReplicas), "HPA should use wva_desired_replicas metric")
+
+	By("ensuring VA minReplicas is set to 1 for stable baseline")
+	va = &v1alpha1.VariantAutoscaling{}
+	err = crClient.Get(ctx, client.ObjectKey{Name: vaName, Namespace: llmDNamespace}, va)
+	Expect(err).NotTo(HaveOccurred(), "Should be able to get VA")
+
+	if va.Spec.MinReplicas == nil || *va.Spec.MinReplicas != 1 {
+		minReplicas := int32(1)
+		va.Spec.MinReplicas = &minReplicas
+		err = crClient.Update(ctx, va)
+		Expect(err).NotTo(HaveOccurred(), "Should be able to set VA minReplicas=1")
+		_, _ = fmt.Fprintf(GinkgoWriter, "Set VA minReplicas=1 for stable baseline, waiting for reconciliation...\n")
+		time.Sleep(30 * time.Second)
+	}
+	_, _ = fmt.Fprintf(GinkgoWriter, "VA minReplicas=%d confirmed\n", *va.Spec.MinReplicas)
 	})
 
 	It("should verify external metrics API is accessible", func() {
-		By("querying external metrics API for inferno_desired_replicas")
+		By("querying external metrics API for wva_desired_replicas")
 		Eventually(func(g Gomega) {
 			// Use raw API client to query external metrics
 			result, err := k8sClient.RESTClient().
 				Get().
-				AbsPath("/apis/external.metrics.k8s.io/v1beta1/namespaces/" + llmDNamespace + "/" + constants.InfernoDesiredReplicas).
+				AbsPath("/apis/external.metrics.k8s.io/v1beta1/namespaces/" + llmDNamespace + "/" + constants.WVADesiredReplicas).
 				DoRaw(ctx)
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to query external metrics API")
-			g.Expect(string(result)).To(ContainSubstring(constants.InfernoDesiredReplicas), "Metric should be available")
-			g.Expect(string(result)).To(ContainSubstring(deployment), "Metric should be for the correct variant")
+			g.Expect(string(result)).To(ContainSubstring(constants.WVADesiredReplicas), "Metric should be available")
+			g.Expect(string(result)).To(ContainSubstring(deployment), "Metric should be for the correct deployment")
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 	})
 
@@ -95,7 +138,7 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 		time.Sleep(2 * time.Second)
 
 		By("creating ShareGPT load generation job")
-		job := createShareGPTJob(jobName, llmDNamespace, 20, 3000) // 20 req/s, 3000 prompts
+		job := createShareGPTJob(jobName, llmDNamespace, requestRate, numPrompts)
 		_, err := k8sClient.BatchV1().Jobs(llmDNamespace).Create(ctx, job, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred(), "Should be able to create load generation job")
 
@@ -127,18 +170,23 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 			va := &v1alpha1.VariantAutoscaling{}
 			err := crClient.Get(ctx, client.ObjectKey{
 				Namespace: llmDNamespace,
-				Name:      deployment,
+				Name:      vaName,
 			}, va)
 			g.Expect(err).NotTo(HaveOccurred(), "Should be able to get VariantAutoscaling")
 
+			// In single-variant architecture, check that optimization has run by verifying NumReplicas > 0
+			g.Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(BeNumerically(">", 0), "DesiredOptimizedAlloc should have replicas set")
 			scaledOptimized = int32(va.Status.DesiredOptimizedAlloc.NumReplicas)
-			currentRateStr := va.Status.CurrentAlloc.Load.ArrivalRate
-			_, _ = fmt.Fprintf(GinkgoWriter, "Current optimized replicas: %d (initial: %d), arrival rate: %s\n",
-				scaledOptimized, initialOptimized, currentRateStr)
+			_, _ = fmt.Fprintf(GinkgoWriter, "Current optimized replicas: %d (initial: %d)\n",
+				scaledOptimized, initialOptimized)
 
 			// Expect scale-up recommendation (more than initial)
-			g.Expect(scaledOptimized).To(BeNumerically(">", initialOptimized),
-				fmt.Sprintf("WVA should recommend more replicas under load (current: %d, initial: %d)", scaledOptimized, initialOptimized))
+			if !lowLoad {
+				g.Expect(scaledOptimized).To(BeNumerically(">", initialOptimized),
+					fmt.Sprintf("WVA should recommend more replicas under load (current: %d, initial: %d)", scaledOptimized, initialOptimized))
+			} else {
+				_, _ = fmt.Fprintf(GinkgoWriter, "Low load detected, skipping scale-up recommendation check\n")
+			}
 
 		}, 5*time.Minute, 10*time.Second).Should(Succeed())
 
@@ -155,22 +203,24 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 			g.Expect(hpa.Status.CurrentMetrics).NotTo(BeEmpty(), "HPA should have current metrics")
 
 			// The HPA should show a target value > 1 (indicating scale-up needed)
-			for _, metric := range hpa.Status.CurrentMetrics {
-				if metric.External != nil && metric.External.Metric.Name == constants.InfernoDesiredReplicas {
-					currentValue := metric.External.Current.AverageValue
-					g.Expect(currentValue).NotTo(BeNil(), "Current metric value should not be nil")
+			if !lowLoad {
+				for _, metric := range hpa.Status.CurrentMetrics {
+					if metric.External != nil && metric.External.Metric.Name == constants.WVADesiredReplicas {
+						currentValue := metric.External.Current.AverageValue
+						g.Expect(currentValue).NotTo(BeNil(), "Current metric value should not be nil")
 
-					currentReplicas := currentValue.AsApproximateFloat64()
-					_, _ = fmt.Fprintf(GinkgoWriter, "HPA current metric value: %.2f\n", currentReplicas)
-					g.Expect(currentReplicas).To(BeNumerically(">", float64(initialOptimized)),
-						"HPA should see increased replica recommendation")
+						currentReplicas := currentValue.AsApproximateFloat64()
+						_, _ = fmt.Fprintf(GinkgoWriter, "HPA current metric value: %.2f\n", currentReplicas)
+						g.Expect(currentReplicas).To(BeNumerically(">", float64(initialOptimized)),
+							"HPA should see increased replica recommendation")
+					}
 				}
+				// Check desired replicas
+				g.Expect(hpa.Status.DesiredReplicas).To(BeNumerically(">", initialReplicas),
+					fmt.Sprintf("HPA should desire more replicas (current: %d, initial: %d)", hpa.Status.DesiredReplicas, initialReplicas))
+			} else {
+				_, _ = fmt.Fprintf(GinkgoWriter, "Low load detected, skipping HPA scale-up check\n")
 			}
-
-			// Check desired replicas
-			g.Expect(hpa.Status.DesiredReplicas).To(BeNumerically(">", initialReplicas),
-				fmt.Sprintf("HPA should desire more replicas (current: %d, initial: %d)", hpa.Status.DesiredReplicas, initialReplicas))
-
 		}, 3*time.Minute, 10*time.Second).Should(Succeed())
 
 		_, _ = fmt.Fprintf(GinkgoWriter, "HPA triggered scale-up\n")
@@ -187,10 +237,16 @@ var _ = Describe("ShareGPT Scale-Up Test", Ordered, func() {
 				scaledReplicas, initialReplicas, scaledOptimized)
 
 			// Verify that deployment has scaled up
-			g.Expect(deploy.Status.Replicas).To(BeNumerically(">", initialReplicas),
-				"Deployment should have more total replicas")
-			g.Expect(scaledReplicas).To(BeNumerically(">=", scaledOptimized),
-				fmt.Sprintf("Deployment should have at least %d ready replicas to match optimizer recommendation", scaledOptimized))
+			if !lowLoad {
+				// Only expect scaling when load is high
+				g.Expect(deploy.Status.Replicas).To(BeNumerically(">", initialReplicas),
+					"Deployment should have more total replicas under high load")
+				g.Expect(scaledReplicas).To(BeNumerically(">=", scaledOptimized),
+					fmt.Sprintf("Deployment should have at least %d ready replicas to match optimizer recommendation", scaledOptimized))
+			} else {
+				// Under low load, scaling up is optional
+				_, _ = fmt.Fprintf(GinkgoWriter, "Low load detected, skipping scale-up check\n")
+			}
 
 		}, 10*time.Minute, 10*time.Second).Should(Succeed())
 

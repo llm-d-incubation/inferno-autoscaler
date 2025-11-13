@@ -16,22 +16,29 @@ data:
     name: Premium
     priority: 1
     data:
+      # Global default (no namespace specified - applies to all namespaces)
       - model: default/default
         slo-tpot: 24
         slo-ttft: 500
-      - model: llama0-70b
+      # Namespace-specific configuration example (uncomment to use):
+      # - namespace: "{{ .Release.Namespace }}"
+      #   model: meta/llama0-70b
+      #   slo-tpot: 80
+      #   slo-ttft: 500
+      # Global model configuration
+      - model: meta/llama0-70b
         slo-tpot: 80
         slo-ttft: 500
-      - model: {{ .Values.variantAutoscaling.modelID }}
-        slo-tpot: {{ .Values.variantAutoscaling.sloTpot }}
-        slo-ttft: {{ .Values.variantAutoscaling.sloTtft }}
+      - model: {{ .Values.llmd.modelID }}
+        slo-tpot: {{ .Values.va.sloTpot }}
+        slo-ttft: {{ .Values.va.sloTtft }}
   freemium.yaml: |
     name: Freemium
     priority: 10
     data:
-      - model: granite-13b
+      - model: ibm/granite-13b
         slo-tpot: 200
         slo-ttft: 2000
-      - model: llama0-7b
+      - model: meta/llama0-7b
         slo-tpot: 150
         slo-ttft: 1500

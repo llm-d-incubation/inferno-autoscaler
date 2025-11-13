@@ -28,23 +28,26 @@ func NewActuator(k8sClient client.Client) *Actuator {
 // getCurrentDeploymentReplicas gets the real current replica count from the actual Deployment
 func (a *Actuator) getCurrentDeploymentReplicas(ctx context.Context, va *llmdOptv1alpha1.VariantAutoscaling) (int32, error) {
 	var deploy appsv1.Deployment
-	err := utils.GetDeploymentWithBackoff(ctx, a.Client, va.Name, va.Namespace, &deploy)
+	// Use scaleTargetRef.Name instead of VA name (they can be different)
+	deploymentName := va.Spec.ScaleTargetRef.Name
+	err := utils.GetDeploymentWithBackoff(ctx, a.Client, deploymentName, va.Namespace, &deploy)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get Deployment %s/%s: %w", va.Namespace, va.Name, err)
+		return 0, fmt.Errorf("failed to get Deployment %s/%s: %w", va.Namespace, deploymentName, err)
 	}
 
-	// Prefer status replicas (actual current state)
-	if deploy.Status.Replicas >= 0 {
+	// Prefer status replicas if deployment has been reconciled
+	// Check if status is populated (deployment controller has run)
+	if deploy.Status.ObservedGeneration > 0 {
 		return deploy.Status.Replicas, nil
 	}
 
-	// Fallback to spec if status not ready
+	// Fallback to spec if status not ready yet (deployment just created)
 	if deploy.Spec.Replicas != nil {
 		return *deploy.Spec.Replicas, nil
 	}
 
-	// Final fallback
-	return 1, nil
+	// Final fallback - deployment exists but has no replicas configured
+	return 0, nil
 }
 
 func (a *Actuator) EmitMetrics(ctx context.Context, VariantAutoscaling *llmdOptv1alpha1.VariantAutoscaling) error {
@@ -63,18 +66,17 @@ func (a *Actuator) EmitMetrics(ctx context.Context, VariantAutoscaling *llmdOptv
 			ctx,
 			VariantAutoscaling,
 			currentReplicas, // Real current from Deployment
-			int32(VariantAutoscaling.Status.DesiredOptimizedAlloc.NumReplicas), // Inferno's optimization target
-			VariantAutoscaling.Status.DesiredOptimizedAlloc.Accelerator,
+			int32(VariantAutoscaling.Status.DesiredOptimizedAlloc.NumReplicas), // WVA's optimization target
+			VariantAutoscaling.Spec.Accelerator,                                // Use spec field (single-variant architecture)
 		); err != nil {
-			logger.Log.Error(err, "Failed to emit optimization signals for variantAutoscaling - ",
-				"variantAutoscaling-name: ", VariantAutoscaling.Name)
-			// Don't fail the reconciliation for metric emission errors
-			// Metrics are critical for HPA, but emission failures shouldn't break core functionality
-			return nil
+			logger.Log.Error(err, "Failed to emit optimization signals - this will break HPA/KEDA autoscaling",
+				"variant", VariantAutoscaling.Name)
+			// Return error - metrics are critical for HPA/KEDA functionality
+			return fmt.Errorf("critical metric emission failed for %s: %w", VariantAutoscaling.Name, err)
 		}
-		logger.Log.Debug("EmitReplicaMetrics completed for ", "variantAutoscaling-name: ", VariantAutoscaling.Name, ", current-replicas: ", VariantAutoscaling.Status.CurrentAlloc.NumReplicas, ", desired-replicas: ", VariantAutoscaling.Status.DesiredOptimizedAlloc.NumReplicas, ", accelerator: ", VariantAutoscaling.Status.DesiredOptimizedAlloc.Accelerator)
+		logger.Log.Debug("EmitReplicaMetrics completed for ", "variantAutoscaling-name: ", VariantAutoscaling.Name, ", current-replicas: ", VariantAutoscaling.Status.CurrentAlloc.NumReplicas, ", desired-replicas: ", VariantAutoscaling.Status.DesiredOptimizedAlloc.NumReplicas, ", accelerator: ", VariantAutoscaling.Spec.Accelerator)
 		return nil
 	}
-	logger.Log.Info("Skipping EmitReplicaMetrics for variantAutoscaling - ", "variantAutoscaling-name: ", VariantAutoscaling.Name, " - NumReplicas is 0")
+	logger.Log.Info("Skipping EmitReplicaMetrics for variantAutoscaling - ", "variantAutoscaling-name: ", VariantAutoscaling.Name, " - NumReplicas is negative")
 	return nil
 }

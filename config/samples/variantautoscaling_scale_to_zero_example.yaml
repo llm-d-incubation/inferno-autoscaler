@@ -18,27 +18,36 @@ metadata:
   labels:
     inference.optimization/acceleratorName: "A100"
 spec:
+  # scaleTargetRef specifies the Deployment to scale (REQUIRED)
+  # This allows the VariantAutoscaling name to be independent of the Deployment name
+  scaleTargetRef:
+    kind: Deployment
+    name: llama-8b-deployment
+
   # This variant uses model "meta/llama-3.1-8b"
   # Scale-to-zero configuration for this model is defined in the
   # model-scale-to-zero-config ConfigMap
   modelID: "meta/llama-3.1-8b"
+  variantID: "meta/llama-3.1-8b-A100-1"
+  accelerator: "A100"
+  acceleratorCount: 1
 
   sloClassRef:
     name: service-classes-config
     key: premium.yaml
 
-  modelProfile:
-    accelerators:
-      - acc: "A100"
-        accCount: 1
-        perfParms:
-          decodeParms:
-            alpha: "20.58"
-            beta: "0.41"
-          prefillParms:
-            gamma: "5.2"
-            delta: "0.1"
-        maxBatchSize: 4
+  variantProfile:
+    perfParms:
+      decodeParms:
+        alpha: "20.58"
+        beta: "0.41"
+      prefillParms:
+        gamma: "5.2"
+        delta: "0.1"
+    maxBatchSize: 4
+
+  # Cost per replica for this variant (required in single-variant architecture)
+  variantCost: "10.5"
 
 ---
 apiVersion: llmd.ai/v1alpha1
@@ -49,26 +58,34 @@ metadata:
   labels:
     inference.optimization/acceleratorName: "L40S"
 spec:
+  # scaleTargetRef specifies the Deployment to scale (REQUIRED)
+  scaleTargetRef:
+    kind: Deployment
+    name: llama-8b-deployment  # Can target same deployment as llama-8b-a100 (conflict resolution applies)
+
   # This variant also uses model "meta/llama-3.1-8b" but with a different accelerator.
   # Both variants will share the same scale-to-zero configuration defined in the ConfigMap.
   modelID: "meta/llama-3.1-8b"
+  variantID: "meta/llama-3.1-8b-L40S-1"
+  accelerator: "L40S"
+  acceleratorCount: 1
 
   sloClassRef:
     name: service-classes-config
     key: premium.yaml
 
-  modelProfile:
-    accelerators:
-      - acc: "L40S"
-        accCount: 1
-        perfParms:
-          decodeParms:
-            alpha: "19.2"
-            beta: "0.38"
-          prefillParms:
-            gamma: "4.9"
-            delta: "0.09"
-        maxBatchSize: 6
+  variantProfile:
+    perfParms:
+      decodeParms:
+        alpha: "19.2"
+        beta: "0.38"
+      prefillParms:
+        gamma: "4.9"
+        delta: "0.09"
+    maxBatchSize: 6
+
+  # Cost per replica for this variant
+  variantCost: "8.5"
 
 ---
 apiVersion: llmd.ai/v1alpha1
@@ -79,27 +96,35 @@ metadata:
   labels:
     inference.optimization/acceleratorName: "A100"
 spec:
+  # scaleTargetRef specifies the Deployment to scale (REQUIRED)
+  scaleTargetRef:
+    kind: Deployment
+    name: llama-70b-deployment
+
   # This variant uses model "meta/llama-3.1-70b"
   # Scale-to-zero configuration for this model is defined in the
   # model-scale-to-zero-config ConfigMap
   modelID: "meta/llama-3.1-70b"
+  variantID: "meta/llama-3.1-70b-A100-1"
+  accelerator: "A100"
+  acceleratorCount: 1
 
   sloClassRef:
     name: service-classes-config
     key: premium.yaml
 
-  modelProfile:
-    accelerators:
-      - acc: "A100"
-        accCount: 1
-        perfParms:
-          decodeParms:
-            alpha: "18.5"
-            beta: "0.35"
-          prefillParms:
-            gamma: "4.8"
-            delta: "0.08"
-        maxBatchSize: 8
+  variantProfile:
+    perfParms:
+      decodeParms:
+        alpha: "18.5"
+        beta: "0.35"
+      prefillParms:
+        gamma: "4.8"
+        delta: "0.08"
+    maxBatchSize: 8
+
+  # Cost per replica for this variant
+  variantCost: "12.0"
 
 ---
 apiVersion: llmd.ai/v1alpha1
@@ -110,24 +135,32 @@ metadata:
   labels:
     inference.optimization/acceleratorName: "A100"
 spec:
+  # scaleTargetRef specifies the Deployment to scale (REQUIRED)
+  scaleTargetRef:
+    kind: Deployment
+    name: llama-13b-deployment
+
   # This variant uses model "meta/llama-3.1-13b"
   # No scale-to-zero configuration is defined for this model in the ConfigMap,
   # so it will use the global WVA_SCALE_TO_ZERO environment variable setting
   modelID: "meta/llama-3.1-13b"
+  variantID: "meta/llama-3.1-13b-A100-1"
+  accelerator: "A100"
+  acceleratorCount: 1
 
   sloClassRef:
     name: service-classes-config
     key: premium.yaml
 
-  modelProfile:
-    accelerators:
-      - acc: "A100"
-        accCount: 1
-        perfParms:
-          decodeParms:
-            alpha: "20.0"
-            beta: "0.40"
-          prefillParms:
-            gamma: "5.0"
-            delta: "0.09"
-        maxBatchSize: 6
+  variantProfile:
+    perfParms:
+      decodeParms:
+        alpha: "20.0"
+        beta: "0.40"
+      prefillParms:
+        gamma: "5.0"
+        delta: "0.09"
+    maxBatchSize: 6
+
+  # Cost per replica for this variant
+  variantCost: "11.0"

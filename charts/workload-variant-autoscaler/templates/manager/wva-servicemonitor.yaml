@@ -4,8 +4,11 @@ metadata:
   labels:
     app.kubernetes.io/name: workload-variant-autoscaler
     control-plane: controller-manager
+    {{- if .Values.wva.prometheus.releaseLabel }}
+    release: {{ .Values.wva.prometheus.releaseLabel }}
+    {{- end }}
   name: workload-variant-autoscaler-controller-manager-metrics-monitor
-  namespace: {{ .Values.wva.monitoringNamespace }}
+  namespace: {{ .Values.wva.prometheus.monitoringNamespace }}
 spec:
   endpoints:
   - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token

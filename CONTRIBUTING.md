@@ -246,7 +246,7 @@ kubectl logs -n workload-variant-autoscaler-system \
 kubectl describe variantautoscaling <name> -n <namespace>
 
 # Check emitted metrics
-kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/<namespace>/inferno_desired_replicas" | jq
+kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/<namespace>/wva_desired_replicas" | jq
 ```
 
 ### Cleaning Up

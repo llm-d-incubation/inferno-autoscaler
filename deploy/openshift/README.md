@@ -80,7 +80,7 @@ That's it! The script will:
 |----------|-------------|---------|
 | `HF_TOKEN` | HuggingFace token (required) | - |
 | `WELL_LIT_PATH_NAME` | Name of the deployed well-lit path | `inference-scheduling` |
-| `NAMESPACE` | Kubernetes namespace | `llm-d-$WELL_LIT_PATH_NAME` |
+| `LLMD_NS` | llm-d namespace | `llm-d-$WELL_LIT_PATH_NAME` |
 | `MONITORING_NAMESPACE` | Prometheus monitoring namespace | `openshift-user-workload-monitoring` |
 | `MODEL_ID` | Model to deploy | `unsloth/Meta-Llama-3.1-8B` |
 | `ACCELERATOR_TYPE` | GPU type (auto-detected) | `H100` |
@@ -289,7 +289,7 @@ export HF_TOKEN="hf_xxxxxxxxxxxxxxxxxxxxx"
 
 ```bash
 kubectl get pods -n openshift-user-workload-monitoring | grep prometheus-adapter
-kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-inference-scheduling/inferno_desired_replicas" | jq
+kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-inference-scheduling/wva_desired_replicas" | jq
 ```
 
 ### vLLM Pods Not Starting
@@ -322,7 +322,7 @@ kubectl get variantautoscaling -n llm-d-inference-scheduling
 kubectl get hpa -n llm-d-inference-scheduling
 
 # Check external metrics
-kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-inference-scheduling/inferno_desired_replicas" | jq
+kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-inference-scheduling/wva_desired_replicas" | jq
 ```
 
 ### Monitor WVA Logs

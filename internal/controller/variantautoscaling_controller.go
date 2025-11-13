@@ -21,8 +21,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -53,9 +53,24 @@ import (
 	"github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+)
+
+const (
+	// Reconciliation interval bounds
+	DefaultReconciliationInterval = 60 * time.Second
+	MinReconciliationInterval     = 1 * time.Second
+	MaxReconciliationInterval     = 1 * time.Hour
+
+	// Cache TTL settings
+	MinCacheTTL = 5 * time.Second
+
+	// Setup timeout for API calls during controller initialization
+	SetupTimeout = 30 * time.Second
 )
 
 // VariantAutoscalingReconciler reconciles a variantAutoscaling object
@@ -63,8 +78,33 @@ type VariantAutoscalingReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 
-	PromAPI           promv1.API
-	ModelMetricsCache *collector.ModelMetricsCache
+	PromAPI                 promv1.API
+	MetricsCache            *collector.ModelMetricsCache       // Cache for model-level Prometheus metrics
+	ScaleToZeroMetricsCache *collector.ScaleToZeroMetricsCache // Cache for scale-to-zero internal metrics
+}
+
+// cacheCleanupRunnable implements manager.Runnable for periodic cache cleanup
+type cacheCleanupRunnable struct {
+	cache           *collector.ModelMetricsCache
+	cleanupInterval time.Duration
+}
+
+// Start implements manager.Runnable
+func (r *cacheCleanupRunnable) Start(ctx context.Context) error {
+	ticker := time.NewTicker(r.cleanupInterval)
+	defer ticker.Stop()
+
+	logger.Log.Info("Cache cleanup runnable started")
+	for {
+		select {
+		case <-ticker.C:
+			r.cache.Cleanup()
+			logger.Log.Debug("Metrics cache cleanup completed")
+		case <-ctx.Done():
+			logger.Log.Info("Stopping metrics cache cleanup runnable due to context cancellation")
+			return nil
+		}
+	}
 }
 
 // +kubebuilder:rbac:groups=llmd.ai,resources=variantautoscalings,verbs=get;list;watch;create;update;patch;delete
@@ -87,20 +127,40 @@ func initMetricsEmitter() {
 	logger.Log.Info("Metrics emitter created successfully")
 }
 
+// Reconcile implements the reconciliation loop for VariantAutoscaling resources.
+//
+// IMPORTANT: This controller uses a GLOBAL OPTIMIZATION PATTERN where every reconciliation
+// processes ALL VariantAutoscaling resources across ALL namespaces together to find the
+// globally cost-optimal allocation.
+//
+// The 'req' parameter indicates which event triggered this reconciliation (VA created/updated,
+// or ConfigMap changed), but it is NOT USED to scope the reconciliation. Every reconciliation
+// always lists and processes ALL VAs regardless of which specific resource triggered it.
+//
+// Reconciliation Triggers:
+//   - Periodic timer (default 60s, configurable via GLOBAL_OPT_INTERVAL)
+//   - VariantAutoscaling created
+//   - VariantAutoscaling spec updated (status-only updates filtered out)
+//   - ConfigMap changed (single reconciliation triggered for all VAs)
+//
+// Note: VariantAutoscaling deletion does NOT trigger reconciliation. Deleted VAs (those with
+// non-zero deletionTimestamp) are filtered out during the next periodic reconciliation.
 func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	// Default requeue duration (used for transient errors)
+	requeueDuration := DefaultReconciliationInterval
 
+	// Read optimization config (contains reconciliation interval)
 	interval, err := r.readOptimizationConfig(ctx)
 	if err != nil {
-		logger.Log.Error(err, "Unable to read optimization config")
-		return ctrl.Result{}, err
-	}
-
-	// default requeue duration
-	requeueDuration := 60 * time.Second
-
-	if interval != "" {
-		if requeueDuration, err = time.ParseDuration(interval); err != nil {
-			return ctrl.Result{}, err
+		logger.Log.Error(err, "Unable to read optimization config, using default interval")
+		// Don't fail reconciliation - use default and continue
+	} else if interval != "" {
+		if parsedDuration, parseErr := time.ParseDuration(interval); parseErr != nil {
+			logger.Log.Error(parseErr, "Invalid reconciliation interval format, using default",
+				"configured", interval,
+				"default", requeueDuration.String())
+		} else {
+			requeueDuration = parsedDuration
 		}
 	}
 
@@ -108,23 +168,26 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 		logger.Log.Info("Scaling to zero is enabled!")
 	}
 
-	// TODO: decide on whether to keep accelerator properties (device name, cost) in same configMap, provided by administrator
+	// Read accelerator configuration (required)
 	acceleratorCm, err := r.readAcceleratorConfig(ctx, "accelerator-unit-costs", configMapNamespace)
 	if err != nil {
-		logger.Log.Error(err, "unable to read accelerator configMap, skipping optimizing")
-		return ctrl.Result{}, err
+		logger.Log.Error(err, "Unable to read accelerator configMap, will retry",
+			"requeueAfter", requeueDuration.String())
+		return ctrl.Result{RequeueAfter: requeueDuration}, nil
 	}
 
+	// Read service class configuration (required)
 	serviceClassCm, err := r.readServiceClassConfig(ctx, "service-classes-config", configMapNamespace)
 	if err != nil {
-		logger.Log.Error(err, "unable to read serviceclass configMap, skipping optimizing")
-		return ctrl.Result{}, err
+		logger.Log.Error(err, "Unable to read service class configMap, will retry",
+			"requeueAfter", requeueDuration.String())
+		return ctrl.Result{RequeueAfter: requeueDuration}, nil
 	}
 
 	// Read scale-to-zero configuration (optional - falls back to global defaults if not found)
 	scaleToZeroConfigData, err := r.readScaleToZeroConfig(ctx, "model-scale-to-zero-config", configMapNamespace)
 	if err != nil {
-		logger.Log.Error(err, "unable to read scale-to-zero configMap, using global defaults")
+		logger.Log.Info("Scale-to-zero config not found, using global defaults", "error", err.Error())
 		scaleToZeroConfigData = make(utils.ScaleToZeroConfigData)
 	}
 
@@ -141,10 +204,82 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 
+	// Check for multiple VAs targeting the same deployment (conflict detection and resolution)
+	duplicateTargets := detectDuplicateDeploymentTargets(activeVAs)
+	var conflictResolutions map[string]ConflictResolution
+
+	if len(duplicateTargets) > 0 {
+		// RESOLVE CONFLICTS - pick oldest as winner, suppress others
+		activeVAs, conflictResolutions = resolveDeploymentConflicts(activeVAs, duplicateTargets)
+
+		// Emit conflict metrics for alerting
+		for deploymentKey, resolution := range conflictResolutions {
+			if err := metrics.EmitConflictMetrics(deploymentKey, resolution.TotalVAs); err != nil {
+				logger.Log.Error(err, "Failed to emit conflict metrics", "deployment", deploymentKey)
+			}
+
+			// Extract namespace and deployment from key
+			parts := strings.Split(deploymentKey, "/")
+			if len(parts) == 2 {
+				namespace, deployment := parts[0], parts[1]
+
+				// Emit winner metric
+				if err := metrics.EmitConflictResolutionMetrics(resolution.Winner, namespace, deployment, "winner"); err != nil {
+					logger.Log.Error(err, "Failed to emit winner resolution metric")
+				}
+
+				// Emit loser metrics
+				for _, loser := range resolution.Losers {
+					if err := metrics.EmitConflictResolutionMetrics(loser, namespace, deployment, "suppressed"); err != nil {
+						logger.Log.Error(err, "Failed to emit loser resolution metric", "loser", loser)
+					}
+				}
+			}
+		}
+
+		// Update status conditions for ALL VAs involved in conflicts
+		if err := updateConflictConditions(ctx, r.Client, conflictResolutions); err != nil {
+			logger.Log.Error(err, "Failed to update conflict status conditions")
+		}
+
+		// Log actionable summary
+		logger.Log.Error(nil, "⚠️⚠️⚠️ DEPLOYMENT TARGET CONFLICTS DETECTED ⚠️⚠️⚠️",
+			"conflictCount", len(duplicateTargets),
+			"activeVAsAfterArbitration", len(activeVAs),
+			"status", "DEGRADED - System functioning but requires immediate attention",
+			"action", fmt.Sprintf("kubectl get va -A | grep -E '%s'", getConflictingVAPattern(conflictResolutions)))
+
+		// If all VAs were conflicting, we cannot proceed
+		if len(activeVAs) == 0 {
+			logger.Log.Error(nil, "All VAs are in conflict - cannot proceed with optimization")
+			return ctrl.Result{RequeueAfter: requeueDuration},
+				fmt.Errorf("all VAs are in conflict, cannot proceed")
+		}
+	}
+
+	// Check for variants using default variantCost and log warnings
+	// Default cost is "10" as defined in CRD (api/v1alpha1/variantautoscaling_types.go)
+	if len(activeVAs) > 1 {
+		const defaultCost = "10" // Must match CRD default value
+		variantsWithDefaultCost := []string{}
+		for _, va := range activeVAs {
+			if va.Spec.VariantCost == "" || va.Spec.VariantCost == defaultCost {
+				variantsWithDefaultCost = append(variantsWithDefaultCost, va.Name)
+			}
+		}
+		if len(variantsWithDefaultCost) > 0 {
+			logger.Log.Info("Warning: Multiple variants detected with some using default variantCost",
+				"totalVariants", len(activeVAs),
+				"variantsUsingDefault", len(variantsWithDefaultCost),
+				"variantNames", strings.Join(variantsWithDefaultCost, ", "),
+				"recommendation", "Set explicit variantCost for accurate cost comparisons")
+		}
+	}
+
 	// WVA operates in unlimited mode - no cluster inventory collection needed
 	systemData := utils.CreateSystemData(acceleratorCm, serviceClassCm)
 
-	updateList, vaMap, allAnalyzerResponses, err := r.prepareVariantAutoscalings(ctx, activeVAs, acceleratorCm, serviceClassCm, systemData, scaleToZeroConfigData)
+	updateList, vaMap, allAnalyzerResponses, validVAs, err := r.prepareVariantAutoscalings(ctx, activeVAs, acceleratorCm, serviceClassCm, systemData, scaleToZeroConfigData)
 	if err != nil {
 		logger.Log.Error(err, "failed to prepare variant autoscalings")
 		return ctrl.Result{}, err
@@ -158,39 +293,46 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	modelAnalyzer := analyzer.NewModelAnalyzer(system)
 	for _, s := range system.Servers() {
-		modelAnalyzeResponse := modelAnalyzer.AnalyzeModel(ctx, *vaMap[s.Name()])
+		// Safely get VA from map with nil check
+		va, ok := vaMap[s.Name()]
+		if !ok || va == nil {
+			logger.Log.Warn("VA not found in map for server", "serverName", s.Name())
+			continue
+		}
+
+		modelAnalyzeResponse := modelAnalyzer.AnalyzeModel(ctx, *va)
 		if len(modelAnalyzeResponse.Allocations) == 0 {
-			logger.Log.Info("No potential allocations found for server - ", "serverName: ", s.Name())
+			logger.Log.Info("No potential allocations found for server", "serverName", s.Name())
 			continue
 		}
 		allAnalyzerResponses[s.Name()] = modelAnalyzeResponse
 	}
-	logger.Log.Debug("System data prepared for optimization: - ", utils.MarshalStructToJsonString(systemData.Spec.Capacity))
-	logger.Log.Debug("System data prepared for optimization: - ", utils.MarshalStructToJsonString(systemData.Spec.Accelerators))
-	logger.Log.Debug("System data prepared for optimization: - ", utils.MarshalStructToJsonString(systemData.Spec.ServiceClasses))
-	logger.Log.Debug("System data prepared for optimization: - ", utils.MarshalStructToJsonString(systemData.Spec.Models))
-	logger.Log.Debug("System data prepared for optimization: - ", utils.MarshalStructToJsonString(systemData.Spec.Optimizer))
-	logger.Log.Debug("System data prepared for optimization: - ", utils.MarshalStructToJsonString(systemData.Spec.Servers))
+
+	// Log system data prepared for optimization in a single structured message
+	logger.Log.Debug("System data prepared for optimization",
+		"capacity", utils.MarshalStructToJsonString(systemData.Spec.Capacity),
+		"accelerators", utils.MarshalStructToJsonString(systemData.Spec.Accelerators),
+		"serviceClasses", utils.MarshalStructToJsonString(systemData.Spec.ServiceClasses),
+		"models", utils.MarshalStructToJsonString(systemData.Spec.Models),
+		"optimizer", utils.MarshalStructToJsonString(systemData.Spec.Optimizer),
+		"servers", utils.MarshalStructToJsonString(systemData.Spec.Servers))
 
 	engine := variantAutoscalingOptimizer.NewVariantAutoscalingsEngine(manager, system)
 
-	optimizedAllocation, err := engine.Optimize(ctx, *updateList, allAnalyzerResponses, &scaleToZeroConfigData, r.ModelMetricsCache)
+	optimizedAllocation, err := engine.Optimize(ctx, *updateList, allAnalyzerResponses, &scaleToZeroConfigData, r.ScaleToZeroMetricsCache)
 	if err != nil {
-		logger.Log.Error(err, "unable to perform model optimization, skipping this iteration")
+		logger.Log.Warnw("Optimization failed - will emit fallback metrics for all variants",
+			"error", err,
+			"variantCount", len(updateList.Items))
 
-		// Update OptimizationReady condition to False for all VAs in the update list
-		for i := range updateList.Items {
-			va := &updateList.Items[i]
-			llmdVariantAutoscalingV1alpha1.SetCondition(va,
-				llmdVariantAutoscalingV1alpha1.TypeOptimizationReady,
-				metav1.ConditionFalse,
-				llmdVariantAutoscalingV1alpha1.ReasonOptimizationFailed,
-				fmt.Sprintf("Optimization failed: %v", err))
-
-			if statusErr := r.Status().Update(ctx, va); statusErr != nil {
-				logger.Log.Error(statusErr, "failed to update status condition after optimization failure",
-					"variantAutoscaling", va.Name)
-			}
+		// Emit fallback metrics even when optimization fails
+		// The variants in updateList already have fallback DesiredOptimizedAlloc set
+		// Use validVAs (not activeVAs) to exclude VAs without deployments from cheapest variant logic
+		if emitErr := r.applyOptimizedAllocations(ctx, updateList, optimizedAllocation, allAnalyzerResponses, scaleToZeroConfigData, validVAs); emitErr != nil {
+			logger.Log.Error(emitErr, "failed to emit fallback metrics after optimization failure")
+		} else {
+			logger.Log.Info("Successfully emitted fallback metrics after optimization failure",
+				"variantCount", len(updateList.Items))
 		}
 
 		return ctrl.Result{RequeueAfter: requeueDuration}, nil
@@ -198,11 +340,28 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	logger.Log.Debug("Optimization completed successfully, emitting optimization metrics")
 	logger.Log.Debug("Optimized allocation map - ", "numKeys: ", len(optimizedAllocation), ", updateList_count: ", len(updateList.Items))
-	for key, value := range optimizedAllocation {
-		logger.Log.Debug("Optimized allocation entry - ", "key: ", key, ", value: ", value)
+
+	// Validate optimizer returned results for all variants
+	if len(optimizedAllocation) > 0 && len(optimizedAllocation) < len(updateList.Items) {
+		logger.Log.Warnw("Optimizer returned partial results - some variants will use fallback allocation",
+			"expected", len(updateList.Items),
+			"received", len(optimizedAllocation),
+			"missing", len(updateList.Items)-len(optimizedAllocation))
+
+		// Log which variants are missing
+		missingVariants := make([]string, 0)
+		for i := range updateList.Items {
+			if _, found := optimizedAllocation[updateList.Items[i].Name]; !found {
+				missingVariants = append(missingVariants, updateList.Items[i].Name)
+			}
+		}
+		if len(missingVariants) > 0 {
+			logger.Log.Debug("Variants missing from optimizer results", "variants", missingVariants)
+		}
 	}
 
-	if err := r.applyOptimizedAllocations(ctx, updateList, optimizedAllocation); err != nil {
+	// Use validVAs (not activeVAs) to exclude VAs without deployments from cheapest variant logic
+	if err := r.applyOptimizedAllocations(ctx, updateList, optimizedAllocation, allAnalyzerResponses, scaleToZeroConfigData, validVAs); err != nil {
 		// If we fail to apply optimized allocations, we log the error
 		// In next reconcile, the controller will retry.
 		logger.Log.Error(err, "failed to apply optimized allocations")
@@ -219,13 +378,549 @@ func filterActiveVariantAutoscalings(items []llmdVariantAutoscalingV1alpha1.Vari
 		if va.DeletionTimestamp.IsZero() {
 			active = append(active, va)
 		} else {
-			logger.Log.Info("skipping deleted variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
+			logger.Log.Info("skipping deleted variantAutoscaling", "name", va.Name)
 		}
 	}
 	return active
 }
 
+// addFailedVariant fetches the latest VA and adds it to updateList with a failed condition.
+// This helper reduces code duplication in prepareVariantAutoscalings.
+func (r *VariantAutoscalingReconciler) addFailedVariant(
+	ctx context.Context,
+	va llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
+	reason string,
+	message string,
+	updateList *llmdVariantAutoscalingV1alpha1.VariantAutoscalingList,
+) bool {
+	var updateVA llmdVariantAutoscalingV1alpha1.VariantAutoscaling
+	if err := utils.GetVariantAutoscalingWithBackoff(ctx, r.Client, va.Name, va.Namespace, &updateVA); err != nil {
+		logger.Log.Error(err, "Unable to get VariantAutoscaling for failed variant",
+			"name", va.Name,
+			"namespace", va.Namespace)
+		return false
+	}
+
+	llmdVariantAutoscalingV1alpha1.SetCondition(&updateVA,
+		llmdVariantAutoscalingV1alpha1.TypeOptimizationReady,
+		metav1.ConditionFalse,
+		reason,
+		message)
+
+	updateList.Items = append(updateList.Items, updateVA)
+	return true
+}
+
+// max returns the maximum of two int32 values
+func max(a, b int32) int32 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// isRetentionPeriodExceeded checks if the retention period has been exceeded since lastUpdate.
+// Returns true if lastUpdate is set and the time since lastUpdate exceeds retentionPeriod.
+// Returns false if lastUpdate is zero (never set) or if within retention period.
+func isRetentionPeriodExceeded(lastUpdate llmdVariantAutoscalingV1alpha1.LastUpdateInfo, retentionPeriod time.Duration) bool {
+	if lastUpdate.UpdateTime.IsZero() {
+		return false
+	}
+	return time.Since(lastUpdate.UpdateTime.Time) > retentionPeriod
+}
+
+// applyRetentionPeriodScaling applies scale-to-zero logic when retention period is exceeded.
+// Returns the desired replica count and reason message.
+func applyRetentionPeriodScaling(
+	va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
+	allVariants []llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
+	scaleToZeroConfigData utils.ScaleToZeroConfigData,
+	retentionPeriod time.Duration,
+	pathName string, // "Fallback" or "Last resort" for logging
+) (desiredReplicas int32, reason string) {
+	modelName := va.Spec.ModelID
+	scaleToZeroEnabled := utils.IsScaleToZeroEnabled(scaleToZeroConfigData, va.Namespace, modelName)
+	allMinReplicasZero := allVariantsHaveMinReplicasZero(allVariants, modelName)
+	isCheapest := isCheapestVariantForModel(va, allVariants, modelName)
+
+	minReplicasValue := int32(0)
+	if va.Spec.MinReplicas != nil {
+		minReplicasValue = *va.Spec.MinReplicas
+	}
+
+	if allMinReplicasZero && scaleToZeroEnabled {
+		// Case 1: Scale-to-zero enabled, all minReplicas=0 → scale to 0
+		desiredReplicas = 0
+		reason = fmt.Sprintf("%s: retention period exceeded (>%v), scale-to-zero enabled, scaling to 0",
+			pathName, retentionPeriod)
+		logger.Log.Info("Scaling to zero after retention period",
+			"path", pathName,
+			"variant", va.Name,
+			"modelID", modelName,
+			"retentionPeriod", retentionPeriod)
+	} else if allMinReplicasZero && !scaleToZeroEnabled {
+		// Case 2: Scale-to-zero disabled, all minReplicas=0 → cheapest to 1, others to 0
+		if isCheapest {
+			desiredReplicas = 1
+			reason = fmt.Sprintf("%s: retention period exceeded (>%v), scale-to-zero disabled, cheapest variant set to 1",
+				pathName, retentionPeriod)
+		} else {
+			desiredReplicas = 0
+			reason = fmt.Sprintf("%s: retention period exceeded (>%v), scale-to-zero disabled, non-cheapest variant set to 0",
+				pathName, retentionPeriod)
+		}
+		logger.Log.Info("Applying scale-to-zero disabled logic after retention period",
+			"path", pathName,
+			"variant", va.Name,
+			"modelID", modelName,
+			"isCheapest", isCheapest,
+			"desiredReplicas", desiredReplicas)
+	} else {
+		// Case 3: Some variant has minReplicas > 0 → use this variant's minReplicas
+		desiredReplicas = minReplicasValue
+		reason = fmt.Sprintf("%s: retention period exceeded (>%v), using minReplicas=%d",
+			pathName, retentionPeriod, minReplicasValue)
+		logger.Log.Info("Using minReplicas after retention period",
+			"path", pathName,
+			"variant", va.Name,
+			"modelID", modelName,
+			"minReplicas", minReplicasValue)
+	}
+
+	return desiredReplicas, reason
+}
+
+// applyReplicaBounds applies minReplicas and maxReplicas bounds to the desired replica count.
+// Returns the clamped replica count and whether it was changed.
+func applyReplicaBounds(
+	desiredReplicas int32,
+	minReplicas *int32,
+	maxReplicas *int32,
+	variantName string,
+) (clampedReplicas int32, boundsApplied bool) {
+	clampedReplicas = desiredReplicas
+	boundsApplied = false
+
+	// Apply minReplicas bound
+	if minReplicas != nil {
+		minVal := *minReplicas
+		if clampedReplicas < minVal {
+			logger.Log.Info("Clamping replicas to minReplicas",
+				"variant", variantName,
+				"original", clampedReplicas,
+				"clamped", minVal)
+			clampedReplicas = minVal
+			boundsApplied = true
+		}
+	}
+
+	// Apply maxReplicas bound
+	if maxReplicas != nil {
+		maxVal := *maxReplicas
+		if clampedReplicas > maxVal {
+			logger.Log.Info("Clamping replicas to maxReplicas",
+				"variant", variantName,
+				"original", clampedReplicas,
+				"clamped", maxVal)
+			clampedReplicas = maxVal
+			boundsApplied = true
+		}
+	}
+
+	return clampedReplicas, boundsApplied
+}
+
+// applyFallbackAllocation applies fallback allocation logic when optimizer doesn't run.
+// This consolidates Path 2 (has precomputed fallback) and Path 3 (no precomputed fallback).
+// Returns error if allocation computation fails.
+func applyFallbackAllocation(
+	updateVa *llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
+	allVariants []llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
+	scaleToZeroConfigData utils.ScaleToZeroConfigData,
+	hasPrecomputedFallback bool,
+	pathLabel string, // "Fallback" or "Last resort"
+) {
+	modelName := updateVa.Spec.ModelID
+	retentionPeriod := utils.GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, updateVa.Namespace, modelName)
+	previousAlloc := updateVa.Status.DesiredOptimizedAlloc
+
+	// Check if retention period has been exceeded
+	retentionPeriodExceeded := isRetentionPeriodExceeded(previousAlloc.LastUpdate, retentionPeriod)
+
+	var desiredReplicas int32
+	var reason string
+
+	if retentionPeriodExceeded {
+		// Retention period exceeded - apply scale-to-zero logic
+		desiredReplicas, reason = applyRetentionPeriodScaling(
+			updateVa,
+			allVariants,
+			scaleToZeroConfigData,
+			retentionPeriod,
+			pathLabel,
+		)
+
+		// Apply maxReplicas bound (minReplicas already applied in scale-to-zero logic)
+		clampedReplicas, boundsApplied := applyReplicaBounds(desiredReplicas, nil, updateVa.Spec.MaxReplicas, updateVa.Name)
+		if boundsApplied {
+			reason = fmt.Sprintf("%s (clamped to maxReplicas=%d)", reason, clampedReplicas)
+			desiredReplicas = clampedReplicas
+		}
+
+		// Create allocation with helper
+		updateVa.Status.DesiredOptimizedAlloc = createOptimizedAllocWithUpdate(desiredReplicas, reason, previousAlloc)
+	} else {
+		// Retention period NOT exceeded
+		if hasPrecomputedFallback {
+			// PATH 2: Preserve existing allocation from previous reconciliation
+			// Note: previousAlloc already contains the current DesiredOptimizedAlloc from updateVa (line 637)
+			// We don't need to copy it again - just re-apply bounds and update timestamps if needed
+
+			// Re-apply bounds to respect any CRD changes since the allocation was computed
+			originalReplicas := previousAlloc.NumReplicas
+			clampedReplicas, boundsApplied := applyReplicaBounds(
+				originalReplicas,
+				updateVa.Spec.MinReplicas,
+				updateVa.Spec.MaxReplicas,
+				updateVa.Name,
+			)
+
+			// Update allocation if bounds were applied
+			if boundsApplied {
+				updateVa.Status.DesiredOptimizedAlloc.NumReplicas = clampedReplicas
+				newReason := fmt.Sprintf("%s (clamped from %d to %d for bounds)",
+					previousAlloc.LastUpdate.Reason, originalReplicas, clampedReplicas)
+				// Calculate delta: new - previous
+				delta := clampedReplicas - previousAlloc.NumReplicas
+				updateVa.Status.DesiredOptimizedAlloc.LastUpdate = llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+					UpdateTime:         metav1.Now(),
+					NumReplicasChanged: delta,
+					Reason:             newReason,
+				}
+			}
+
+			// If Reason is empty, set a default reason
+			if updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason == "" {
+				newReason := "Fallback: preserving previous allocation (no optimizer solution)"
+				if previousAlloc.LastUpdate.Reason != newReason {
+					// Calculate delta: new - previous
+					delta := updateVa.Status.DesiredOptimizedAlloc.NumReplicas - previousAlloc.NumReplicas
+					updateVa.Status.DesiredOptimizedAlloc.LastUpdate = llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+						UpdateTime:         metav1.Now(),
+						NumReplicasChanged: delta,
+						Reason:             newReason,
+					}
+				}
+			}
+
+			// If LastUpdate.UpdateTime is still zero, set it now
+			if updateVa.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero() {
+				// Calculate delta: new - previous
+				delta := updateVa.Status.DesiredOptimizedAlloc.NumReplicas - previousAlloc.NumReplicas
+				updateVa.Status.DesiredOptimizedAlloc.LastUpdate = llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+					UpdateTime:         metav1.Now(),
+					NumReplicasChanged: delta,
+					Reason:             updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason,
+				}
+			}
+
+			logger.Log.Info("Using fallback allocation (retention period not exceeded)",
+				"variantName", updateVa.Name,
+				"currentReplicas", updateVa.Status.CurrentAlloc.NumReplicas,
+				"desiredReplicas", updateVa.Status.DesiredOptimizedAlloc.NumReplicas,
+				"boundChanged", boundsApplied,
+				"timeSinceUpdate", time.Since(previousAlloc.LastUpdate.UpdateTime.Time),
+				"retentionPeriod", retentionPeriod)
+		} else {
+			// PATH 3: Controller-centric approach
+			minReplicasValue := int32(0)
+			if updateVa.Spec.MinReplicas != nil {
+				minReplicasValue = *updateVa.Spec.MinReplicas
+			}
+
+			var baselineReplicas int32
+			// Track whether we should use CreationTimestamp for retention period
+			// This is used when VA recovers from failed state and other variants are operational
+			useCreationTimestampForRetention := false
+
+			// Note: We check LastUpdate (not NumReplicas >= 0) because NumReplicas defaults to 0,
+			// and would incorrectly treat first-run scenarios as having a previous allocation.
+			// LastUpdate is only set when a controller decision was actually made.
+			if !previousAlloc.LastUpdate.UpdateTime.IsZero() {
+				// Check if deployment was discovered late (current changed from 0 to non-zero)
+				// This handles: User creates VA on existing deployment, deployment discovered in recon 2
+				if updateVa.Status.CurrentAlloc.NumReplicas > 0 && previousAlloc.NumReplicas < updateVa.Status.CurrentAlloc.NumReplicas {
+					// Current is now non-zero and larger than previous decision
+					// Likely means deployment was just discovered - reset to current
+					baselineReplicas = updateVa.Status.CurrentAlloc.NumReplicas
+					logger.Log.Info("Last resort - current increased significantly (deployment discovered late), resetting to current",
+						"variantName", updateVa.Name,
+						"previousDesired", previousAlloc.NumReplicas,
+						"currentReplicas", updateVa.Status.CurrentAlloc.NumReplicas)
+					reason = fmt.Sprintf("Last resort: deployment discovered late, using current=%d (was %d)",
+						updateVa.Status.CurrentAlloc.NumReplicas, previousAlloc.NumReplicas)
+				} else {
+					// Use previous optimized allocation - maintain controller intent
+					baselineReplicas = previousAlloc.NumReplicas
+					logger.Log.Info("Last resort - using previous optimized allocation as baseline",
+						"variantName", updateVa.Name,
+						"previousOptimized", baselineReplicas,
+						"currentReplicas", updateVa.Status.CurrentAlloc.NumReplicas)
+					reason = fmt.Sprintf("Last resort: maintaining controller intent: max(minReplicas=%d, previousOptimized=%d)",
+						minReplicasValue, baselineReplicas)
+				}
+			} else {
+				// First run - use current deployment state as baseline
+				// IMPORTANT: If current=0, deployment may not have been discovered yet
+				// Check if this is truly first run (no previous Reason) vs current temporarily 0
+				if updateVa.Status.CurrentAlloc.NumReplicas == 0 && minReplicasValue == 0 {
+					if previousAlloc.LastUpdate.Reason == "" {
+						// First run ever with current=0 - apply defensive logic
+						// Check if other variants for this model have non-zero replicas
+						hasOtherRunningVariants := false
+						for _, v := range allVariants {
+							if v.Spec.ModelID == updateVa.Spec.ModelID && v.Name != updateVa.Name {
+								if v.Status.CurrentAlloc.NumReplicas > 0 || v.Status.DesiredOptimizedAlloc.NumReplicas > 0 {
+									hasOtherRunningVariants = true
+									logger.Log.Info("Found other running variant for same model",
+										"variantName", updateVa.Name,
+										"otherVariant", v.Name,
+										"otherCurrent", v.Status.CurrentAlloc.NumReplicas,
+										"otherDesired", v.Status.DesiredOptimizedAlloc.NumReplicas)
+									break
+								}
+							}
+						}
+
+						// Decision logic:
+						// - If other variants are running → safe to start at 0 (they handle load)
+						//   AND use CreationTimestamp for retention period (model was already operational)
+						// - If no other variants → use safe default of 1
+						//   AND use current time for retention period (model just became operational)
+						//
+						// This ensures:
+						// 1. Single variant: retention starts when deployment discovered (now)
+						// 2. Multiple variants: retention starts from VA creation (other variants were serving)
+						if hasOtherRunningVariants {
+							baselineReplicas = 0
+							useCreationTimestampForRetention = true
+							logger.Log.Info("Last resort - first run with current=0, other variants running, starting at 0",
+								"variantName", updateVa.Name,
+								"useCreationTimestamp", useCreationTimestampForRetention)
+							reason = "Last resort: first run, other variants handling load, starting at 0"
+						} else {
+							// No other variants - use safe default to ensure at least one variant running
+							baselineReplicas = 1
+							logger.Log.Info("Last resort - first run with current=0, no other variants, using safe default",
+								"variantName", updateVa.Name,
+								"safeDefault", baselineReplicas)
+							reason = "Last resort: first run with current=0, using safe default of 1 (waiting for deployment discovery)"
+						}
+					} else {
+						// Not first run - current temporarily 0, preserve previous desired value
+						// This handles transient deployment lookup failures
+						baselineReplicas = previousAlloc.NumReplicas
+						logger.Log.Info("Last resort - current=0 but not first run, preserving previous desired",
+							"variantName", updateVa.Name,
+							"previousDesired", baselineReplicas)
+						reason = fmt.Sprintf("Last resort: preserving previous desired=%d (current temporarily 0)", baselineReplicas)
+					}
+				} else {
+					baselineReplicas = updateVa.Status.CurrentAlloc.NumReplicas
+					logger.Log.Info("Last resort - first run, using current deployment replicas as baseline",
+						"variantName", updateVa.Name,
+						"currentReplicas", updateVa.Status.CurrentAlloc.NumReplicas)
+					reason = fmt.Sprintf("Last resort: first run, using max(minReplicas=%d, current=%d)",
+						minReplicasValue, baselineReplicas)
+				}
+			}
+
+			desiredReplicas = max(minReplicasValue, baselineReplicas)
+
+			// Apply maxReplicas bound
+			clampedReplicas, boundsApplied := applyReplicaBounds(desiredReplicas, nil, updateVa.Spec.MaxReplicas, updateVa.Name)
+			if boundsApplied {
+				reason = fmt.Sprintf("%s (clamped to maxReplicas=%d)", reason, clampedReplicas)
+				desiredReplicas = clampedReplicas
+			} else {
+				// Complete the reason message for non-retention case
+				reason = fmt.Sprintf("%s = %d", reason, desiredReplicas)
+			}
+
+			// Create allocation with helper
+			// If VA is recovering from failed state with other variants running, use CreationTimestamp for retention
+			if useCreationTimestampForRetention {
+				updateVa.Status.DesiredOptimizedAlloc = createOptimizedAllocWithCreationTime(desiredReplicas, reason, previousAlloc, updateVa.CreationTimestamp)
+			} else {
+				updateVa.Status.DesiredOptimizedAlloc = createOptimizedAllocWithUpdate(desiredReplicas, reason, previousAlloc)
+			}
+		}
+	}
+}
+
+// createOptimizedAllocWithUpdate creates an OptimizedAlloc and updates LastUpdate timestamp
+// if NumReplicas or Reason changed compared to previous allocation.
+func createOptimizedAllocWithUpdate(
+	desiredReplicas int32,
+	reason string,
+	previousAlloc llmdVariantAutoscalingV1alpha1.OptimizedAlloc,
+) llmdVariantAutoscalingV1alpha1.OptimizedAlloc {
+	newAlloc := llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
+		NumReplicas: desiredReplicas,
+	}
+
+	// Update LastUpdate only if NumReplicas or Reason changed
+	if previousAlloc.NumReplicas != newAlloc.NumReplicas || previousAlloc.LastUpdate.Reason != reason {
+		// Calculate delta: new - previous
+		delta := desiredReplicas - previousAlloc.NumReplicas
+		newAlloc.LastUpdate = llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+			UpdateTime:         metav1.Now(),
+			NumReplicasChanged: delta,
+			Reason:             reason,
+		}
+	} else {
+		// Preserve previous LastUpdate if nothing changed
+		newAlloc.LastUpdate = previousAlloc.LastUpdate
+	}
+
+	return newAlloc
+}
+
+// createOptimizedAllocWithCreationTime creates an OptimizedAlloc using CreationTimestamp for LastUpdate.
+// This is used when a VA recovers from failed state and other variants are already operational,
+// ensuring retention period is calculated from VA creation time, not deployment discovery time.
+func createOptimizedAllocWithCreationTime(
+	desiredReplicas int32,
+	reason string,
+	previousAlloc llmdVariantAutoscalingV1alpha1.OptimizedAlloc,
+	creationTimestamp metav1.Time,
+) llmdVariantAutoscalingV1alpha1.OptimizedAlloc {
+	newAlloc := llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
+		NumReplicas: desiredReplicas,
+	}
+
+	// Use CreationTimestamp as UpdateTime for retention period calculation
+	// This ensures that when a VA recovers from failed state and other variants are serving,
+	// the retention period is calculated from when the VA was created, not when deployment was discovered
+	delta := desiredReplicas - previousAlloc.NumReplicas
+	newAlloc.LastUpdate = llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+		UpdateTime:         creationTimestamp,
+		NumReplicasChanged: delta,
+		Reason:             reason,
+	}
+
+	logger.Log.Info("Using CreationTimestamp for retention period (VA recovering with other variants operational)",
+		"creationTimestamp", creationTimestamp,
+		"desiredReplicas", desiredReplicas)
+
+	return newAlloc
+}
+
+// updateConditionsForAllocation updates the conditions for a VA based on the allocation decision path.
+// Preserves MetricsAvailable from preparation phase and sets OptimizationReady based on the path.
+func updateConditionsForAllocation(
+	updateVa *llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
+	preparedVa *llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
+	hasOptimizedAlloc bool,
+) {
+	// Copy MetricsAvailable condition from preparation phase
+	if metricsCond := llmdVariantAutoscalingV1alpha1.GetCondition(preparedVa, llmdVariantAutoscalingV1alpha1.TypeMetricsAvailable); metricsCond != nil {
+		llmdVariantAutoscalingV1alpha1.SetCondition(updateVa,
+			llmdVariantAutoscalingV1alpha1.TypeMetricsAvailable,
+			metricsCond.Status, metricsCond.Reason, metricsCond.Message)
+	}
+
+	// Set OptimizationReady condition based on allocation path
+	desiredAlloc := updateVa.Status.DesiredOptimizedAlloc
+	if hasOptimizedAlloc {
+		// Path 1: Optimizer solution
+		llmdVariantAutoscalingV1alpha1.SetCondition(updateVa,
+			llmdVariantAutoscalingV1alpha1.TypeOptimizationReady,
+			metav1.ConditionTrue,
+			llmdVariantAutoscalingV1alpha1.ReasonOptimizationSucceeded,
+			fmt.Sprintf("Optimization completed: %d replicas on %s",
+				desiredAlloc.NumReplicas, updateVa.Spec.Accelerator))
+	} else if desiredAlloc.LastUpdate.Reason != "" {
+		// Path 2/Path 3: Fallback or Last Resort
+		llmdVariantAutoscalingV1alpha1.SetCondition(updateVa,
+			llmdVariantAutoscalingV1alpha1.TypeOptimizationReady,
+			metav1.ConditionTrue,
+			llmdVariantAutoscalingV1alpha1.ReasonFallbackUsed,
+			fmt.Sprintf("%s (%d replicas)", desiredAlloc.LastUpdate.Reason, desiredAlloc.NumReplicas))
+	} else {
+		// Fallback: copy from preparation phase if available
+		if optCond := llmdVariantAutoscalingV1alpha1.GetCondition(preparedVa, llmdVariantAutoscalingV1alpha1.TypeOptimizationReady); optCond != nil {
+			llmdVariantAutoscalingV1alpha1.SetCondition(updateVa,
+				llmdVariantAutoscalingV1alpha1.TypeOptimizationReady,
+				optCond.Status, optCond.Reason, optCond.Message)
+		}
+	}
+}
+
+// isCheapestVariantForModel determines if the given variant is the cheapest among all variants for the same model.
+// Cheapest is determined by accelerator count (fewer accelerators = cheaper).
+func isCheapestVariantForModel(
+	currentVariant *llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
+	allVariants []llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
+	modelName string,
+) bool {
+	if currentVariant == nil {
+		return false
+	}
+
+	minAcceleratorCount := currentVariant.Spec.AcceleratorCount
+	cheapestVariantID := currentVariant.Spec.VariantID
+
+	// Find the variant with minimum accelerator count for this model
+	for _, va := range allVariants {
+		if va.Spec.ModelID != modelName {
+			continue // Different model
+		}
+		if va.Spec.AcceleratorCount < minAcceleratorCount {
+			minAcceleratorCount = va.Spec.AcceleratorCount
+			cheapestVariantID = va.Spec.VariantID
+		} else if va.Spec.AcceleratorCount == minAcceleratorCount {
+			// If same count, choose by variant ID (deterministic)
+			if va.Spec.VariantID < cheapestVariantID {
+				cheapestVariantID = va.Spec.VariantID
+			}
+		}
+	}
+
+	return currentVariant.Spec.VariantID == cheapestVariantID
+}
+
+// allVariantsHaveMinReplicasZero checks if all variants for the given model have minReplicas set to 0 or nil.
+// This is used to determine if scale-to-zero based on retention period is safe for the entire model.
+func allVariantsHaveMinReplicasZero(
+	allVariants []llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
+	modelName string,
+) bool {
+	// Find at least one variant for this model
+	foundVariant := false
+	for _, va := range allVariants {
+		if va.Spec.ModelID != modelName {
+			continue // Different model
+		}
+		foundVariant = true
+
+		// If any variant has minReplicas > 0, return false
+		if va.Spec.MinReplicas != nil && *va.Spec.MinReplicas > 0 {
+			return false
+		}
+	}
+
+	// Return true only if we found at least one variant and all had minReplicas == 0 or nil
+	return foundVariant
+}
+
 // prepareVariantAutoscalings collects and prepares all data for optimization.
+// Returns:
+//   - updateList: all VAs to be updated (including failed ones)
+//   - vaMap: map of valid VAs for optimization
+//   - allAnalyzerResponses: analyzer responses for each variant
+//   - validVAs: list of VAs with existing deployments (for cheapest variant calculations)
+//   - error: any error encountered during preparation
 func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 	ctx context.Context,
 	activeVAs []llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
@@ -233,57 +928,83 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 	serviceClassCm map[string]string,
 	systemData *infernoConfig.SystemData,
 	scaleToZeroConfigData utils.ScaleToZeroConfigData,
-) (*llmdVariantAutoscalingV1alpha1.VariantAutoscalingList, map[string]*llmdVariantAutoscalingV1alpha1.VariantAutoscaling, map[string]*interfaces.ModelAnalyzeResponse, error) {
+) (*llmdVariantAutoscalingV1alpha1.VariantAutoscalingList, map[string]*llmdVariantAutoscalingV1alpha1.VariantAutoscaling, map[string]*interfaces.ModelAnalyzeResponse, []llmdVariantAutoscalingV1alpha1.VariantAutoscaling, error) {
 	var updateList llmdVariantAutoscalingV1alpha1.VariantAutoscalingList
 	allAnalyzerResponses := make(map[string]*interfaces.ModelAnalyzeResponse)
 	vaMap := make(map[string]*llmdVariantAutoscalingV1alpha1.VariantAutoscaling)
+	// Track VAs with valid deployments for cheapest variant and minReplicas calculations
+	var validVAs []llmdVariantAutoscalingV1alpha1.VariantAutoscaling
 
 	for _, va := range activeVAs {
+		// Check for context cancellation to enable graceful shutdown
+		select {
+		case <-ctx.Done():
+			logger.Log.Info("Context cancelled during variant preparation, stopping early")
+			return &updateList, vaMap, allAnalyzerResponses, validVAs, ctx.Err()
+		default:
+			// Continue processing
+		}
+
 		modelName := va.Spec.ModelID
 		if modelName == "" {
-			logger.Log.Info("variantAutoscaling missing modelName label, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
+			logger.Log.Warn("VariantAutoscaling missing modelID, adding with failed condition",
+				"name", va.Name)
+			r.addFailedVariant(ctx, va,
+				llmdVariantAutoscalingV1alpha1.ReasonOptimizationFailed,
+				"ModelID is empty - cannot optimize",
+				&updateList)
 			continue
 		}
 
-		entry, className, err := utils.FindModelSLO(serviceClassCm, modelName)
+		entry, className, err := utils.FindModelSLO(serviceClassCm, va.Namespace, modelName)
 		if err != nil {
-			logger.Log.Error(err, "failed to locate SLO for model - ", "variantAutoscaling-name: ", va.Name, "modelName: ", modelName)
+			logger.Log.Error(err, "Failed to locate SLO for model, adding with failed condition",
+				"name", va.Name,
+				"namespace", va.Namespace,
+				"model", modelName)
+			r.addFailedVariant(ctx, va,
+				llmdVariantAutoscalingV1alpha1.ReasonOptimizationFailed,
+				fmt.Sprintf("SLO not found for model %s", modelName),
+				&updateList)
 			continue
 		}
-		logger.Log.Info("Found SLO for model - ", "model: ", modelName, ", class: ", className, ", slo-tpot: ", entry.SLOTPOT, ", slo-ttft: ", entry.SLOTTFT)
-
-		for _, modelAcceleratorProfile := range va.Spec.ModelProfile.Accelerators {
-			if utils.AddModelAcceleratorProfileToSystemData(systemData, modelName, &modelAcceleratorProfile) != nil {
-				logger.Log.Error("variantAutoscaling bad model accelerator profile data, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
-				continue
-			}
-		}
-
-		accName := va.Labels["inference.optimization/acceleratorName"]
-		acceleratorCostVal, ok := acceleratorCm[accName]["cost"]
-		if !ok {
-			logger.Log.Error("variantAutoscaling missing accelerator cost in configMap, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
-			continue
-		}
-		acceleratorCostValFloat, err := strconv.ParseFloat(acceleratorCostVal, 32)
-		if err != nil {
-			logger.Log.Error("variantAutoscaling unable to parse accelerator cost in configMap, skipping optimization - ", "variantAutoscaling-name: ", va.Name)
-			continue
-		}
+		logger.Log.Info("Found SLO for model",
+			"namespace", va.Namespace,
+			"model", modelName,
+			"class", className,
+			"sloTPOT", entry.SLOTPOT,
+			"sloTTFT", entry.SLOTTFT)
 
 		var deploy appsv1.Deployment
-		err = utils.GetDeploymentWithBackoff(ctx, r.Client, va.Name, va.Namespace, &deploy)
+		err = utils.GetDeploymentWithBackoff(ctx, r.Client, va.Spec.ScaleTargetRef.Name, va.Namespace, &deploy)
 		if err != nil {
-			logger.Log.Error(err, "failed to get Deployment after retries - ", "variantAutoscaling-name: ", va.Name)
+			logger.Log.Error(err, "Failed to get Deployment, adding with failed condition",
+				"name", va.Spec.ScaleTargetRef.Name)
+			r.addFailedVariant(ctx, va,
+				llmdVariantAutoscalingV1alpha1.ReasonOptimizationFailed,
+				"Deployment not found",
+				&updateList)
+			// VA with non-existent deployment is NOT added to validVAs
+			// This ensures it's excluded from cheapest variant and minReplicas calculations
 			continue
 		}
 
+		// Deployment exists - add to validVAs for use in cheapest variant calculations
+		// This ensures only VAs with actual deployments are considered in decision-making
+		validVAs = append(validVAs, va)
+
 		var updateVA llmdVariantAutoscalingV1alpha1.VariantAutoscaling
-		err = utils.GetVariantAutoscalingWithBackoff(ctx, r.Client, deploy.Name, deploy.Namespace, &updateVA)
+		err = utils.GetVariantAutoscalingWithBackoff(ctx, r.Client, va.Name, va.Namespace, &updateVA)
 		if err != nil {
-			logger.Log.Error(err, "unable to get variantAutoscaling for deployment - ", "deployment-name: ", deploy.Name, ", namespace: ", deploy.Namespace)
+			logger.Log.Error(err, "unable to get variantAutoscaling, using fallback allocation for metric emission - ", "va-name: ", va.Name, ", namespace: ", va.Namespace)
+			// This is unusual - VA was in the list but can't be retrieved (should not happen normally)
+			// Skip this one as we can't emit metrics without the VA object
 			continue
 		}
+
+		// Validate and log the relationship between variant_name and variant_id
+		// This helps users understand the dual-identifier pattern used in Prometheus metrics
+		utils.ValidateVariantAutoscalingName(&updateVA)
 
 		// Set ownerReference early, before metrics validation, to ensure it's always set
 		// This ensures the VA will be garbage collected when the Deployment is deleted
@@ -315,87 +1036,431 @@ func (r *VariantAutoscalingReconciler) prepareVariantAutoscalings(
 				metricsValidation.Reason,
 				metricsValidation.Message)
 		} else {
-			// Metrics unavailable - just log and skip (don't update status yet to avoid CRD validation errors)
-			// Conditions will be set properly once metrics become available or after first successful collection
-			logger.Log.Warnw("Metrics unavailable, skipping optimization for variant",
+			// Metrics unavailable - add to updateList for fallback allocation
+			logger.Log.Warnw("Metrics unavailable, adding to updateList for fallback allocation",
 				"variant", updateVA.Name,
 				"namespace", updateVA.Namespace,
 				"model", modelName,
 				"reason", metricsValidation.Reason,
 				"troubleshooting", metricsValidation.Message)
+
+			// Set MetricsAvailable condition to False
+			llmdVariantAutoscalingV1alpha1.SetCondition(&updateVA,
+				llmdVariantAutoscalingV1alpha1.TypeMetricsAvailable,
+				metav1.ConditionFalse,
+				metricsValidation.Reason,
+				metricsValidation.Message)
+
+			// Add to updateList without allocation - will be handled in applyOptimizedAllocations
+			updateList.Items = append(updateList.Items, updateVA)
 			continue
 		}
 
 		// Get retention period for this model from scale-to-zero config
-		retentionPeriod := utils.GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, modelName)
+		retentionPeriod := utils.GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, updateVA.Namespace, modelName)
 
-		currentAllocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat, r.PromAPI, r.ModelMetricsCache, retentionPeriod)
+		// Collect allocation and scale-to-zero metrics for this variant
+		allocation, err := collector.AddMetricsToOptStatus(ctx, &updateVA, deploy, r.PromAPI, r.ScaleToZeroMetricsCache, retentionPeriod)
 		if err != nil {
-			logger.Log.Error(err, "unable to fetch metrics, skipping this variantAutoscaling loop")
-			// Don't update status here - will be updated in next reconcile when metrics are available
+			logger.Log.Error(err, "unable to collect allocation data, adding to updateList for fallback allocation")
+			// Set MetricsAvailable condition to False
+			llmdVariantAutoscalingV1alpha1.SetCondition(&updateVA,
+				llmdVariantAutoscalingV1alpha1.TypeMetricsAvailable,
+				metav1.ConditionFalse,
+				llmdVariantAutoscalingV1alpha1.ReasonPrometheusError,
+				fmt.Sprintf("Failed to collect allocation data: %v", err))
+			// Add to updateList without allocation - will be handled in applyOptimizedAllocations
+			updateList.Items = append(updateList.Items, updateVA)
 			continue
 		}
-		updateVA.Status.CurrentAlloc = currentAllocation
 
-		if err := utils.AddServerInfoToSystemData(systemData, &updateVA, className, scaleToZeroConfigData); err != nil {
-			logger.Log.Info("variantAutoscaling bad deployment server data, skipping optimization - ", "variantAutoscaling-name: ", updateVA.Name)
+		// Update status with allocation (metrics are passed separately in refactored architecture)
+		updateVA.Status.CurrentAlloc = allocation
+
+		// Collect aggregate metrics (shared across all variants of this model)
+		// Use cache to avoid redundant Prometheus queries for same model
+		load, ttftAvg, itlAvg, err := collector.CollectAggregateMetricsWithCache(ctx, modelName, deploy.Namespace, r.PromAPI, r.MetricsCache)
+		if err != nil {
+			logger.Log.Error(err, "unable to fetch aggregate metrics, adding to updateList for fallback allocation")
+			// Set MetricsAvailable condition to False
+			llmdVariantAutoscalingV1alpha1.SetCondition(&updateVA,
+				llmdVariantAutoscalingV1alpha1.TypeMetricsAvailable,
+				metav1.ConditionFalse,
+				llmdVariantAutoscalingV1alpha1.ReasonPrometheusError,
+				fmt.Sprintf("Failed to collect aggregate metrics: %v", err))
+			// Add to updateList without allocation - will be handled in applyOptimizedAllocations
+			updateList.Items = append(updateList.Items, updateVA)
+			continue
+		}
+
+		// Update status with collected data (allocation already set by AddMetricsToOptStatus)
+		// Extract metrics to internal structure (all metrics passed separately from Prometheus)
+		metrics, err := interfaces.NewVariantMetrics(load, ttftAvg, itlAvg)
+		if err != nil {
+			logger.Log.Error(err, "failed to parse variant metrics, adding to updateList for fallback allocation")
+			// Set MetricsAvailable condition to False
+			llmdVariantAutoscalingV1alpha1.SetCondition(&updateVA,
+				llmdVariantAutoscalingV1alpha1.TypeMetricsAvailable,
+				metav1.ConditionFalse,
+				llmdVariantAutoscalingV1alpha1.ReasonPrometheusError,
+				fmt.Sprintf("Failed to parse variant metrics: %v", err))
+			// Add to updateList without allocation - will be handled in applyOptimizedAllocations
+			updateList.Items = append(updateList.Items, updateVA)
+			continue
+		}
+
+		// Add variant profile to systemData now that we have validated metrics are available
+		// This ensures systemData only contains variants that will be optimized
+		if err := utils.AddVariantProfileToSystemData(systemData,
+			modelName,
+			updateVA.Spec.Accelerator,
+			updateVA.Spec.AcceleratorCount,
+			&updateVA.Spec.VariantProfile); err != nil {
+			logger.Log.Error(err, "failed to add variant profile to system data, adding to updateList for fallback allocation", "variantAutoscaling", updateVA.Name)
+			// Set OptimizationReady condition to False
+			llmdVariantAutoscalingV1alpha1.SetCondition(&updateVA,
+				llmdVariantAutoscalingV1alpha1.TypeOptimizationReady,
+				metav1.ConditionFalse,
+				llmdVariantAutoscalingV1alpha1.ReasonOptimizationFailed,
+				fmt.Sprintf("Failed to add variant profile to system data: %v", err))
+			// Add to updateList without allocation - will be handled in applyOptimizedAllocations
+			updateList.Items = append(updateList.Items, updateVA)
+			continue
+		}
+
+		// Add server info with both metrics and scale-to-zero configuration
+		if err := utils.AddServerInfoToSystemData(systemData, &updateVA, className, metrics, scaleToZeroConfigData); err != nil {
+			logger.Log.Warn("variantAutoscaling bad deployment server data, adding to updateList for fallback allocation")
+			// Set OptimizationReady condition to False
+			llmdVariantAutoscalingV1alpha1.SetCondition(&updateVA,
+				llmdVariantAutoscalingV1alpha1.TypeOptimizationReady,
+				metav1.ConditionFalse,
+				llmdVariantAutoscalingV1alpha1.ReasonOptimizationFailed,
+				fmt.Sprintf("Failed to add server info: %v", err))
+			// Add to updateList without allocation - will be handled in applyOptimizedAllocations
+			updateList.Items = append(updateList.Items, updateVA)
 			continue
 		}
 
 		vaFullName := utils.FullName(va.Name, va.Namespace)
+
+		// Add to updateList - allocation will be set in applyOptimizedAllocations
 		updateList.Items = append(updateList.Items, updateVA)
 		vaMap[vaFullName] = &va
 	}
-	return &updateList, vaMap, allAnalyzerResponses, nil
+	return &updateList, vaMap, allAnalyzerResponses, validVAs, nil
 }
 
 // applyOptimizedAllocations applies the optimized allocation to all VariantAutoscaling resources.
+// allVariants should contain only VAs with valid deployments (excludes VAs with non-existent deployments)
+// to ensure correct cheapest variant and minReplicas calculations.
 func (r *VariantAutoscalingReconciler) applyOptimizedAllocations(
 	ctx context.Context,
 	updateList *llmdVariantAutoscalingV1alpha1.VariantAutoscalingList,
 	optimizedAllocation map[string]llmdVariantAutoscalingV1alpha1.OptimizedAlloc,
+	allAnalyzerResponses map[string]*interfaces.ModelAnalyzeResponse,
+	scaleToZeroConfigData utils.ScaleToZeroConfigData,
+	allVariants []llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
 ) error {
 	logger.Log.Debug("Optimization metrics emitted, starting to process variants - ", "variant_count: ", len(updateList.Items))
 
+	// Create metrics emitter for prediction metrics (reused across all variants)
+	metricsEmitter := metrics.NewMetricsEmitter()
+
+	// Create actuator once and reuse for all variants (more efficient)
+	act := actuator.NewActuator(r.Client)
+
+	// Collect status update errors to report at the end
+	var statusUpdateErrors []error
+
 	for i := range updateList.Items {
-		va := &updateList.Items[i]
-		_, ok := optimizedAllocation[va.Name]
-		logger.Log.Debug("Processing variant - ", "index: ", i, ", variantAutoscaling-name: ", va.Name, ", namespace: ", va.Namespace, ", has_optimized_alloc: ", ok)
-		if !ok {
-			logger.Log.Debug("No optimized allocation found for variant - ", "variantAutoscaling-name: ", va.Name)
-			continue
+		// Check for context cancellation to enable graceful shutdown
+		select {
+		case <-ctx.Done():
+			logger.Log.Info("Context cancelled during variant allocation, stopping early")
+			return ctx.Err()
+		default:
+			// Continue processing
 		}
-		// Fetch the latest version from API server
+
+		va := &updateList.Items[i]
+		optimizedAlloc, hasOptimizedAlloc := optimizedAllocation[va.Name]
+		logger.Log.Debug("Processing variant - ", "index: ", i, ", variantAutoscaling-name: ", va.Name, ", namespace: ", va.Namespace, ", has_optimized_alloc: ", hasOptimizedAlloc)
+
+		// Emit prediction metrics for the SELECTED allocation only (when available)
+		// This is done AFTER optimization selects which accelerator to use
+		if hasOptimizedAlloc {
+			if analyzerResponse, found := allAnalyzerResponses[va.Name]; found && analyzerResponse != nil {
+				// Get the selected accelerator from the variant spec
+				selectedAccelerator := va.Spec.Accelerator
+
+				// Get the allocation data for the selected accelerator only
+				if acceleratorAlloc, acceleratorFound := analyzerResponse.Allocations[selectedAccelerator]; acceleratorFound {
+					if acceleratorAlloc != nil && acceleratorAlloc.Allocation != nil {
+						allocData := acceleratorAlloc.Allocation.AllocationData()
+
+						// Convert from milliseconds to seconds
+						ttftSeconds := float64(allocData.TTFTAverage) / 1000.0
+						itlSeconds := float64(allocData.ITLAverage) / 1000.0
+
+						// Emit metrics with correct VariantID (business ID, not Kubernetes UID)
+						if err := metricsEmitter.EmitPredictionMetrics(ctx, va, va.Spec.ModelID, ttftSeconds, itlSeconds, selectedAccelerator); err != nil {
+							logger.Log.Error(err, "Failed to emit prediction metrics",
+								"variantName", va.Name,
+								"modelID", va.Spec.ModelID,
+								"accelerator", selectedAccelerator)
+						} else {
+							logger.Log.Debug("Successfully emitted prediction metrics",
+								"variantName", va.Name,
+								"accelerator", selectedAccelerator,
+								"ttft_seconds", ttftSeconds,
+								"itl_seconds", itlSeconds)
+						}
+					}
+				} else {
+					logger.Log.Debug("No allocation found for selected accelerator",
+						"variantName", va.Name,
+						"accelerator", selectedAccelerator)
+				}
+			}
+		}
+
+		// Fetch the latest version from API server for conflict-free status update
 		var updateVa llmdVariantAutoscalingV1alpha1.VariantAutoscaling
 		if err := utils.GetVariantAutoscalingWithBackoff(ctx, r.Client, va.Name, va.Namespace, &updateVa); err != nil {
 			logger.Log.Error(err, "failed to get latest VariantAutoscaling from API server: ", "variantAutoscaling-name: ", va.Name)
 			continue
 		}
 
-		// Note: ownerReference is now set earlier in prepareVariantAutoscalings
-		// This ensures it's set even if metrics aren't available yet
+		// Note: ownerReference is set in prepareVariantAutoscalings
+		// Note: All allocation decisions happen here - nothing carried over from preparation phase
 
-		updateVa.Status.CurrentAlloc = va.Status.CurrentAlloc
-		updateVa.Status.DesiredOptimizedAlloc = optimizedAllocation[va.Name]
+		// Initialize CurrentAlloc from actual deployment replicas
+		// This ensures Status.CurrentAlloc reflects reality, not stale data
+		var currentReplicas int32
+		var deploy appsv1.Deployment
+		if err := utils.GetDeploymentWithBackoff(ctx, r.Client, va.Spec.ScaleTargetRef.Name, va.Namespace, &deploy); err != nil {
+			// Deployment doesn't exist yet (first reconciliation) or error occurred
+			// Use existing status value, or 0 if never initialized
+			logger.Log.Debug("Could not get deployment for CurrentAlloc initialization, using existing status",
+				"variant", va.Name, "deploymentName", va.Spec.ScaleTargetRef.Name, "error", err)
+			currentReplicas = va.Status.CurrentAlloc.NumReplicas
+		} else {
+			// Use actual deployment replicas
+			// Prefer Status.Replicas if deployment has been reconciled
+			if deploy.Status.ObservedGeneration > 0 {
+				currentReplicas = deploy.Status.Replicas
+			} else if deploy.Spec.Replicas != nil {
+				// Fallback to spec if status not ready yet
+				currentReplicas = *deploy.Spec.Replicas
+			}
+			logger.Log.Debug("Initialized CurrentAlloc from deployment",
+				"variant", va.Name, "replicas", currentReplicas)
+		}
+
+		updateVa.Status.CurrentAlloc = llmdVariantAutoscalingV1alpha1.Allocation{
+			NumReplicas: currentReplicas,
+		}
+
+		// Use optimized allocation if available, otherwise preserve fallback from updateList
+		// This ensures metrics are always emitted, even for zero-traffic scenarios
+		if hasOptimizedAlloc {
+			// Add reason and conditional LastUpdate to optimizer allocation
+			newAlloc := optimizedAlloc
+			newReason := "Optimizer solution: cost and latency optimized allocation"
+
+			// PATH 1 RETENTION PERIOD CHECK:
+			// If optimizer returns 0 replicas, verify time-based retention period has expired
+			// This ensures consistency with Path 2 and Path 3 fallback logic
+			if optimizedAlloc.NumReplicas == 0 {
+				// IMPORTANT: Use updateVa (fresh from API) for previous allocation state
+				previousAlloc := updateVa.Status.DesiredOptimizedAlloc
+				modelName := updateVa.Spec.ModelID
+				retentionPeriod := utils.GetScaleToZeroRetentionPeriod(scaleToZeroConfigData, updateVa.Namespace, modelName)
+
+				// Check if this is first run (LastUpdate.UpdateTime is zero) or retention period not exceeded
+				if previousAlloc.LastUpdate.UpdateTime.IsZero() {
+					// First run: check if we need to bootstrap with 1 replica
+					// This handles the case where currentReplicas=0 (HPA already scaled down)
+					// but we need a warm replica for Prometheus discovery and retention period logic
+
+					// Check conditions for bootstrapping with 1 replica:
+					// 1. VA minReplicas = 0
+					// 2. currentReplicas = 0
+					// 3. Either: single variant OR cheapest variant among multiple variants
+
+					vaMinReplicasZero := updateVa.Spec.MinReplicas == nil || *updateVa.Spec.MinReplicas == 0
+
+					// Count variants for this model
+					variantCountForModel := 0
+					for _, v := range updateList.Items {
+						if v.Spec.ModelID == modelName {
+							variantCountForModel++
+						}
+					}
+					isSingleVariant := variantCountForModel == 1
+
+					// Check if this is the cheapest variant (lowest accelerator count)
+					isCheapest := isCheapestVariantForModel(&updateVa, updateList.Items, modelName)
+
+					if currentReplicas == 0 && vaMinReplicasZero {
+						// Bootstrap logic: ensure at least one warm replica for the model
+						if isSingleVariant || isCheapest {
+							// Bootstrap with 1 replica (single variant OR cheapest among multiple)
+							logger.Log.Info("Optimizer returned 0 replicas but this is first run, bootstrapping with 1 replica",
+								"variantName", updateVa.Name,
+								"currentReplicas", currentReplicas,
+								"isSingleVariant", isSingleVariant,
+								"isCheapest", isCheapest)
+							newAlloc.NumReplicas = 1
+							newReason = "First run: bootstrapping with 1 replica for Prometheus discovery"
+						} else {
+							// Multiple variants, not cheapest - stay at 0
+							logger.Log.Info("Optimizer returned 0 replicas, first run with multiple variants (not cheapest), staying at 0",
+								"variantName", updateVa.Name,
+								"currentReplicas", currentReplicas,
+								"isCheapest", isCheapest)
+							newAlloc.NumReplicas = 0
+							newReason = "First run: multiple variants, not cheapest, waiting for traffic"
+						}
+					} else {
+						// Follow existing rules: preserve currentReplicas
+						logger.Log.Info("Optimizer returned 0 replicas but this is first run, preserving current deployment replicas",
+							"variantName", updateVa.Name,
+							"currentReplicas", currentReplicas)
+						newAlloc.NumReplicas = currentReplicas
+						newReason = "First run: preserving current replicas for Prometheus discovery grace period"
+					}
+				} else {
+					timeSinceLastUpdate := time.Since(previousAlloc.LastUpdate.UpdateTime.Time)
+					if timeSinceLastUpdate <= retentionPeriod {
+						// Retention period NOT exceeded - preserve previous allocation
+						logger.Log.Info("Optimizer returned 0 replicas but retention period not exceeded, preserving previous allocation",
+							"variantName", updateVa.Name,
+							"previousReplicas", previousAlloc.NumReplicas,
+							"timeSinceLastUpdate", timeSinceLastUpdate.Round(time.Second),
+							"retentionPeriod", retentionPeriod)
+
+						// Preserve previous allocation (don't scale to zero yet)
+						newAlloc.NumReplicas = previousAlloc.NumReplicas
+						// Use static reason to avoid changing Reason on every reconciliation
+						// (which would reset LastUpdate and prevent retention period from being exceeded)
+						newReason = "Optimizer returned 0 but retention period not exceeded, preserving allocation"
+					} else {
+						logger.Log.Info("Optimizer returned 0 replicas and retention period exceeded, scaling to zero",
+							"variantName", updateVa.Name,
+							"previousReplicas", previousAlloc.NumReplicas,
+							"timeSinceLastUpdate", timeSinceLastUpdate.Round(time.Second),
+							"retentionPeriod", retentionPeriod)
+					}
+				}
+			}
+
+			// Update LastUpdate only if NumReplicas or Reason changed
+			// IMPORTANT: Use updateVa (fresh from API) for previous allocation state
+			previousAlloc := updateVa.Status.DesiredOptimizedAlloc
+			if previousAlloc.NumReplicas != newAlloc.NumReplicas || previousAlloc.LastUpdate.Reason != newReason {
+				// Calculate delta: new - previous
+				delta := newAlloc.NumReplicas - previousAlloc.NumReplicas
+				newAlloc.LastUpdate = llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+					UpdateTime:         metav1.Now(),
+					NumReplicasChanged: delta,
+					Reason:             newReason,
+				}
+			} else {
+				// Preserve previous LastUpdate if nothing changed
+				newAlloc.LastUpdate = previousAlloc.LastUpdate
+			}
+
+			updateVa.Status.DesiredOptimizedAlloc = newAlloc
+			logger.Log.Info("Using optimized allocation from optimizer",
+				"variantName", updateVa.Name,
+				"currentReplicas", updateVa.Status.CurrentAlloc.NumReplicas,
+				"desiredReplicas", newAlloc.NumReplicas,
+				"reason", newAlloc.LastUpdate.Reason)
+		} else {
+			// Check if VA is in failed state (e.g., deployment not found, missing modelID, SLO not found)
+			// VAs in failed state should not have their allocation logic updated, as this would:
+			// 1. Reset retention period timer on every reconciliation (incorrect)
+			// 2. Create misleading allocation decisions for non-existent resources
+			// 3. Make the failure condition inconsistent with status
+			if optCond := llmdVariantAutoscalingV1alpha1.GetCondition(va, llmdVariantAutoscalingV1alpha1.TypeOptimizationReady); optCond != nil && optCond.Status == metav1.ConditionFalse {
+				// VA is in failed state - skip allocation logic, preserve existing status
+				logger.Log.Debug("Skipping allocation logic for failed VA - preserving existing DesiredOptimizedAlloc",
+					"variantName", updateVa.Name,
+					"conditionReason", optCond.Reason,
+					"conditionMessage", optCond.Message,
+					"existingDesiredReplicas", updateVa.Status.DesiredOptimizedAlloc.NumReplicas,
+					"existingLastUpdateTime", updateVa.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime)
+				// Don't call applyFallbackAllocation - preserve existing DesiredOptimizedAlloc completely
+				// This ensures:
+				// - LastUpdate.UpdateTime is not refreshed (retention period can be exceeded)
+				// - No misleading allocation decisions for resources that don't exist
+				// - Failure condition remains authoritative
+			} else {
+				// No optimizer solution - apply fallback allocation logic
+				// PATH 2 vs PATH 3 decision: Check if a previous allocation decision was made
+				// Note: We check LastUpdate.UpdateTime (not NumReplicas >= 0) because NumReplicas defaults to 0,
+				// and would incorrectly treat first-run scenarios as having a precomputed fallback.
+				// LastUpdate.UpdateTime is only set when a controller allocation decision was actually made.
+				// IMPORTANT: Use updateVa (fresh from API) not va (from updateList which may be stale)
+				hasPrecomputedFallback := !updateVa.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero()
+
+				if hasPrecomputedFallback {
+					// PATH 2: Has precomputed fallback allocation
+					// allVariants now contains only VAs with valid deployments (excludes failed VAs)
+					applyFallbackAllocation(&updateVa, allVariants, scaleToZeroConfigData, true, "Fallback")
+				} else {
+					// PATH 3: No precomputed fallback - use last resort logic
+					// allVariants now contains only VAs with valid deployments (excludes failed VAs)
+					applyFallbackAllocation(&updateVa, allVariants, scaleToZeroConfigData, false, "Last resort")
+				}
+			}
+		}
+
 		updateVa.Status.Actuation.Applied = false // No longer directly applying changes
 
-		// Copy existing conditions from updateList (includes MetricsAvailable condition set during preparation)
-		// This ensures we don't lose the MetricsAvailable condition when fetching fresh copy from API
-		// Always copy, even if empty, to preserve conditions set during prepareVariantAutoscalings
-		updateVa.Status.Conditions = va.Status.Conditions
+		// Set LastRunTime on every reconciliation for observability
+		// LastRunTime tracks when the controller last processed this variant (updated every reconciliation)
+		// LastUpdate.UpdateTime tracks when the allocation decision actually changed (updated only when NumReplicas or Reason changes)
+		updateVa.Status.DesiredOptimizedAlloc.LastRunTime = metav1.Now()
 
-		// Set OptimizationReady condition to True on successful optimization
-		llmdVariantAutoscalingV1alpha1.SetCondition(&updateVa,
-			llmdVariantAutoscalingV1alpha1.TypeOptimizationReady,
-			metav1.ConditionTrue,
-			llmdVariantAutoscalingV1alpha1.ReasonOptimizationSucceeded,
-			fmt.Sprintf("Optimization completed: %d replicas on %s",
-				updateVa.Status.DesiredOptimizedAlloc.NumReplicas,
-				updateVa.Status.DesiredOptimizedAlloc.Accelerator))
+		// CRITICAL FIX: Ensure Reason and LastUpdate are set before persisting status
+		// This is a safety net to catch any cases where these fields might be lost
+		// Skip this for failed VAs (they should preserve their existing state)
+		if optCond := llmdVariantAutoscalingV1alpha1.GetCondition(va, llmdVariantAutoscalingV1alpha1.TypeOptimizationReady); optCond == nil || optCond.Status != metav1.ConditionFalse {
+			// Only apply safety net for VAs that are not in failed state
+			if updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason == "" {
+				// If Reason is still empty at this point, something went wrong in the allocation logic
+				// Set a clear fallback value so we never persist empty Reason
+				// For safety net, we don't have reliable previous value, so delta is set to current replicas
+				updateVa.Status.DesiredOptimizedAlloc.LastUpdate = llmdVariantAutoscalingV1alpha1.LastUpdateInfo{
+					UpdateTime:         metav1.Now(),
+					NumReplicasChanged: updateVa.Status.DesiredOptimizedAlloc.NumReplicas,
+					Reason:             "Fallback: allocation set but reason missing (controller bug)",
+				}
+				logger.Log.Error(nil, "CRITICAL: DesiredOptimizedAlloc.LastUpdate.Reason was empty before status update!",
+					"variantName", updateVa.Name,
+					"numReplicas", updateVa.Status.DesiredOptimizedAlloc.NumReplicas,
+					"hasOptimizedAlloc", hasOptimizedAlloc)
+			}
+			if updateVa.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero() && updateVa.Status.DesiredOptimizedAlloc.NumReplicas >= 0 {
+				// LastUpdate.UpdateTime should always be set when NumReplicas is set
+				// Only set the missing UpdateTime field, preserving existing Reason and NumReplicasChanged
+				updateVa.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime = metav1.Now()
+				logger.Log.Warn("LastUpdate.UpdateTime was zero before status update, setting it now",
+					"variantName", updateVa.Name,
+					"reason", updateVa.Status.DesiredOptimizedAlloc.LastUpdate.Reason,
+					"delta", updateVa.Status.DesiredOptimizedAlloc.LastUpdate.NumReplicasChanged)
+			}
+		}
 
-		act := actuator.NewActuator(r.Client)
+		// Update conditions based on allocation decision path
+		// Preserves MetricsAvailable from preparation and sets OptimizationReady appropriately
+		updateConditionsForAllocation(&updateVa, va, hasOptimizedAlloc)
 
-		// Emit optimization signals for external autoscalers
+		// ALWAYS emit optimization signals for external autoscalers (KEDA, HPA, etc.)
+		// This is critical for scale-to-zero scenarios where metrics must exist even with no traffic
 		if err := act.EmitMetrics(ctx, &updateVa); err != nil {
 			logger.Log.Error(err, "failed to emit optimization signals for external autoscalers - ", "variant: ", updateVa.Name)
 		} else {
@@ -405,11 +1470,20 @@ func (r *VariantAutoscalingReconciler) applyOptimizedAllocations(
 
 		if err := utils.UpdateStatusWithBackoff(ctx, r.Client, &updateVa, utils.StandardBackoff, "VariantAutoscaling"); err != nil {
 			logger.Log.Error(err, "failed to patch status for variantAutoscaling after retries - ", "variantAutoscaling-name: ", updateVa.Name)
+			statusUpdateErrors = append(statusUpdateErrors, fmt.Errorf("variant %s/%s: %w", updateVa.Namespace, updateVa.Name, err))
 			continue
 		}
 	}
 
 	logger.Log.Debug("Completed variant processing loop")
+
+	// Return error if any status updates failed
+	if len(statusUpdateErrors) > 0 {
+		logger.Log.Warnw("Some variant status updates failed",
+			"failedCount", len(statusUpdateErrors),
+			"totalCount", len(updateList.Items))
+		return fmt.Errorf("failed to update status for %d variant(s): %v", len(statusUpdateErrors), statusUpdateErrors)
+	}
 
 	// Log summary of reconciliation
 	if len(updateList.Items) > 0 {
@@ -428,7 +1502,11 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	initMetricsEmitter()
 
 	// Configure Prometheus client using flexible configuration with TLS support
-	promConfig, err := r.getPrometheusConfig(context.Background())
+	// Use context with timeout to prevent hanging during setup
+	ctx, cancel := context.WithTimeout(context.Background(), SetupTimeout)
+	defer cancel()
+
+	promConfig, err := r.getPrometheusConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get Prometheus configuration: %w", err)
 	}
@@ -459,41 +1537,139 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 
 	r.PromAPI = promv1.NewAPI(promClient)
 
-	// Initialize model metrics cache for storing internal per-model metrics
-	r.ModelMetricsCache = collector.NewModelMetricsCache()
-	logger.Log.Info("Model metrics cache initialized")
+	// Initialize scale-to-zero metrics cache for storing internal per-model scale-to-zero metrics
+	r.ScaleToZeroMetricsCache = collector.NewScaleToZeroMetricsCache()
+	logger.Log.Info("Scale-to-zero metrics cache initialized")
 
 	// Validate that the API is working by testing a simple query with retry logic
-	if err := utils.ValidatePrometheusAPI(context.Background(), r.PromAPI); err != nil {
+	// Use the same context with timeout to prevent hanging
+	if err := utils.ValidatePrometheusAPI(ctx, r.PromAPI); err != nil {
 		logger.Log.Error(err, "CRITICAL: Failed to connect to Prometheus - Inferno requires Prometheus connectivity for autoscaling decisions")
 		return fmt.Errorf("critical: failed to validate Prometheus API connection - autoscaling functionality requires Prometheus: %w", err)
 	}
 	logger.Log.Info("Prometheus client and API wrapper initialized and validated successfully")
 
+	// Read reconciliation interval from ConfigMap to calculate optimal cache TTL
+	// This ensures cache expires between reconciliation loops for fresh Prometheus data
+	// Use the same context with timeout to prevent hanging
+	intervalStr, err := r.readOptimizationConfig(ctx)
+	if err != nil {
+		logger.Log.Warn("Failed to read optimization config, using default reconciliation interval",
+			"error", err.Error())
+		intervalStr = "" // Will default to 60s below
+	}
+
+	// Parse reconciliation interval (default 60s if not set)
+	reconciliationInterval := DefaultReconciliationInterval
+	if intervalStr != "" {
+		if parsedInterval, parseErr := time.ParseDuration(intervalStr); parseErr != nil {
+			logger.Log.Warn("Failed to parse reconciliation interval, using default",
+				"configuredInterval", intervalStr,
+				"error", parseErr.Error(),
+				"default", reconciliationInterval.String())
+		} else {
+			// Validate interval bounds to prevent API server overload or stale data
+			if parsedInterval < MinReconciliationInterval {
+				logger.Log.Warn("Reconciliation interval too short, using minimum",
+					"configured", parsedInterval,
+					"minimum", MinReconciliationInterval,
+					"using", MinReconciliationInterval)
+				reconciliationInterval = MinReconciliationInterval
+			} else if parsedInterval > MaxReconciliationInterval {
+				logger.Log.Warn("Reconciliation interval very long, may cause stale data",
+					"configured", parsedInterval,
+					"maximum", MaxReconciliationInterval)
+				reconciliationInterval = parsedInterval
+			} else {
+				reconciliationInterval = parsedInterval
+			}
+		}
+	}
+
+	// Calculate cache TTL as half of reconciliation interval
+	// This guarantees cache expires between reconciliation loops, ensuring fresh data
+	// while maintaining caching benefit for multiple VAs within same reconciliation batch
+	cacheTTL := reconciliationInterval / 2
+
+	// Apply minimum TTL of 5 seconds to prevent excessive Prometheus queries
+	// if reconciliation interval is configured very short (< 10s)
+	if cacheTTL < MinCacheTTL {
+		logger.Log.Warn("Calculated cache TTL too short, using minimum",
+			"calculated", cacheTTL.String(),
+			"minimum", MinCacheTTL.String(),
+			"reconciliationInterval", reconciliationInterval.String())
+		cacheTTL = MinCacheTTL
+	}
+
+	r.MetricsCache = collector.NewModelMetricsCache(cacheTTL)
+	logger.Log.Info("Model metrics cache initialized with dynamic TTL",
+		"cacheTTL", cacheTTL.String(),
+		"reconciliationInterval", reconciliationInterval.String(),
+		"ratio", "TTL = interval / 2")
+
+	// Add cache cleanup as a managed runnable
+	// This ensures proper shutdown when the manager stops
+	if err := mgr.Add(&cacheCleanupRunnable{
+		cache:           r.MetricsCache,
+		cleanupInterval: cacheTTL,
+	}); err != nil {
+		return fmt.Errorf("failed to add cache cleanup runnable: %w", err)
+	}
+	logger.Log.Info("Metrics cache cleanup runnable registered with manager",
+		"cleanupInterval", cacheTTL.String())
+
 	//logger.Log.Info("Prometheus client initialized (validation skipped)")
+
+	// Helper to trigger global reconciliation when ConfigMap changes.
+	// Since the controller uses a global optimization pattern (every reconciliation processes
+	// ALL VAs), we only need to enqueue a single reconcile request, not one per VA.
+	// This avoids N redundant reconciliations when a ConfigMap is updated.
+	enqueueAllVAs := func(ctx context.Context, obj client.Object) []reconcile.Request {
+		var list llmdVariantAutoscalingV1alpha1.VariantAutoscalingList
+		if err := r.List(ctx, &list); err != nil {
+			logger.Log.Error(err, "Failed to list VariantAutoscalings for ConfigMap watch")
+			return nil
+		}
+
+		if len(list.Items) == 0 {
+			logger.Log.Info("No VariantAutoscalings found, skipping ConfigMap reconciliation",
+				"configMap", obj.GetName())
+			return nil
+		}
+
+		// Return only ONE request to trigger global reconciliation.
+		// The specific VA used as trigger is arbitrary since Reconcile() processes ALL VAs.
+		logger.Log.Info("ConfigMap changed, triggering global reconciliation",
+			"configMap", obj.GetName(),
+			"totalVAs", len(list.Items),
+			"trigger", list.Items[0].Name)
+
+		return []reconcile.Request{
+			{NamespacedName: client.ObjectKeyFromObject(&list.Items[0])},
+		}
+	}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&llmdVariantAutoscalingV1alpha1.VariantAutoscaling{}).
-		// Watch the specific ConfigMap to trigger global reconcile
+		// Watch the optimization config ConfigMap to trigger reconcile for all VAs
 		Watches(
 			&corev1.ConfigMap{},
 			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
 				if obj.GetName() == configMapName && obj.GetNamespace() == configMapNamespace {
-					return []reconcile.Request{{}}
+					return enqueueAllVAs(ctx, obj)
 				}
 				return nil
 			}),
-			// Predicate to filter only the target configmap
 			builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
 				return obj.GetName() == configMapName && obj.GetNamespace() == configMapNamespace
 			})),
 		).
-		// Watch the model-scale-to-zero-config ConfigMap to trigger reconcile when scale-to-zero config changes
+		// Watch the scale-to-zero config ConfigMap to trigger reconcile for all VAs
 		Watches(
 			&corev1.ConfigMap{},
 			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
 				if obj.GetName() == "model-scale-to-zero-config" && obj.GetNamespace() == configMapNamespace {
-					return []reconcile.Request{{}}
+					return enqueueAllVAs(ctx, obj)
 				}
 				return nil
 			}),
@@ -507,9 +1683,16 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 				return true
 			},
 			UpdateFunc: func(e event.UpdateEvent) bool {
-				return false
+				// Reconcile only if spec changed (ignore status-only updates)
+				oldVA, oldOK := e.ObjectOld.(*llmdVariantAutoscalingV1alpha1.VariantAutoscaling)
+				newVA, newOK := e.ObjectNew.(*llmdVariantAutoscalingV1alpha1.VariantAutoscaling)
+				if !oldOK || !newOK {
+					return false
+				}
+				return !reflect.DeepEqual(oldVA.Spec, newVA.Spec)
 			},
 			DeleteFunc: func(e event.DeleteEvent) bool {
+				// Don't reconcile on delete (handled by deletion timestamp check)
 				return false
 			},
 			GenericFunc: func(e event.GenericEvent) bool {
@@ -631,19 +1814,20 @@ func (r *VariantAutoscalingReconciler) readOptimizationConfig(ctx context.Contex
 // Format: Keys prefixed with "model.", values are YAML
 //
 // Example:
-//    model.meta.llama-3.1-8b: |
-//      modelID: "meta/llama-3.1-8b"
-//      enableScaleToZero: true
-//      retentionPeriod: "5m"
-//    __defaults__: |
-//      enableScaleToZero: true
-//      retentionPeriod: "15m"
+//
+//	model.meta.llama-3.1-8b: |
+//	  modelID: "meta/llama-3.1-8b"
+//	  enableScaleToZero: true
+//	  retentionPeriod: "5m"
+//	__defaults__: |
+//	  enableScaleToZero: true
+//	  retentionPeriod: "15m"
 //
 // Benefits:
-//    - Independently editable (kubectl patch single model)
-//    - Original modelID preserved in YAML value (no collision risk)
-//    - Better Git diffs (only changed models shown)
-//    - Human-readable YAML format
+//   - Independently editable (kubectl patch single model)
+//   - Original modelID preserved in YAML value (no collision risk)
+//   - Better Git diffs (only changed models shown)
+//   - Human-readable YAML format
 //
 // The function returns an empty map if the ConfigMap is not found (it's optional).
 func (r *VariantAutoscalingReconciler) readScaleToZeroConfig(ctx context.Context, cmName, cmNamespace string) (utils.ScaleToZeroConfigData, error) {
@@ -727,4 +1911,209 @@ func (r *VariantAutoscalingReconciler) readScaleToZeroConfig(ctx context.Context
 		"namespace", cmNamespace,
 		"modelCount", len(out))
 	return out, nil
+}
+
+// detectDuplicateDeploymentTargets checks if multiple VAs target the same deployment
+// Returns a map of deployment keys (namespace/name) to list of VA names targeting them
+func detectDuplicateDeploymentTargets(vas []llmdVariantAutoscalingV1alpha1.VariantAutoscaling) map[string][]string {
+	deploymentTargets := make(map[string][]string)
+
+	for _, va := range vas {
+		// Create unique deployment key: namespace/name
+		deploymentKey := fmt.Sprintf("%s/%s", va.Namespace, va.Spec.ScaleTargetRef.Name)
+		deploymentTargets[deploymentKey] = append(deploymentTargets[deploymentKey], va.Name)
+	}
+
+	// Filter to only duplicates (more than 1 VA per deployment)
+	duplicates := make(map[string][]string)
+	for deploymentKey, vaNames := range deploymentTargets {
+		if len(vaNames) > 1 {
+			duplicates[deploymentKey] = vaNames
+		}
+	}
+
+	return duplicates
+}
+
+// ConflictResolution represents the resolution of a deployment target conflict
+type ConflictResolution struct {
+	DeploymentKey string
+	Winner        string
+	Losers        []string
+	WinnerAge     time.Duration
+	TotalVAs      int
+}
+
+// resolveDeploymentConflicts resolves conflicts by selecting the oldest VA as winner
+// and suppressing all other VAs targeting the same deployment.
+// This ensures service continuity while providing maximum visibility into the conflict.
+func resolveDeploymentConflicts(
+	activeVAs []llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
+	duplicateTargets map[string][]string,
+) ([]llmdVariantAutoscalingV1alpha1.VariantAutoscaling, map[string]ConflictResolution) {
+
+	if len(duplicateTargets) == 0 {
+		return activeVAs, nil
+	}
+
+	// Map to track conflict resolutions
+	resolutions := make(map[string]ConflictResolution)
+
+	// Map VAs by name for quick lookup
+	vaMap := make(map[string]*llmdVariantAutoscalingV1alpha1.VariantAutoscaling)
+	for i := range activeVAs {
+		vaMap[activeVAs[i].Name] = &activeVAs[i]
+	}
+
+	// For each conflict, pick the oldest VA as winner
+	suppressedVAs := make(map[string]bool)
+
+	for deploymentKey, conflictingVANames := range duplicateTargets {
+		// Find oldest VA by CreationTimestamp
+		var winner *llmdVariantAutoscalingV1alpha1.VariantAutoscaling
+		var winnerName string
+
+		for _, vaName := range conflictingVANames {
+			va := vaMap[vaName]
+			if va == nil {
+				continue
+			}
+
+			if winner == nil || va.CreationTimestamp.Before(&winner.CreationTimestamp) {
+				winner = va
+				winnerName = vaName
+			}
+		}
+
+		// All others are suppressed
+		losers := []string{}
+		for _, vaName := range conflictingVANames {
+			if vaName != winnerName {
+				suppressedVAs[vaName] = true
+				losers = append(losers, vaName)
+			}
+		}
+
+		// Record resolution
+		resolutions[deploymentKey] = ConflictResolution{
+			DeploymentKey: deploymentKey,
+			Winner:        winnerName,
+			Losers:        losers,
+			WinnerAge:     time.Since(winner.CreationTimestamp.Time),
+			TotalVAs:      len(conflictingVANames),
+		}
+
+		// LOUD ERROR LOGGING
+		logger.Log.Error(nil, "⚠️ CONFLICT RESOLVED BY ARBITRATION ⚠️",
+			"deployment", deploymentKey,
+			"totalConflictingVAs", len(conflictingVANames),
+			"WINNER", winnerName,
+			"winnerAge", time.Since(winner.CreationTimestamp.Time),
+			"SUPPRESSED", strings.Join(losers, ", "),
+			"strategy", "oldest-wins",
+			"ACTION_REQUIRED", "Fix configuration - delete or reassign duplicate VAs")
+	}
+
+	// Filter out suppressed VAs
+	filteredVAs := []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{}
+	for _, va := range activeVAs {
+		if !suppressedVAs[va.Name] {
+			filteredVAs = append(filteredVAs, va)
+		}
+	}
+
+	logger.Log.Error(nil, "CONFLICT SUMMARY - System degraded, immediate action required",
+		"totalConflicts", len(duplicateTargets),
+		"healthyVAs", len(filteredVAs),
+		"suppressedVAs", len(suppressedVAs))
+
+	return filteredVAs, resolutions
+}
+
+// updateConflictConditions updates status conditions for all VAs involved in conflicts
+func updateConflictConditions(
+	ctx context.Context,
+	k8sClient client.Client,
+	resolutions map[string]ConflictResolution,
+) error {
+	for _, resolution := range resolutions {
+		// Extract namespace from deployment key (format: "namespace/name")
+		parts := strings.Split(resolution.DeploymentKey, "/")
+		if len(parts) != 2 {
+			logger.Log.Error(nil, "Invalid deployment key format", "key", resolution.DeploymentKey)
+			continue
+		}
+		namespace := parts[0]
+
+		// Update WINNER's status - mark as degraded
+		winnerVA := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{
+			Name:      resolution.Winner,
+			Namespace: namespace,
+		}, winnerVA); err != nil {
+			logger.Log.Error(err, "Failed to get winner VA for condition update", "va", resolution.Winner)
+			continue
+		}
+
+		meta.SetStatusCondition(&winnerVA.Status.Conditions, metav1.Condition{
+			Type:   "DeploymentTargetConflict",
+			Status: metav1.ConditionTrue,
+			Reason: "ConflictResolvedByArbitration",
+			Message: fmt.Sprintf("This VA won arbitration (oldest) but %d other VA(s) also target the same deployment: %s. DELETE OR REASSIGN: %s",
+				len(resolution.Losers),
+				resolution.DeploymentKey,
+				strings.Join(resolution.Losers, ", ")),
+			ObservedGeneration: winnerVA.Generation,
+		})
+
+		if err := k8sClient.Status().Update(ctx, winnerVA); err != nil {
+			logger.Log.Error(err, "Failed to update winner VA condition", "va", resolution.Winner)
+		}
+
+		// Update LOSERS' status - mark as suppressed
+		for _, loserName := range resolution.Losers {
+			loserVA := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      loserName,
+				Namespace: namespace,
+			}, loserVA); err != nil {
+				logger.Log.Error(err, "Failed to get loser VA for condition update", "va", loserName)
+				continue
+			}
+
+			meta.SetStatusCondition(&loserVA.Status.Conditions, metav1.Condition{
+				Type:   "DeploymentTargetConflict",
+				Status: metav1.ConditionTrue,
+				Reason: "SuppressedDueToConflict",
+				Message: fmt.Sprintf("SUPPRESSED: This VA targets deployment %s which is already managed by %s (older VA). No optimization/metrics for this VA. ACTION: Delete this VA or change scaleTargetRef to a unique deployment.",
+					resolution.DeploymentKey,
+					resolution.Winner),
+				ObservedGeneration: loserVA.Generation,
+			})
+
+			// Also set Ready=False
+			meta.SetStatusCondition(&loserVA.Status.Conditions, metav1.Condition{
+				Type:               "Ready",
+				Status:             metav1.ConditionFalse,
+				Reason:             "DeploymentTargetConflict",
+				Message:            "Suppressed due to deployment target conflict",
+				ObservedGeneration: loserVA.Generation,
+			})
+
+			if err := k8sClient.Status().Update(ctx, loserVA); err != nil {
+				logger.Log.Error(err, "Failed to update loser VA condition", "va", loserName)
+			}
+		}
+	}
+	return nil
+}
+
+// getConflictingVAPattern generates a grep pattern for all VAs involved in conflicts
+func getConflictingVAPattern(resolutions map[string]ConflictResolution) string {
+	allVAs := []string{}
+	for _, resolution := range resolutions {
+		allVAs = append(allVAs, resolution.Winner)
+		allVAs = append(allVAs, resolution.Losers...)
+	}
+	return strings.Join(allVAs, "|")
 }

@@ -10,7 +10,7 @@ spec:
     kind: Deployment
     name: {{ printf "%s-decode" .Values.wva.modelName }}
   # minReplicas: 0  # scale to zero - alpha feature
-  maxReplicas: {{ .Values.hpa.maxReplicas }}
+  maxReplicas: {{ int .Values.hpa.maxReplicas }}
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 0 # tune this value 
@@ -28,10 +28,11 @@ spec:
   - type: External
     external:
       metric:
-        name: inferno_desired_replicas
+        name: wva_desired_replicas
         selector:
           matchLabels:
-            variant_name: {{ printf "%s-decode" .Values.wva.modelName }}
+            target_name: {{ printf "%s-decode" .Values.wva.modelName }}
+            target_kind: Deployment
       target:
         type: AverageValue
         averageValue: {{ .Values.hpa.targetAverageValue | quote }}

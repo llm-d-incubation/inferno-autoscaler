@@ -4,15 +4,15 @@ prometheus:
 
 rules:
   external:
-  - seriesQuery: 'inferno_desired_replicas{variant_name!="",exported_namespace!=""}'
+  - seriesQuery: 'wva_desired_replicas{target_name!="",exported_namespace!=""}'
     resources:
       overrides:
         exported_namespace: {resource: "namespace"}
-        variant_name: {resource: "deployment"}  
+        target_name: {resource: "deployment"}
     name:
-      matches: "^inferno_desired_replicas"
-      as: "inferno_desired_replicas"
-    metricsQuery: 'inferno_desired_replicas{<<.LabelMatchers>>}'
+      matches: "^wva_desired_replicas"
+      as: "wva_desired_replicas"
+    metricsQuery: 'wva_desired_replicas{<<.LabelMatchers>>}'
 
 replicas: 2
 logLevel: 4

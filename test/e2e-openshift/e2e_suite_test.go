@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -38,16 +39,15 @@ import (
 	v1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
 )
 
-const (
-	controllerNamespace = "workload-variant-autoscaler-system"
-	monitoringNamespace = "openshift-user-workload-monitoring"
-	llmDNamespace       = "llm-d-inference-scheduling"
-	gatewayName         = "infra-inference-scheduling-inference-gateway-istio"
-)
-
-const (
-	modelID    = "unsloth/Meta-Llama-3.1-8B"
-	deployment = "ms-inference-scheduling-llm-d-modelservice-decode"
+var (
+	controllerNamespace = getEnvString("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")
+	monitoringNamespace = getEnvString("MONITORING_NAMESPACE", "openshift-user-workload-monitoring")
+	llmDNamespace       = getEnvString("LLMD_NAMESPACE", "llm-d-inference-scheduling")
+	gatewayName         = getEnvString("GATEWAY_NAME", "infra-inference-scheduling-inference-gateway-istio")
+	modelID             = getEnvString("MODEL_ID", "unsloth/Meta-Llama-3.1-8B")
+	deployment          = getEnvString("DEPLOYMENT", "ms-inference-scheduling-llm-d-modelservice-decode")
+	requestRate         = getEnvInt("REQUEST_RATE", 20)
+	numPrompts          = getEnvInt("NUM_PROMPTS", 6000)
 )
 
 var (
@@ -59,6 +59,25 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(v1alpha1.AddToScheme(scheme))
+}
+
+func getEnvString(key, fallback string) string {
+	if val := os.Getenv(key); val != "" {
+		return val
+	}
+	_, _ = fmt.Fprintf(GinkgoWriter, "Failed to parse env variable, using fallback")
+	return fallback
+}
+
+func getEnvInt(key string, fallback int) int {
+	if val := os.Getenv(key); val != "" {
+		if i, err := strconv.Atoi(val); err == nil {
+			return i
+		}
+		_, _ = fmt.Fprintf(GinkgoWriter, "Failed to parse env variable as int, using fallback")
+		return fallback
+	}
+	return fallback
 }
 
 // TestE2EOpenShift runs the end-to-end (e2e) test suite for OpenShift deployments.
@@ -103,6 +122,18 @@ var _ = BeforeSuite(func() {
 		Skip("KUBECONFIG is not set; skipping OpenShift e2e test")
 	}
 
+	_, _ = fmt.Fprintf(GinkgoWriter, "-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\n")
+	_, _ = fmt.Fprintf(GinkgoWriter, "Using the following configuration:\n")
+	_, _ = fmt.Fprintf(GinkgoWriter, "-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\n")
+	_, _ = fmt.Fprintf(GinkgoWriter, "CONTROLLER_NAMESPACE=%s\n", controllerNamespace)
+	_, _ = fmt.Fprintf(GinkgoWriter, "MONITORING_NAMESPACE=%s\n", monitoringNamespace)
+	_, _ = fmt.Fprintf(GinkgoWriter, "LLMD_NAMESPACE=%s\n", llmDNamespace)
+	_, _ = fmt.Fprintf(GinkgoWriter, "GATEWAY_NAME=%s\n", gatewayName)
+	_, _ = fmt.Fprintf(GinkgoWriter, "MODEL_ID=%s\n", modelID)
+	_, _ = fmt.Fprintf(GinkgoWriter, "DEPLOYMENT=%s\n", deployment)
+	_, _ = fmt.Fprintf(GinkgoWriter, "REQUEST_RATE=%d\n", requestRate)
+	_, _ = fmt.Fprintf(GinkgoWriter, "NUM_PROMPTS=%d\n", numPrompts)
+
 	initializeK8sClient()
 
 	ctx := context.Background()
@@ -122,21 +153,57 @@ var _ = BeforeSuite(func() {
 	}, 2*time.Minute, 1*time.Second).Should(Succeed())
 
 	By("verifying that llm-d infrastructure is running")
-	Eventually(func(g Gomega) {
-		// Check Gateway
-		deploymentList, err := k8sClient.AppsV1().Deployments(llmDNamespace).List(ctx, metav1.ListOptions{})
-		if err != nil {
-			g.Expect(err).NotTo(HaveOccurred(), "Should be able to list deployments in llm-d namespace")
-		}
-		g.Expect(deploymentList.Items).NotTo(BeEmpty(), "llm-d deployments should exist")
+	// Check that deployments exist
+	deploymentList, err := k8sClient.AppsV1().Deployments(llmDNamespace).List(ctx, metav1.ListOptions{})
+	Expect(err).NotTo(HaveOccurred(), "Should be able to list deployments in llm-d namespace")
+	Expect(deploymentList.Items).NotTo(BeEmpty(), "llm-d deployments should exist")
 
-		// Check that vLLM deployment exists
+	// Check that vLLM deployment exists
+	vllmDeployment, err := k8sClient.AppsV1().Deployments(llmDNamespace).Get(ctx, deployment, metav1.GetOptions{})
+	Expect(err).NotTo(HaveOccurred(), "vLLM deployment should exist")
+
+	// Handle scale-to-zero case: if deployment is at 0 replicas, manually scale to 1
+	// Note: In Kubernetes 1.31+, HPA does not automatically scale from 0 even when minReplicas > 0
+	if vllmDeployment.Status.ReadyReplicas == 0 {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Deployment is scaled to zero. Manually scaling to 1 replica for test initialization...\n")
+
+		// First, update HPA minReplicas if needed
+		hpa, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(llmDNamespace).Get(ctx, "vllm-deployment-hpa", metav1.GetOptions{})
+		if err == nil && hpa.Spec.MinReplicas != nil && *hpa.Spec.MinReplicas == 0 {
+			minReplicas := int32(1)
+			hpa.Spec.MinReplicas = &minReplicas
+			_, err = k8sClient.AutoscalingV2().HorizontalPodAutoscalers(llmDNamespace).Update(ctx, hpa, metav1.UpdateOptions{})
+			Expect(err).NotTo(HaveOccurred(), "Should be able to update HPA minReplicas")
+		}
+
+		// Manually scale the deployment to 1 replica (HPA won't do this automatically from 0)
+		replicas := int32(1)
+		vllmDeployment.Spec.Replicas = &replicas
+		_, err = k8sClient.AppsV1().Deployments(llmDNamespace).Update(ctx, vllmDeployment, metav1.UpdateOptions{})
+		Expect(err).NotTo(HaveOccurred(), "Should be able to scale deployment to 1")
+		_, _ = fmt.Fprintf(GinkgoWriter, "Scaled deployment to 1 replica, waiting for pod to become ready...\n")
+	}
+
+	// Wait for at least one replica to be ready (increased timeout to 7 minutes for large model loading)
+	Eventually(func(g Gomega) {
 		vllmDeployment, err := k8sClient.AppsV1().Deployments(llmDNamespace).Get(ctx, deployment, metav1.GetOptions{})
 		if err != nil {
 			g.Expect(err).NotTo(HaveOccurred(), "vLLM deployment should exist")
 		}
 		g.Expect(vllmDeployment.Status.ReadyReplicas).To(BeNumerically(">", 0), "At least one vLLM replica should be ready")
-	}, 5*time.Minute, 5*time.Second).Should(Succeed())
+		_, _ = fmt.Fprintf(GinkgoWriter, "vLLM deployment has %d ready replicas\n", vllmDeployment.Status.ReadyReplicas)
+	}, 7*time.Minute, 5*time.Second).Should(Succeed())
+
+	// Reset HPA minReplicas back to 0 for scale-to-zero tests
+	// Note: We temporarily set it to 1 for initialization, now reset it for actual tests
+	hpa, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(llmDNamespace).Get(ctx, "vllm-deployment-hpa", metav1.GetOptions{})
+	if err == nil && hpa.Spec.MinReplicas != nil && *hpa.Spec.MinReplicas == 1 {
+		minReplicas := int32(0)
+		hpa.Spec.MinReplicas = &minReplicas
+		_, err = k8sClient.AutoscalingV2().HorizontalPodAutoscalers(llmDNamespace).Update(ctx, hpa, metav1.UpdateOptions{})
+		Expect(err).NotTo(HaveOccurred(), "Should be able to reset HPA minReplicas to 0")
+		_, _ = fmt.Fprintf(GinkgoWriter, "Reset HPA minReplicas back to 0 for scale-to-zero tests\n")
+	}
 
 	By("verifying that Prometheus Adapter is running")
 	Eventually(func(g Gomega) {

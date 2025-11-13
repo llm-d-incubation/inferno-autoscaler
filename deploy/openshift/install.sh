@@ -39,10 +39,10 @@ LLMD_NS=${LLMD_NS:-"llm-d-$WELL_LIT_PATH_NAME"}
 MONITORING_NAMESPACE=${MONITORING_NAMESPACE:-"openshift-user-workload-monitoring"}
 WVA_NS=${WVA_NS:-"workload-variant-autoscaler-system"}
 WVA_IMAGE_REPO=${WVA_IMAGE_REPO:-"ghcr.io/llm-d/workload-variant-autoscaler"}
-WVA_IMAGE_TAG=${WVA_IMAGE_TAG:-"v0.0.1"}
+WVA_IMAGE_TAG=${WVA_IMAGE_TAG:-"v0.0.2"}
 LLM_D_OWNER=${LLM_D_OWNER:-"llm-d"}
 LLM_D_RELEASE=${LLM_D_RELEASE:-"v0.3.0"}
-LLM_D_MODELSERVICE_NAME=${LLM_D_MODELSERVICE_NAME:-"ms-$WELL_LIT_PATH_NAME-llm-d-modelservice-decode"}
+LLM_D_MODELSERVICE_NAME=${LLM_D_MODELSERVICE_NAME:-"ms-$WELL_LIT_PATH_NAME-llm-d-modelservice"}
 PREREQ_DIR=${PREREQ_DIR:-"$WVA_PROJECT/$LLM_D_PROJECT/guides/prereq"}
 EXAMPLE_DIR=${EXAMPLE_DIR:-"$WVA_PROJECT/$LLM_D_PROJECT/guides/$WELL_LIT_PATH_NAME"}
 PROM_CA_CERT_PATH=${PROM_CA_CERT_PATH:-"/tmp/prometheus-ca.crt"}
@@ -205,13 +205,13 @@ deploy_wva_controller() {
     # TODO: update to use Helm repo
     helm upgrade -i workload-variant-autoscaler ./workload-variant-autoscaler \
     -n $WVA_NS \
-    --set-file prometheus.caCert=$PROM_CA_CERT_PATH \
+    --set-file wva.prometheus.caCert=$PROM_CA_CERT_PATH \
     --set wva.image.repository=$WVA_IMAGE_REPO \
     --set wva.image.tag=$WVA_IMAGE_TAG \
-    --set variantAutoscaling.accelerator=$ACCELERATOR_TYPE \
-    --set variantAutoscaling.modelID=$MODEL_ID \
-    --set variantAutoscaling.sloTpot=$SLO_TPOT \
-    --set variantAutoscaling.sloTtft=$SLO_TTFT \
+    --set va.accelerator=$ACCELERATOR_TYPE \
+    --set llmd.modelID=$MODEL_ID \
+    --set va.sloTpot=$SLO_TPOT \
+    --set va.sloTtft=$SLO_TTFT \
     --set vllmService.enabled=$VLLM_SVC_ENABLED \
     --set vllmService.nodePort=$VLLM_SVC_NODEPORT
 
@@ -279,7 +279,7 @@ deploy_llm_d_infrastructure() {
     cd $EXAMPLE_DIR
     sed -i.bak "s/llm-d-inference-scheduler/$LLMD_NS/g" helmfile.yaml.gotmpl
 
-    if [ $MODEL_ID != $DEFAULT_MODEL_ID ]; then
+    if [ "$MODEL_ID" != "$DEFAULT_MODEL_ID" ]; then
         log_info "Updating deployment to use model: $MODEL_ID"
         yq eval "(.. | select(. == \"$DEFAULT_MODEL_ID\")) = \"$MODEL_ID\" | (.. | select(. == \"hf://$DEFAULT_MODEL_ID\")) = \"hf://$MODEL_ID\"" -i ms-$WELL_LIT_PATH_NAME/values.yaml
 
@@ -330,15 +330,15 @@ prometheus:
 
 rules:
   external:
-  - seriesQuery: 'inferno_desired_replicas{variant_name!="",exported_namespace!=""}'
+  - seriesQuery: 'wva_desired_replicas{target_name!="",exported_namespace!=""}'
     resources:
       overrides:
         exported_namespace: {resource: "namespace"}
-        variant_name: {resource: "deployment"}  
+        target_name: {resource: "deployment"}  
     name:
-      matches: "^inferno_desired_replicas"
-      as: "inferno_desired_replicas"
-    metricsQuery: 'inferno_desired_replicas{<<.LabelMatchers>>}'
+      matches: "^wva_desired_replicas"
+      as: "wva_desired_replicas"
+    metricsQuery: 'wva_desired_replicas{<<.LabelMatchers>>}'
 
 replicas: 2
 logLevel: 4
@@ -415,7 +415,7 @@ spec:
 YAML
     fi
     
-    kubectl patch deployment $LLM_D_MODELSERVICE_NAME \
+    kubectl patch deployment ${LLM_D_MODELSERVICE_NAME}-decode \
         -n $LLMD_NS \
         --patch-file config/samples/probes-patch.yaml
     
@@ -438,7 +438,7 @@ verify_deployment() {
     
     # Check llm-d pods
     log_info "Checking llm-d infrastructure..."
-    if kubectl get deployment $LLM_D_MODELSERVICE_NAME -n $LLMD_NS &> /dev/null; then
+    if kubectl get deployment ${LLM_D_MODELSERVICE_NAME}-decode -n $LLMD_NS &> /dev/null; then
         log_success "vLLM deployment exists"
     else
         log_error "vLLM deployment not found"
@@ -455,11 +455,13 @@ verify_deployment() {
     fi
     
     # Check VariantAutoscaling
-    log_info "Checking VariantAutoscaling resource..."
-    if kubectl get variantautoscaling $LLM_D_MODELSERVICE_NAME -n $LLMD_NS &> /dev/null; then
+    # VA name format after refactor: <modelName>-<accelerator> (lowercase)
+    local va_name="${LLM_D_MODELSERVICE_NAME}-${ACCELERATOR_TYPE,,}"
+    log_info "Checking VariantAutoscaling resource ($va_name)..."
+    if kubectl get variantautoscaling $va_name -n $LLMD_NS &> /dev/null; then
         log_success "VariantAutoscaling resource exists"
     else
-        log_error "VariantAutoscaling resource not found"
+        log_error "VariantAutoscaling resource not found: $va_name"
         all_good=false
     fi
     
@@ -475,7 +477,7 @@ verify_deployment() {
     # Check external metrics API
     log_info "Checking external metrics API..."
     sleep 30  # Wait for metrics to be available
-    if kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/$LLMD_NS/inferno_desired_replicas" &> /dev/null; then
+    if kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/$LLMD_NS/wva_desired_replicas" &> /dev/null; then
         log_success "External metrics API is accessible"
     else
         log_warning "External metrics API not yet available (may need more time)"
@@ -522,7 +524,7 @@ print_summary() {
     echo "   kubectl logs -n $WVA_NS deployment/workload-variant-autoscaler-controller-manager -f"
     echo ""
     echo "3. Check external metrics:"
-    echo "   kubectl get --raw \"/apis/external.metrics.k8s.io/v1beta1/namespaces/$LLMD_NS/inferno_desired_replicas\" | jq"
+    echo "   kubectl get --raw \"/apis/external.metrics.k8s.io/v1beta1/namespaces/$LLMD_NS/wva_desired_replicas\" | jq"
     echo ""
     echo "4. Run e2e tests:"
     echo "   make test-e2e-openshift"

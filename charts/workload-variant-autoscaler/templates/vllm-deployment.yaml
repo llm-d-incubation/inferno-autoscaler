@@ -1,0 +1,84 @@
+{{- if and .Values.wva.va.enabled (eq .Values.variantAutoscaling.deploymentMode "multi") }}
+{{- /* Multi mode: Create one deployment for each variant */ -}}
+{{- range .Values.variantAutoscaling.variants }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ printf "%s-%s-decode" $.Values.wva.modelName (.accelerator | lower) }}
+  namespace: {{ $.Values.llmd.namespace }}
+  labels:
+    app: {{ $.Values.wva.modelName }}
+    llm-d.ai/inferenceServing: "true"
+    llm-d.ai/model: {{ $.Values.wva.modelName }}
+    inference.optimization/acceleratorName: {{ .accelerator }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ $.Values.wva.modelName }}
+      llm-d.ai/inferenceServing: "true"
+      llm-d.ai/model: {{ $.Values.wva.modelName }}
+      inference.optimization/acceleratorName: {{ .accelerator }}
+  template:
+    metadata:
+      labels:
+        app: {{ $.Values.wva.modelName }}
+        llm-d.ai/inferenceServing: "true"
+        llm-d.ai/model: {{ $.Values.wva.modelName }}
+        inference.optimization/acceleratorName: {{ .accelerator }}
+    spec:
+      containers:
+      - name: vllm-emulator
+        image: quay.io/infernoautoscaler/vllme:0.2.3-multi-arch
+        imagePullPolicy: Always
+        env:
+        - name: MODEL_NAME
+          value: {{ $.Values.llmd.modelID | quote }}
+        - name: DECODE_TIME
+          value: "20"        # In milliseconds, e.g., 20ms per token decode
+        - name: PREFILL_TIME
+          value: "20"        # In milliseconds, e.g., 20ms for prefill
+        - name: MODEL_SIZE
+          value: "25000"     # In MB, e.g., 25GB model size
+        - name: KVC_PER_TOKEN
+          value: "2"         # In MB, e.g., 2MB per token for KV cache
+        - name: MAX_SEQ_LEN
+          value: "2048"      # Max sequence length
+        - name: MEM_SIZE
+          value: "80000"     # Total device memory in MB, e.g., 80GB
+        - name: AVG_TOKENS
+          value: "128"       # Average generated tokens
+        - name: TOKENS_DISTRIBUTION
+          value: "deterministic"   # "uniform", "normal", "deterministic"
+        - name: MAX_BATCH_SIZE
+          value: "8"         # Max concurrent requests in a batch
+        - name: REALTIME
+          value: "True"      # Boolean: "True" or "False"
+        - name: MUTE_PRINT
+          value: "False"     # Boolean: "True" or "False"
+        ports:
+        - containerPort: 80
+        resources:
+          limits:
+            cpu: 500m
+            memory: 1Gi
+            nvidia.com/gpu: {{ int (.acceleratorCount | default 1) | quote }}
+          requests:
+            cpu: 100m
+            memory: 500Mi
+            nvidia.com/gpu: {{ int (.acceleratorCount | default 1) | quote }}
+      {{- if ne .accelerator "emulated" }}
+      # Node affinity to schedule on nodes with the correct GPU type
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: nvidia.com/gpu.product
+                operator: In
+                values:
+                - {{ .accelerator | quote }}
+      {{- end }}
+{{- end }}
+{{- end }}
