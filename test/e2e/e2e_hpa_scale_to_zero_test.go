@@ -149,7 +149,7 @@ enableScaleToZero: true
 retentionPeriod: "2m"`, modelID),
 			},
 		}
-		_, err := hpaK8sClient.CoreV1().ConfigMaps(getEnvOrDefault("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")).Create(ctx, configMap, metav1.CreateOptions{})
+		_, err = hpaK8sClient.CoreV1().ConfigMaps(getEnvOrDefault("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")).Create(ctx, configMap, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create ConfigMap: %s", configMapName))
 
 		By("creating vllme deployment")
@@ -526,7 +526,7 @@ enableScaleToZero: true
 retentionPeriod: "2m"`, modelID),
 			},
 		}
-		_, err := hpaK8sClient.CoreV1().ConfigMaps(getEnvOrDefault("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")).Create(ctx, configMap, metav1.CreateOptions{})
+		_, err = hpaK8sClient.CoreV1().ConfigMaps(getEnvOrDefault("CONTROLLER_NAMESPACE", "workload-variant-autoscaler-system")).Create(ctx, configMap, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Should be able to create ConfigMap: %s", configMapName))
 
 		By("creating vllme deployment")

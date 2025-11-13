@@ -45,8 +45,8 @@ func intPtr(i int32) *int32 {
 // Helper function to generate unique namespace name for each test
 // Uses timestamp and random suffix to avoid namespace conflicts during parallel test execution
 func uniqueNamespace(prefix string) string {
-	rand.Seed(time.Now().UnixNano())
-	return fmt.Sprintf("%s-%d-%d", prefix, time.Now().Unix(), rand.Intn(10000))
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	return fmt.Sprintf("%s-%d-%d", prefix, time.Now().Unix(), r.Intn(10000))
 }
 
 // Helper function to create namespace and ensure cleanup

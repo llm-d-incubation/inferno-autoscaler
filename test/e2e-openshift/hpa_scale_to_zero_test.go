@@ -299,6 +299,111 @@ var _ = Describe("HPA Scale-to-Zero Comprehensive Lifecycle", Ordered, func() {
 		_, _ = fmt.Fprintf(GinkgoWriter, "Found VariantAutoscaling: %s\n", vaName)
 	})
 
+	It("should scale with traffic when scale-to-zero is enabled", func() {
+		By("setting VA minReplicas to 0 to allow scale-to-zero")
+		va := &v1alpha1.VariantAutoscaling{}
+		err := crClient.Get(ctx, client.ObjectKey{Name: vaName, Namespace: llmDNamespace}, va)
+		Expect(err).NotTo(HaveOccurred(), "Should be able to get VariantAutoscaling")
+
+		// Save original value (dereference pointer)
+		var originalMinReplicas int32
+		if va.Spec.MinReplicas != nil {
+			originalMinReplicas = *va.Spec.MinReplicas
+		}
+
+		minReplicas := int32(0)
+		va.Spec.MinReplicas = &minReplicas
+		err = crClient.Update(ctx, va)
+		Expect(err).NotTo(HaveOccurred(), "Should be able to update VA minReplicas")
+		_, _ = fmt.Fprintf(GinkgoWriter, "✓ VA minReplicas set to 0 (was %d)\n", originalMinReplicas)
+
+		// Wait for the change to propagate
+		time.Sleep(15 * time.Second)
+
+		DeferCleanup(func() {
+			// Restore original value after test
+			va := &v1alpha1.VariantAutoscaling{}
+			err := crClient.Get(ctx, client.ObjectKey{Name: vaName, Namespace: llmDNamespace}, va)
+			if err == nil {
+				va.Spec.MinReplicas = &originalMinReplicas
+				_ = crClient.Update(ctx, va)
+				_, _ = fmt.Fprintf(GinkgoWriter, "✓ Restored VA minReplicas to %d\n", originalMinReplicas)
+			}
+		})
+
+		By("creating load generation job before re-enabling scale-to-zero")
+		_ = k8sClient.BatchV1().Jobs(llmDNamespace).Delete(ctx, jobName, metav1.DeleteOptions{})
+		time.Sleep(2 * time.Second)
+
+		job := createLoadJob(jobName, llmDNamespace, 10, 1800) // Sustained load: 10 req/s, 1800 prompts = 180 seconds (3 controller cycles)
+		_, err = k8sClient.BatchV1().Jobs(llmDNamespace).Create(ctx, job, metav1.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred(), "Should be able to create load generation job")
+
+		By("waiting for job pod to be running")
+		Eventually(func(g Gomega) {
+			podList, err := k8sClient.CoreV1().Pods(llmDNamespace).List(ctx, metav1.ListOptions{
+				LabelSelector: fmt.Sprintf("job-name=%s", jobName),
+			})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(podList.Items).NotTo(BeEmpty())
+			pod := podList.Items[0]
+			g.Expect(pod.Status.Phase).To(Or(Equal(corev1.PodRunning), Equal(corev1.PodSucceeded)))
+			_, _ = fmt.Fprintf(GinkgoWriter, "Load job pod status: %s\n", pod.Status.Phase)
+		}, 3*time.Minute, 5*time.Second).Should(Succeed())
+
+		By("waiting 20 seconds before re-enabling scale-to-zero")
+		time.Sleep(20 * time.Second)
+
+		By("re-enabling scale-to-zero via ConfigMap while traffic is active")
+		modelKey := strings.ReplaceAll(modelID, "/", "-")
+		configMap, err := k8sClient.CoreV1().ConfigMaps(controllerNamespace).Get(ctx, configMapName, metav1.GetOptions{})
+		Expect(err).NotTo(HaveOccurred())
+
+		configMap.Data[fmt.Sprintf("model.%s", modelKey)] = fmt.Sprintf(`modelID: "%s"
+enableScaleToZero: true
+retentionPeriod: "4m"`, modelID)
+		_, err = k8sClient.CoreV1().ConfigMaps(controllerNamespace).Update(ctx, configMap, metav1.UpdateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		_, _ = fmt.Fprintf(GinkgoWriter, "✓ ConfigMap updated: enableScaleToZero=true (with active traffic)\n")
+
+		By("verifying deployment scales >= 1 during traffic")
+		Eventually(func(g Gomega) {
+			deploy, err := k8sClient.AppsV1().Deployments(llmDNamespace).Get(ctx, deployment, metav1.GetOptions{})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(deploy.Status.ReadyReplicas).To(BeNumerically(">=", 1),
+				"Deployment should scale >= 1 during traffic")
+			_, _ = fmt.Fprintf(GinkgoWriter, "During traffic: %d replicas\n", deploy.Status.ReadyReplicas)
+		}, 3*time.Minute, 10*time.Second).Should(Succeed())
+
+		By("waiting for job to complete")
+		Eventually(func(g Gomega) {
+			job, err := k8sClient.BatchV1().Jobs(llmDNamespace).Get(ctx, jobName, metav1.GetOptions{})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(job.Status.Succeeded).To(BeNumerically(">=", 1), "Job should complete")
+			_, _ = fmt.Fprintf(GinkgoWriter, "Load job completed\n")
+		}, 10*time.Minute, 10*time.Second).Should(Succeed())
+
+		By("verifying deployment maintains >= 1 replica during retention period after traffic")
+		_, _ = fmt.Fprintf(GinkgoWriter, "Monitoring retention period: %d seconds...\n", retentionSeconds)
+		Consistently(func(g Gomega) {
+			deploy, err := k8sClient.AppsV1().Deployments(llmDNamespace).Get(ctx, deployment, metav1.GetOptions{})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(deploy.Status.Replicas).To(BeNumerically(">=", 1),
+				"Deployment should maintain >= 1 replica during retention period")
+			_, _ = fmt.Fprintf(GinkgoWriter, "Retention period: %d replicas\n", deploy.Status.Replicas)
+		}, time.Duration(retentionSeconds)*time.Second, 15*time.Second).Should(Succeed())
+
+		By("verifying deployment scales to 0 after retention period")
+		_, _ = fmt.Fprintf(GinkgoWriter, "Waiting for scale-to-zero after retention...\n")
+		Eventually(func(g Gomega) {
+			deploy, err := k8sClient.AppsV1().Deployments(llmDNamespace).Get(ctx, deployment, metav1.GetOptions{})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(deploy.Status.Replicas).To(Equal(int32(0)),
+				"Deployment should scale to 0 after retention period")
+			_, _ = fmt.Fprintf(GinkgoWriter, "✓ Deployment scaled to 0 after retention\n")
+		}, 3*time.Minute, 10*time.Second).Should(Succeed())
+	})
+
 	It("should scale to zero with scale-to-zero enabled and VA minReplicas=0", func() {
 		By("ensuring scale-to-zero is enabled via ConfigMap")
 		modelKey := strings.ReplaceAll(modelID, "/", "-")
@@ -387,14 +492,14 @@ retentionPeriod: "4m"`, modelID)
 
 		By("verifying deployment maintains >= 1 replica during retention period after bootstrap")
 		// After VA recreation, controller enters bootstrap mode and retention period should apply
-		_, _ = fmt.Fprintf(GinkgoWriter, "Monitoring for %d seconds (retention period after bootstrap)...\n", retentionSeconds)
+		_, _ = fmt.Fprintf(GinkgoWriter, "Monitoring for %d seconds (remaining retention period after 90s controller init)...\n", retentionSeconds-90)
 		Consistently(func(g Gomega) {
 			deploy, err := k8sClient.AppsV1().Deployments(llmDNamespace).Get(ctx, deployment, metav1.GetOptions{})
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(deploy.Status.Replicas).To(BeNumerically(">=", 1),
 				"Deployment should maintain >= 1 replica during retention period after VA recreation/bootstrap")
 			_, _ = fmt.Fprintf(GinkgoWriter, "Retention period active (bootstrap): %d replicas\n", deploy.Status.Replicas)
-		}, time.Duration(retentionSeconds)*time.Second, 15*time.Second).Should(Succeed())
+		}, time.Duration(retentionSeconds-90)*time.Second, 15*time.Second).Should(Succeed())
 
 		By("verifying deployment scales to 0 after retention period expires")
 		_, _ = fmt.Fprintf(GinkgoWriter, "Waiting for scale-to-zero after retention period...\n")
@@ -452,26 +557,12 @@ retentionPeriod: "4m"`, modelID)
 	})
 
 	It("should scale with traffic when scale-to-zero is enabled", func() {
-		By("re-enabling scale-to-zero via ConfigMap")
-		modelKey := strings.ReplaceAll(modelID, "/", "-")
-		configMap, err := k8sClient.CoreV1().ConfigMaps(controllerNamespace).Get(ctx, configMapName, metav1.GetOptions{})
-		Expect(err).NotTo(HaveOccurred())
-
-		configMap.Data[fmt.Sprintf("model.%s", modelKey)] = fmt.Sprintf(`modelID: "%s"
-enableScaleToZero: true
-retentionPeriod: "4m"`, modelID)
-		_, err = k8sClient.CoreV1().ConfigMaps(controllerNamespace).Update(ctx, configMap, metav1.UpdateOptions{})
-		Expect(err).NotTo(HaveOccurred())
-		_, _ = fmt.Fprintf(GinkgoWriter, "✓ ConfigMap updated: enableScaleToZero=true\n")
-
-		time.Sleep(20 * time.Second)
-
-		By("creating load generation job")
+		By("creating load generation job before re-enabling scale-to-zero")
 		_ = k8sClient.BatchV1().Jobs(llmDNamespace).Delete(ctx, jobName, metav1.DeleteOptions{})
 		time.Sleep(2 * time.Second)
 
 		job := createLoadJob(jobName, llmDNamespace, 10, 1800) // Sustained load: 10 req/s, 1800 prompts = 180 seconds (3 controller cycles)
-		_, err = k8sClient.BatchV1().Jobs(llmDNamespace).Create(ctx, job, metav1.CreateOptions{})
+		_, err := k8sClient.BatchV1().Jobs(llmDNamespace).Create(ctx, job, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred(), "Should be able to create load generation job")
 
 		By("waiting for job pod to be running")
@@ -485,6 +576,21 @@ retentionPeriod: "4m"`, modelID)
 			g.Expect(pod.Status.Phase).To(Or(Equal(corev1.PodRunning), Equal(corev1.PodSucceeded)))
 			_, _ = fmt.Fprintf(GinkgoWriter, "Load job pod status: %s\n", pod.Status.Phase)
 		}, 3*time.Minute, 5*time.Second).Should(Succeed())
+
+		By("waiting 20 seconds before re-enabling scale-to-zero")
+		time.Sleep(20 * time.Second)
+
+		By("re-enabling scale-to-zero via ConfigMap while traffic is active")
+		modelKey := strings.ReplaceAll(modelID, "/", "-")
+		configMap, err := k8sClient.CoreV1().ConfigMaps(controllerNamespace).Get(ctx, configMapName, metav1.GetOptions{})
+		Expect(err).NotTo(HaveOccurred())
+
+		configMap.Data[fmt.Sprintf("model.%s", modelKey)] = fmt.Sprintf(`modelID: "%s"
+enableScaleToZero: true
+retentionPeriod: "4m"`, modelID)
+		_, err = k8sClient.CoreV1().ConfigMaps(controllerNamespace).Update(ctx, configMap, metav1.UpdateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		_, _ = fmt.Fprintf(GinkgoWriter, "✓ ConfigMap updated: enableScaleToZero=true (with active traffic)\n")
 
 		By("verifying deployment scales >= 1 during traffic")
 		Eventually(func(g Gomega) {

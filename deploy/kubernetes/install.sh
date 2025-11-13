@@ -853,7 +853,7 @@ print_summary() {
     echo "   kubectl get variantautoscaling -n $LLMD_NS"
     echo ""
     echo "2. View detailed status with conditions:"
-    echo "   kubectl describe variantautoscaling $LLM_D_MODELSERVICE_NAME-decode -n $LLMD_NS"
+    echo "   kubectl describe variantautoscaling ${LLM_D_MODELSERVICE_NAME}-${ACCELERATOR_TYPE,,} -n $LLMD_NS"
     echo ""
     echo "3. View WVA logs:"
     echo "   kubectl logs -n $WVA_NS -l app.kubernetes.io/name=workload-variant-autoscaler -f"

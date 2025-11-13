@@ -42,7 +42,7 @@ WVA_IMAGE_REPO=${WVA_IMAGE_REPO:-"ghcr.io/llm-d/workload-variant-autoscaler"}
 WVA_IMAGE_TAG=${WVA_IMAGE_TAG:-"v0.0.2"}
 LLM_D_OWNER=${LLM_D_OWNER:-"llm-d"}
 LLM_D_RELEASE=${LLM_D_RELEASE:-"v0.3.0"}
-LLM_D_MODELSERVICE_NAME=${LLM_D_MODELSERVICE_NAME:-"ms-$WELL_LIT_PATH_NAME-llm-d-modelservice-decode"}
+LLM_D_MODELSERVICE_NAME=${LLM_D_MODELSERVICE_NAME:-"ms-$WELL_LIT_PATH_NAME-llm-d-modelservice"}
 PREREQ_DIR=${PREREQ_DIR:-"$WVA_PROJECT/$LLM_D_PROJECT/guides/prereq"}
 EXAMPLE_DIR=${EXAMPLE_DIR:-"$WVA_PROJECT/$LLM_D_PROJECT/guides/$WELL_LIT_PATH_NAME"}
 PROM_CA_CERT_PATH=${PROM_CA_CERT_PATH:-"/tmp/prometheus-ca.crt"}
@@ -415,7 +415,7 @@ spec:
 YAML
     fi
     
-    kubectl patch deployment $LLM_D_MODELSERVICE_NAME \
+    kubectl patch deployment ${LLM_D_MODELSERVICE_NAME}-decode \
         -n $LLMD_NS \
         --patch-file config/samples/probes-patch.yaml
     
@@ -438,7 +438,7 @@ verify_deployment() {
     
     # Check llm-d pods
     log_info "Checking llm-d infrastructure..."
-    if kubectl get deployment $LLM_D_MODELSERVICE_NAME -n $LLMD_NS &> /dev/null; then
+    if kubectl get deployment ${LLM_D_MODELSERVICE_NAME}-decode -n $LLMD_NS &> /dev/null; then
         log_success "vLLM deployment exists"
     else
         log_error "vLLM deployment not found"
@@ -455,11 +455,13 @@ verify_deployment() {
     fi
     
     # Check VariantAutoscaling
-    log_info "Checking VariantAutoscaling resource..."
-    if kubectl get variantautoscaling $LLM_D_MODELSERVICE_NAME -n $LLMD_NS &> /dev/null; then
+    # VA name format after refactor: <modelName>-<accelerator> (lowercase)
+    local va_name="${LLM_D_MODELSERVICE_NAME}-${ACCELERATOR_TYPE,,}"
+    log_info "Checking VariantAutoscaling resource ($va_name)..."
+    if kubectl get variantautoscaling $va_name -n $LLMD_NS &> /dev/null; then
         log_success "VariantAutoscaling resource exists"
     else
-        log_error "VariantAutoscaling resource not found"
+        log_error "VariantAutoscaling resource not found: $va_name"
         all_good=false
     fi
     

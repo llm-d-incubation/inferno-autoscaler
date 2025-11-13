@@ -6,23 +6,23 @@ import (
 	"strings"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
 	utils "github.com/llm-d-incubation/workload-variant-autoscaler/internal/utils"
 )
 
-var _ = Describe("Pure Function Unit Tests", func() {
-	Context("getConflictingVAPattern", func() {
-		It("should return empty string for empty resolutions", func() {
+var _ = ginkgo.Describe("Pure Function Unit Tests", func() {
+	ginkgo.Context("getConflictingVAPattern", func() {
+		ginkgo.It("should return empty string for empty resolutions", func() {
 			resolutions := make(map[string]ConflictResolution)
 			pattern := getConflictingVAPattern(resolutions)
-			Expect(pattern).To(Equal(""))
+			gomega.Expect(pattern).To(gomega.Equal(""))
 		})
 
-		It("should return single VA name", func() {
+		ginkgo.It("should return single VA name", func() {
 			resolutions := map[string]ConflictResolution{
 				"default/deploy1": {
 					Winner: "va-1",
@@ -30,10 +30,10 @@ var _ = Describe("Pure Function Unit Tests", func() {
 				},
 			}
 			pattern := getConflictingVAPattern(resolutions)
-			Expect(pattern).To(Equal("va-1"))
+			gomega.Expect(pattern).To(gomega.Equal("va-1"))
 		})
 
-		It("should format multiple VAs with pipe separator", func() {
+		ginkgo.It("should format multiple VAs with pipe separator", func() {
 			resolutions := map[string]ConflictResolution{
 				"default/deploy1": {
 					Winner: "va-1",
@@ -42,13 +42,13 @@ var _ = Describe("Pure Function Unit Tests", func() {
 			}
 			pattern := getConflictingVAPattern(resolutions)
 			// Should contain all VAs separated by |
-			Expect(pattern).To(ContainSubstring("va-1"))
-			Expect(pattern).To(ContainSubstring("va-2"))
-			Expect(pattern).To(ContainSubstring("va-3"))
-			Expect(strings.Count(pattern, "|")).To(Equal(2)) // 3 VAs = 2 separators
+			gomega.Expect(pattern).To(gomega.ContainSubstring("va-1"))
+			gomega.Expect(pattern).To(gomega.ContainSubstring("va-2"))
+			gomega.Expect(pattern).To(gomega.ContainSubstring("va-3"))
+			gomega.Expect(strings.Count(pattern, "|")).To(gomega.Equal(2)) // 3 VAs = 2 separators
 		})
 
-		It("should handle multiple deployments with conflicts", func() {
+		ginkgo.It("should handle multiple deployments with conflicts", func() {
 			resolutions := map[string]ConflictResolution{
 				"default/deploy1": {
 					Winner: "va-1",
@@ -61,12 +61,12 @@ var _ = Describe("Pure Function Unit Tests", func() {
 			}
 			pattern := getConflictingVAPattern(resolutions)
 			// Should contain all 5 VAs
-			Expect(strings.Count(pattern, "|")).To(Equal(4)) // 5 VAs = 4 separators
+			gomega.Expect(strings.Count(pattern, "|")).To(gomega.Equal(4)) // 5 VAs = 4 separators
 		})
 	})
 
-	Context("createOptimizedAllocWithCreationTime", func() {
-		It("should create allocation with CreationTimestamp as UpdateTime", func() {
+	ginkgo.Context("createOptimizedAllocWithCreationTime", func() {
+		ginkgo.It("should create allocation with CreationTimestamp as UpdateTime", func() {
 			creationTime := metav1.NewTime(time.Now().Add(-5 * time.Minute))
 			previousAlloc := llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 				NumReplicas: 2,
@@ -74,13 +74,13 @@ var _ = Describe("Pure Function Unit Tests", func() {
 
 			alloc := createOptimizedAllocWithCreationTime(3, "test reason", previousAlloc, creationTime)
 
-			Expect(alloc.NumReplicas).To(Equal(int32(3)))
-			Expect(alloc.LastUpdate.UpdateTime).To(Equal(creationTime))
-			Expect(alloc.LastUpdate.Reason).To(Equal("test reason"))
-			Expect(alloc.LastUpdate.NumReplicasChanged).To(Equal(int32(1))) // 3 - 2
+			gomega.Expect(alloc.NumReplicas).To(gomega.Equal(int32(3)))
+			gomega.Expect(alloc.LastUpdate.UpdateTime).To(gomega.Equal(creationTime))
+			gomega.Expect(alloc.LastUpdate.Reason).To(gomega.Equal("test reason"))
+			gomega.Expect(alloc.LastUpdate.NumReplicasChanged).To(gomega.Equal(int32(1))) // 3 - 2
 		})
 
-		It("should calculate negative delta when scaling down", func() {
+		ginkgo.It("should calculate negative delta when scaling down", func() {
 			creationTime := metav1.Now()
 			previousAlloc := llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 				NumReplicas: 5,
@@ -88,10 +88,10 @@ var _ = Describe("Pure Function Unit Tests", func() {
 
 			alloc := createOptimizedAllocWithCreationTime(2, "scaling down", previousAlloc, creationTime)
 
-			Expect(alloc.LastUpdate.NumReplicasChanged).To(Equal(int32(-3))) // 2 - 5
+			gomega.Expect(alloc.LastUpdate.NumReplicasChanged).To(gomega.Equal(int32(-3))) // 2 - 5
 		})
 
-		It("should handle zero replicas", func() {
+		ginkgo.It("should handle zero replicas", func() {
 			creationTime := metav1.Now()
 			previousAlloc := llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 				NumReplicas: 3,
@@ -99,11 +99,11 @@ var _ = Describe("Pure Function Unit Tests", func() {
 
 			alloc := createOptimizedAllocWithCreationTime(0, "scaling to zero", previousAlloc, creationTime)
 
-			Expect(alloc.NumReplicas).To(Equal(int32(0)))
-			Expect(alloc.LastUpdate.NumReplicasChanged).To(Equal(int32(-3)))
+			gomega.Expect(alloc.NumReplicas).To(gomega.Equal(int32(0)))
+			gomega.Expect(alloc.LastUpdate.NumReplicasChanged).To(gomega.Equal(int32(-3)))
 		})
 
-		It("should handle zero delta when replicas unchanged", func() {
+		ginkgo.It("should handle zero delta when replicas unchanged", func() {
 			creationTime := metav1.Now()
 			previousAlloc := llmdVariantAutoscalingV1alpha1.OptimizedAlloc{
 				NumReplicas: 3,
@@ -111,26 +111,26 @@ var _ = Describe("Pure Function Unit Tests", func() {
 
 			alloc := createOptimizedAllocWithCreationTime(3, "no change", previousAlloc, creationTime)
 
-			Expect(alloc.LastUpdate.NumReplicasChanged).To(Equal(int32(0)))
+			gomega.Expect(alloc.LastUpdate.NumReplicasChanged).To(gomega.Equal(int32(0)))
 		})
 	})
 
-	Context("initMetricsEmitter", func() {
-		It("should initialize metrics emitter without panic", func() {
-			Expect(func() {
+	ginkgo.Context("initMetricsEmitter", func() {
+		ginkgo.It("should initialize metrics emitter without panic", func() {
+			gomega.Expect(func() {
 				initMetricsEmitter()
-			}).NotTo(Panic())
+			}).NotTo(gomega.Panic())
 		})
 	})
 
-	Context("isCheapestVariantForModel - Edge Cases", func() {
-		It("should handle nil currentVariant", func() {
+	ginkgo.Context("isCheapestVariantForModel - Edge Cases", func() {
+		ginkgo.It("should handle nil currentVariant", func() {
 			allVariants := []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{}
 			result := isCheapestVariantForModel(nil, allVariants, "model-1")
-			Expect(result).To(BeFalse())
+			gomega.Expect(result).To(gomega.BeFalse())
 		})
 
-		It("should handle empty allVariants slice", func() {
+		ginkgo.It("should handle empty allVariants slice", func() {
 			currentVariant := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
 					ModelID:          "model-1",
@@ -139,10 +139,10 @@ var _ = Describe("Pure Function Unit Tests", func() {
 				},
 			}
 			result := isCheapestVariantForModel(currentVariant, []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{}, "model-1")
-			Expect(result).To(BeTrue()) // Only variant, therefore cheapest
+			gomega.Expect(result).To(gomega.BeTrue()) // Only variant, therefore cheapest
 		})
 
-		It("should handle all variants for different model", func() {
+		ginkgo.It("should handle all variants for different model", func() {
 			currentVariant := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
 					ModelID:          "model-1",
@@ -160,10 +160,10 @@ var _ = Describe("Pure Function Unit Tests", func() {
 				},
 			}
 			result := isCheapestVariantForModel(currentVariant, allVariants, "model-1")
-			Expect(result).To(BeTrue()) // Only variant for model-1
+			gomega.Expect(result).To(gomega.BeTrue()) // Only variant for model-1
 		})
 
-		It("should break ties deterministically by VariantID", func() {
+		ginkgo.It("should break ties deterministically by VariantID", func() {
 			currentVariant := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
 					ModelID:          "model-1",
@@ -182,10 +182,10 @@ var _ = Describe("Pure Function Unit Tests", func() {
 				},
 			}
 			result := isCheapestVariantForModel(currentVariant, allVariants, "model-1")
-			Expect(result).To(BeFalse()) // var-a wins the tiebreaker
+			gomega.Expect(result).To(gomega.BeFalse()) // var-a wins the tiebreaker
 		})
 
-		It("should identify cheapest among 3+ variants", func() {
+		ginkgo.It("should identify cheapest among 3+ variants", func() {
 			currentVariant := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
 					ModelID:          "model-1",
@@ -211,12 +211,12 @@ var _ = Describe("Pure Function Unit Tests", func() {
 				},
 			}
 			result := isCheapestVariantForModel(currentVariant, allVariants, "model-1")
-			Expect(result).To(BeFalse()) // var-cheap is cheapest
+			gomega.Expect(result).To(gomega.BeFalse()) // var-cheap is cheapest
 		})
 	})
 
-	Context("allVariantsHaveMinReplicasZero - Edge Cases", func() {
-		It("should handle nil minReplicas as zero", func() {
+	ginkgo.Context("allVariantsHaveMinReplicasZero - Edge Cases", func() {
+		ginkgo.It("should handle nil minReplicas as zero", func() {
 			minReplicasZero := int32(0)
 			variants := []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 				{
@@ -234,12 +234,12 @@ var _ = Describe("Pure Function Unit Tests", func() {
 			}
 
 			result := allVariantsHaveMinReplicasZero(variants, "model-1")
-			Expect(result).To(BeTrue())
+			gomega.Expect(result).To(gomega.BeTrue())
 		})
 	})
 
-	Context("filterActiveVariantAutoscalings - Edge Cases", func() {
-		It("should return empty slice when all VAs have deletionTimestamp", func() {
+	ginkgo.Context("filterActiveVariantAutoscalings - Edge Cases", func() {
+		ginkgo.It("should return empty slice when all VAs have deletionTimestamp", func() {
 			now := metav1.Now()
 			vas := []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 				{
@@ -257,14 +257,14 @@ var _ = Describe("Pure Function Unit Tests", func() {
 			}
 
 			result := filterActiveVariantAutoscalings(vas)
-			Expect(result).To(BeEmpty())
+			gomega.Expect(result).To(gomega.BeEmpty())
 		})
 	})
 })
 
-var _ = Describe("applyFallbackAllocation - Additional Edge Cases", func() {
-	Context("PATH 2 - Bounds Changes", func() {
-		It("should clamp previous allocation to new maxReplicas", func() {
+var _ = ginkgo.Describe("applyFallbackAllocation - Additional Edge Cases", func() {
+	ginkgo.Context("PATH 2 - Bounds Changes", func() {
+		ginkgo.It("should clamp previous allocation to new maxReplicas", func() {
 			maxReplicas := int32(3)
 			va := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 				ObjectMeta: metav1.ObjectMeta{Name: "va-1", Namespace: "default"},
@@ -289,12 +289,12 @@ var _ = Describe("applyFallbackAllocation - Additional Edge Cases", func() {
 
 			applyFallbackAllocation(va, allVariants, scaleToZeroConfig, true, "Fallback")
 
-			Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(Equal(int32(3)))
-			Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.Reason).To(ContainSubstring("clamped"))
-			Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.Reason).To(ContainSubstring("from 5 to 3"))
+			gomega.Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(gomega.Equal(int32(3)))
+			gomega.Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.Reason).To(gomega.ContainSubstring("clamped"))
+			gomega.Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.Reason).To(gomega.ContainSubstring("from 5 to 3"))
 		})
 
-		It("should clamp previous allocation to new minReplicas", func() {
+		ginkgo.It("should clamp previous allocation to new minReplicas", func() {
 			minReplicas := int32(3)
 			va := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 				ObjectMeta: metav1.ObjectMeta{Name: "va-1", Namespace: "default"},
@@ -319,11 +319,11 @@ var _ = Describe("applyFallbackAllocation - Additional Edge Cases", func() {
 
 			applyFallbackAllocation(va, allVariants, scaleToZeroConfig, true, "Fallback")
 
-			Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(Equal(int32(3)))
-			Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.Reason).To(ContainSubstring("clamped"))
+			gomega.Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(gomega.Equal(int32(3)))
+			gomega.Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.Reason).To(gomega.ContainSubstring("clamped"))
 		})
 
-		It("should set default reason when Reason is empty", func() {
+		ginkgo.It("should set default reason when Reason is empty", func() {
 			va := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 				ObjectMeta: metav1.ObjectMeta{Name: "va-1", Namespace: "default"},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
@@ -346,10 +346,10 @@ var _ = Describe("applyFallbackAllocation - Additional Edge Cases", func() {
 
 			applyFallbackAllocation(va, allVariants, scaleToZeroConfig, true, "Fallback")
 
-			Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.Reason).To(Equal("Fallback: preserving previous allocation (no optimizer solution)"))
+			gomega.Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.Reason).To(gomega.Equal("Fallback: preserving previous allocation (no optimizer solution)"))
 		})
 
-		It("should set UpdateTime when LastUpdate.UpdateTime is zero", func() {
+		ginkgo.It("should set UpdateTime when LastUpdate.UpdateTime is zero", func() {
 			va := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 				ObjectMeta: metav1.ObjectMeta{Name: "va-1", Namespace: "default"},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
@@ -374,14 +374,14 @@ var _ = Describe("applyFallbackAllocation - Additional Edge Cases", func() {
 			applyFallbackAllocation(va, allVariants, scaleToZeroConfig, true, "Fallback")
 			after := time.Now()
 
-			Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero()).To(BeFalse())
-			Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.Time).To(BeTemporally(">=", before))
-			Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.Time).To(BeTemporally("<=", after))
+			gomega.Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.IsZero()).To(gomega.BeFalse())
+			gomega.Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.Time).To(gomega.BeTemporally(">=", before))
+			gomega.Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.UpdateTime.Time).To(gomega.BeTemporally("<=", after))
 		})
 	})
 
-	Context("PATH 3 - Edge Cases", func() {
-		It("should handle deployment discovered late scenario", func() {
+	ginkgo.Context("PATH 3 - Edge Cases", func() {
+		ginkgo.It("should handle deployment discovered late scenario", func() {
 			va := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 				ObjectMeta: metav1.ObjectMeta{Name: "va-1", Namespace: "default"},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
@@ -407,11 +407,11 @@ var _ = Describe("applyFallbackAllocation - Additional Edge Cases", func() {
 
 			applyFallbackAllocation(va, allVariants, scaleToZeroConfig, false, "Last resort")
 
-			Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(Equal(int32(5)))
-			Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.Reason).To(ContainSubstring("deployment discovered late"))
+			gomega.Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(gomega.Equal(int32(5)))
+			gomega.Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.Reason).To(gomega.ContainSubstring("deployment discovered late"))
 		})
 
-		It("should use previous optimized allocation when not first run", func() {
+		ginkgo.It("should use previous optimized allocation when not first run", func() {
 			va := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 				ObjectMeta: metav1.ObjectMeta{Name: "va-1", Namespace: "default"},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
@@ -437,11 +437,11 @@ var _ = Describe("applyFallbackAllocation - Additional Edge Cases", func() {
 
 			applyFallbackAllocation(va, allVariants, scaleToZeroConfig, false, "Last resort")
 
-			Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(Equal(int32(2)))
-			Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.Reason).To(ContainSubstring("maintaining controller intent"))
+			gomega.Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(gomega.Equal(int32(2)))
+			gomega.Expect(va.Status.DesiredOptimizedAlloc.LastUpdate.Reason).To(gomega.ContainSubstring("maintaining controller intent"))
 		})
 
-		It("should handle first run with other running variants", func() {
+		ginkgo.It("should handle first run with other running variants", func() {
 			va := &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 				ObjectMeta: metav1.ObjectMeta{Name: "va-1", Namespace: "default"},
 				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
@@ -477,7 +477,7 @@ var _ = Describe("applyFallbackAllocation - Additional Edge Cases", func() {
 			applyFallbackAllocation(va, allVariants, scaleToZeroConfig, false, "Last resort")
 
 			// Should remain at 0 since other variant is serving
-			Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(Equal(int32(0)))
+			gomega.Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).To(gomega.Equal(int32(0)))
 		})
 	})
 })
