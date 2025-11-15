@@ -18,6 +18,10 @@ type VariantAutoscalingSpec struct {
 	// ModelProfile provides resource and performance characteristics for the model variant.
 	// +kubebuilder:validation:Required
 	ModelProfile ModelProfile `json:"modelProfile"`
+
+	// ActivateModelTuner indicates whether to use the experimental model tuner.
+	// +optional
+	ActivateModelTuner bool `json:"activateModelTuner,omitempty"`
 }
 
 // ConfigMapKeyRef references a specific key within a ConfigMap.
@@ -87,6 +91,33 @@ type VariantAutoscalingStatus struct {
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+
+	// TunerPerfData specifies the tuned prefill and decode parameters of the model used by the queue analyzer.
+	TunerPerfData TunerPerfData `json:"tunerPerfData,omitempty"`
+}
+
+// TunerPerfData captures data related to the status of the performance (queueing) model tuner for a variant.
+// It is used as a persistent store of the model tuner state, keeping the model tuner stateless.
+type TunerPerfData struct {
+	// Model specifies the unique identifier of the model used in tuning.
+	Model string `json:"model,omitempty"`
+
+	// Accelerator is the type of accelerator used in tuning.
+	Accelerator string `json:"accelerator,omitempty"`
+
+	// UpdateAt specifies the time last succesfull tuner update was performed.
+	UpdatedAt metav1.Time `json:"updatedAt,omitempty"`
+
+	// PerParms specifies the TUNED prefill and decode parameters of the queueing model.
+	PerfParms PerfParms `json:"perfParms,omitempty"`
+
+	// Normalized Innovaion Square value of the tuner update.
+	// NIS determines how accurately Kalman filter is able to predict the measurement.
+	NIS string `json:"nis,omitempty"`
+
+	// CovarianceMatrix contains the current covariance matrix of the tuned state.
+	// It represents the uncertainty in the estimate.
+	CovarianceMatrix [][]string `json:"covarianceMatrix,omitempty"`
 }
 
 // Allocation describes the current resource allocation for a model variant.

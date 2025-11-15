@@ -42,6 +42,7 @@ import (
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/metrics"
 	analyzer "github.com/llm-d-incubation/workload-variant-autoscaler/internal/modelanalyzer"
 	variantAutoscalingOptimizer "github.com/llm-d-incubation/workload-variant-autoscaler/internal/optimizer"
+	tuner "github.com/llm-d-incubation/workload-variant-autoscaler/internal/tuner"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/utils"
 	infernoConfig "github.com/llm-d-incubation/workload-variant-autoscaler/pkg/config"
 	inferno "github.com/llm-d-incubation/workload-variant-autoscaler/pkg/core"
@@ -58,8 +59,7 @@ import (
 // VariantAutoscalingReconciler reconciles a variantAutoscaling object
 type VariantAutoscalingReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
-
+	Scheme  *runtime.Scheme
 	PromAPI promv1.API
 }
 
@@ -137,6 +137,13 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil {
 		logger.Log.Error(err, "failed to prepare variant autoscalings")
 		return ctrl.Result{}, err
+	}
+
+	// TODO: Whether we need a global switch EXPERIMENTAL_MODEL_TUNER_ENABLED to enable/disable autotuner for VAs.
+
+	// tune queueing model parameters for all servers using the system data and all active VAs
+	if err := tuner.TuneModelPerfParams(activeVAs, systemData); err != nil {
+		logger.Log.Warn(err, "failed to tune system data")
 	}
 
 	// analyze
